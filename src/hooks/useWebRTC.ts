@@ -56,15 +56,27 @@ export const useWebRTC = (socket: any, roomNumber: string, callbacks: ReceiveCal
   }, [socket])
 
   const createPeer = (targetId: string, initiator: boolean = false): SimplePeer.Instance => {
+    // Build ICE servers with optional TURN from env for cross-network connectivity
+    const stunDefaults = [
+      { urls: 'stun:stun.l.google.com:19302' },
+      { urls: 'stun:stun1.l.google.com:19302' },
+      { urls: 'stun:stun2.l.google.com:19302' }
+    ] as any[]
+    const turnUrls = (process.env.NEXT_PUBLIC_TURN_URLS || '')
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean)
+    const turnUser = process.env.NEXT_PUBLIC_TURN_USERNAME
+    const turnCred = process.env.NEXT_PUBLIC_TURN_CREDENTIAL
+    if (turnUrls.length > 0) {
+      stunDefaults.push({ urls: turnUrls, username: turnUser, credential: turnCred })
+    }
+
     const peer = new SimplePeer({
       initiator,
       trickle: true,
       config: {
-        iceServers: [
-          { urls: 'stun:stun.l.google.com:19302' },
-          { urls: 'stun:stun1.l.google.com:19302' },
-          { urls: 'stun:stun2.l.google.com:19302' }
-        ]
+        iceServers: stunDefaults,
       }
     })
 
