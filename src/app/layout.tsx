@@ -20,7 +20,7 @@ export const metadata: Metadata = {
   keywords: ["LabShare", "WebRTC", "P2P", "File Sharing", "Lab", "Education", "Print", "Next.js"],
   authors: [{ name: "LabShare Team" }],
   icons: {
-    icon: "https://z-cdn.chatglm.cn/z-ai/static/logo.svg",
+    icon: ".\favicon.ico",
   },
   openGraph: {
     title: "LabShare - P2P File Sharing",
