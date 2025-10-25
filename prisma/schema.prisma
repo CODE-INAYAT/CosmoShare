@@ -1,0 +1,86 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model LabRoom {
+  id          String @id @default(cuid())
+  roomNumber  String @unique
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  students    Student[]
+  files       SharedFile[]
+  
+  @@map("lab_rooms")
+}
+
+model Student {
+  id          String @id @default(cuid())
+  name        String
+  uniqueId    String @unique
+  roomNumber  String
+  isOnline    Boolean @default(false)
+  lastSeen    DateTime @default(now())
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  room        LabRoom @relation(fields: [roomNumber], references: [roomNumber])
+  sentFiles   SharedFile[] @relation("StudentFiles")
+  receivedFiles SharedFile[] @relation("ReceivedFiles")
+  
+  @@map("students")
+}
+
+model SharedFile {
+  id          String @id @default(cuid())
+  fileName    String
+  fileSize    Int
+  fileType    String
+  fileData    String? // Base64 encoded data or null for links
+  isLink      Boolean @default(false)
+  linkUrl     String?
+  message     String?
+  folderId    String?
+  senderId    String
+  receiverId  String
+  roomNumber  String
+  isPrintRequest Boolean @default(false)
+  isPrinted   Boolean @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  sender      Student @relation("StudentFiles", fields: [senderId], references: [id])
+  receiver    Student @relation("ReceivedFiles", fields: [receiverId], references: [id])
+  room        LabRoom @relation(fields: [roomNumber], references: [roomNumber])
+  folder      FileFolder? @relation(fields: [folderId], references: [id])
+  
+  @@map("shared_files")
+}
+
+model FileFolder {
+  id          String @id @default(cuid())
+  name        String
+  message     String?
+  senderId    String
+  receiverId  String
+  roomNumber  String
+  isPrintRequest Boolean @default(false)
+  isPrinted   Boolean @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  files       SharedFile[]
+  
+  @@map("file_folders")
+}
