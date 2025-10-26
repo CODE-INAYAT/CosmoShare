@@ -63,6 +63,7 @@ interface FileShare {
   senderName?: string
   senderUniqueId?: string
   recipients?: { id: string; name: string; uniqueId: string }[]
+  method?: 'PW-RTC' | 'SW-RTC' | 'TW-RTC' | 'PW-RTC-F'
   timestamp: Date
 }
 
@@ -163,6 +164,7 @@ function StudentDashboardInner() {
         receiverId: userData?.id || '',
         senderName,
         senderUniqueId,
+        method: (meta as any)?.method,
         timestamp: new Date()
       }, ...prev])
     },
@@ -183,6 +185,7 @@ function StudentDashboardInner() {
         receiverId: userData?.id || '',
         senderName,
         senderUniqueId,
+        method: (senderInfo as any)?.method,
         timestamp: new Date()
       }, ...prev])
     },
@@ -377,6 +380,9 @@ function StudentDashboardInner() {
 
     try {
       const filesToShare: FileShare[] = []
+  // Track aggregate method across recipients: PW-RTC(-F) < SW-RTC < TW-RTC
+  const rank: Record<string, number> = { 'PW-RTC-F': 1, 'PW-RTC': 1, 'SW-RTC': 2, 'TW-RTC': 3 }
+  let aggregateMethod: 'PW-RTC' | 'SW-RTC' | 'TW-RTC' | 'PW-RTC-F' | undefined
 
       // Build recipients info for UI display based on targets
       const recipientsInfo: { id: string; name: string; uniqueId: string }[] = targets.map((tid) => {
@@ -432,10 +438,12 @@ function StudentDashboardInner() {
           if (!entry.isLink) {
             const fileObj = selectedFiles.find(f => f.name === entry.fileName && f.size === entry.fileSize)
             if (fileObj) {
-              await webrtc.sendFile(targetId, fileObj, { message: entry.message, senderName: userData.name, senderUniqueId: userData.uniqueId, allowReshare })
+              const m = await webrtc.sendFile(targetId, fileObj, { message: entry.message, senderName: userData.name, senderUniqueId: userData.uniqueId, allowReshare })
+              if (m && (!aggregateMethod || rank[m] > rank[aggregateMethod])) aggregateMethod = m
             }
           } else if (entry.isLink && entry.linkUrl) {
-            await webrtc.sendLink(targetId, entry.linkUrl, entry.message, { name: userData.name, uniqueId: userData.uniqueId }, allowReshare)
+            const m = await webrtc.sendLink(targetId, entry.linkUrl, entry.message, { name: userData.name, uniqueId: userData.uniqueId }, allowReshare)
+            if (m && (!aggregateMethod || rank[m] > rank[aggregateMethod])) aggregateMethod = m
             linksCompletedRef.current += 1
             const doneBytes = batchCompletedRef.current >= batchTotalRef.current
             const doneLinks = linksCompletedRef.current >= linkCountRef.current
@@ -452,6 +460,9 @@ function StudentDashboardInner() {
       }
 
       // Update local history
+      if (aggregateMethod) {
+        filesToShare.forEach(f => { (f as any).method = aggregateMethod })
+      }
       setSentFiles(prev => [...filesToShare, ...prev])
       setSelectedFiles([])
       setLinkUrl('')

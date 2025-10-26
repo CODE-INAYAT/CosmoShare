@@ -35,6 +35,7 @@ interface FilePreviewProps {
     linkUrl?: string
     message?: string
     allowReshare?: boolean
+    method?: 'PW-RTC' | 'SW-RTC' | 'TW-RTC' | 'PW-RTC-F'
   }
   senderName?: string
   senderUniqueId?: string
@@ -324,6 +325,12 @@ export default function FilePreview({ file, senderName, senderUniqueId, recipien
                 </Button>
               )}
             </div>
+
+            {file.method && (
+              <div className="mt-2 text-xs font-medium text-blue-700">
+                Method : {file.method}
+              </div>
+            )}
           </div>
         </div>
       </CardContent>

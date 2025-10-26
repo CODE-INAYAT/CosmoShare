@@ -30,6 +30,8 @@ export const useWebRTC = (socket: any, roomNumber: string, callbacks: ReceiveCal
   const recvState = useRef<Map<string, { meta?: any; buffers: ArrayBuffer[]; received: number }>>(new Map())
   // Sender in-flight state per peer
   const sendState = useRef<Map<string, { fileName: string; total: number; sent: number }>>(new Map())
+  // Cache method per connected peer: PW-RTC | SW-RTC | TW-RTC
+  const peerMethodRef = useRef<Map<string, 'PW-RTC' | 'SW-RTC' | 'TW-RTC' | 'PW-RTC-F'>>(new Map())
 
   useEffect(() => {
     if (!socket) return
@@ -54,6 +56,55 @@ export const useWebRTC = (socket: any, roomNumber: string, callbacks: ReceiveCal
       socket.off('webrtc-ice-candidate', onIce)
     }
   }, [socket])
+
+  const inferMethodFromStats = async (peer: any): Promise<'PW-RTC' | 'SW-RTC' | 'TW-RTC' | 'PW-RTC-F'> => {
+    try {
+      const pc: RTCPeerConnection | undefined = (peer as any)?._pc || (peer as any)?.peerConnection || (peer as any)?.pc
+      if (!pc || pc.signalingState === 'closed') return 'PW-RTC-F'
+      const stats = await pc.getStats()
+      let selectedPairId: string | undefined
+      const candidates: Record<string, any> = {}
+      let determined = false
+      stats.forEach((report: any) => {
+        if (report.type === 'local-candidate' || report.type === 'remote-candidate' || report.type === 'candidate') {
+          candidates[report.id] = report
+        }
+        if (report.type === 'transport' && report.selectedCandidatePairId) {
+          selectedPairId = report.selectedCandidatePairId
+        }
+        if (report.type === 'candidate-pair' && (report.selected || report.nominated)) {
+          selectedPairId = report.id
+        }
+      })
+      if (selectedPairId) {
+        const pair: any = Array.from(stats.values()).find((r: any) => r.id === selectedPairId)
+        const local = candidates[pair?.localCandidateId]
+        const remote = candidates[pair?.remoteCandidateId]
+        const types = [local?.candidateType, remote?.candidateType].filter(Boolean)
+        if (types.includes('relay')) { determined = true; return 'TW-RTC' }
+        if (types.includes('srflx') || types.includes('prflx')) { determined = true; return 'SW-RTC' }
+        if (types.includes('host')) { determined = true; return 'PW-RTC' }
+      }
+      // Fallback: look at any candidate types
+      const anyTypes = Object.values(candidates).map((c: any) => c?.candidateType)
+      if (anyTypes.includes('relay')) { determined = true; return 'TW-RTC' }
+      if (anyTypes.includes('srflx') || anyTypes.includes('prflx')) { determined = true; return 'SW-RTC' }
+      if (anyTypes.includes('host')) { determined = true; return 'PW-RTC' }
+      return determined ? 'PW-RTC' : 'PW-RTC-F'
+    } catch {
+      return 'PW-RTC-F'
+    }
+  }
+
+  const getPeerMethod = async (targetId: string): Promise<'PW-RTC' | 'SW-RTC' | 'TW-RTC' | 'PW-RTC-F'> => {
+    const cached = peerMethodRef.current.get(targetId)
+    if (cached) return cached
+    const peer = peersRef.current.get(targetId)
+    if (!peer) return 'PW-RTC-F'
+    const method = await inferMethodFromStats(peer as any)
+    peerMethodRef.current.set(targetId, method)
+    return method
+  }
 
   const createPeer = (targetId: string, initiator: boolean = false): SimplePeer.Instance => {
     // Build ICE servers with optional TURN from env for cross-network connectivity
@@ -92,6 +143,11 @@ export const useWebRTC = (socket: any, roomNumber: string, callbacks: ReceiveCal
 
     peer.on('connect', () => {
       callbacks.onConnect?.(targetId)
+      // Determine and cache method on connect
+      setTimeout(async () => {
+        const method = await getPeerMethod(targetId)
+        peerMethodRef.current.set(targetId, method)
+      }, 0)
     })
 
     peer.on('data', async (data: any) => {
@@ -253,7 +309,7 @@ export const useWebRTC = (socket: any, roomNumber: string, callbacks: ReceiveCal
     if (peer) peer.signal(candidate)
   }
 
-  const sendFile = async (targetId: string, file: File, metadata?: { message?: string; senderName?: string; senderUniqueId?: string; allowReshare?: boolean }) => {
+  const sendFile = async (targetId: string, file: File, metadata?: { message?: string; senderName?: string; senderUniqueId?: string; allowReshare?: boolean }): Promise<'PW-RTC' | 'SW-RTC' | 'TW-RTC' | 'PW-RTC-F' | void> => {
     let peer = peersRef.current.get(targetId)
     if (!peer) {
       peer = createPeer(targetId, true)
@@ -277,6 +333,9 @@ export const useWebRTC = (socket: any, roomNumber: string, callbacks: ReceiveCal
     }
     if (peer.destroyed || !(peer as any).connected) return
 
+    // Determine connection method now that we're connected
+  const method = await getPeerMethod(targetId)
+
     const meta = {
       type: 'file-metadata',
       fileName: file.name,
@@ -286,6 +345,7 @@ export const useWebRTC = (socket: any, roomNumber: string, callbacks: ReceiveCal
       senderName: metadata?.senderName,
       senderUniqueId: metadata?.senderUniqueId,
       allowReshare: metadata?.allowReshare,
+      method,
     }
     try {
       peer.send(JSON.stringify(meta))
@@ -340,6 +400,7 @@ export const useWebRTC = (socket: any, roomNumber: string, callbacks: ReceiveCal
     }
     callbacks.onSendComplete?.(targetId, file.name)
     sendState.current.delete(targetId)
+    return method
   }
 
   const sendMessage = async (targetId: string, message: string) => {
@@ -364,7 +425,7 @@ export const useWebRTC = (socket: any, roomNumber: string, callbacks: ReceiveCal
     message?: string,
     sender?: { name?: string; uniqueId?: string },
     allowReshare?: boolean
-  ) => {
+  ): Promise<'PW-RTC' | 'SW-RTC' | 'TW-RTC' | 'PW-RTC-F' | void> => {
     const peer = peersRef.current.get(targetId)
     if (!peer || peer.destroyed) return
     if (!(peer as any).connected) {
@@ -375,7 +436,9 @@ export const useWebRTC = (socket: any, roomNumber: string, callbacks: ReceiveCal
     }
     if (!peer.destroyed && (peer as any).connected) {
       try {
-        peer.send(JSON.stringify({ type: 'link', linkUrl, message, senderName: sender?.name, senderUniqueId: sender?.uniqueId, allowReshare }))
+  const method = await getPeerMethod(targetId)
+        peer.send(JSON.stringify({ type: 'link', linkUrl, message, senderName: sender?.name, senderUniqueId: sender?.uniqueId, allowReshare, method }))
+        return method
       } catch {}
     }
   }
@@ -403,5 +466,6 @@ export const useWebRTC = (socket: any, roomNumber: string, callbacks: ReceiveCal
     sendLink,
     closeConnection,
     closeAllConnections,
+    getPeerMethod,
   }
 }
