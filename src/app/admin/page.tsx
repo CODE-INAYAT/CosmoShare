@@ -175,7 +175,9 @@ function AdminDashboardInner() {
       const url = `${wsBase}?room=${encodeURIComponent(roomNumber)}`
       socket = connectSignaling(url)
     } else {
-      socket = io({ path: '/api/socketio' })
+      // Fallback to Next.js Socket.IO route when no signaling Worker URL is set
+      // Note: Pages build exposes this at /api/socket/io
+      socket = io({ path: '/api/socket/io' })
     }
     socketRef.current = socket
     setSocketState(socket)
