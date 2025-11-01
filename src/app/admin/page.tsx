@@ -30,6 +30,7 @@ import {
 } from 'lucide-react'
 import { useSearchParams } from 'next/navigation'
 import { io } from 'socket.io-client'
+import { connectSignaling } from '@/lib/wsClient'
 import { useWebRTC } from '@/hooks/useWebRTC'
 import FilePreview from '@/components/FilePreview'
 
@@ -167,10 +168,17 @@ function AdminDashboardInner() {
 
   const initializeSocket = (user: any, roomNumber: string) => {
     // Initialize socket connection
-  const base = process.env.NEXT_PUBLIC_SIGNALING_BASE_URL
-  const socket = base ? io(base, { path: '/api/socketio' }) : io({ path: '/api/socketio' })
+    const base = process.env.NEXT_PUBLIC_SIGNALING_BASE_URL
+    let socket: any
+    if (base) {
+      const wsBase = (base.endsWith('/ws') || base.includes('/ws?')) ? base : `${base.replace(/\/$/, '')}/ws`
+      const url = `${wsBase}?room=${encodeURIComponent(roomNumber)}`
+      socket = connectSignaling(url)
+    } else {
+      socket = io({ path: '/api/socketio' })
+    }
     socketRef.current = socket
-  setSocketState(socket)
+    setSocketState(socket)
 
     socket.on('connect', () => {
       setIsConnected(true)
