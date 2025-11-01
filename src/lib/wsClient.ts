@@ -19,7 +19,8 @@ function toWsUrl(base: string): string {
 }
 
 export function connectSignaling(baseUrl: string): SocketLike {
-  const url = baseUrl
+  // Ensure we always use a proper ws:// or wss:// scheme even if https:// was supplied
+  const url = toWsUrl(baseUrl)
   const ws = new WebSocket(url)
   const handlers = new Map<string, Set<Handler>>()
   const onceHandlers = new Map<string, Set<Handler>>()
@@ -54,9 +55,9 @@ export function connectSignaling(baseUrl: string): SocketLike {
     try {
       const msg = JSON.parse(ev.data)
       if (msg && typeof msg.event === 'string') {
-        // Deliver as (data) or spread if array
-        if (Array.isArray(msg.data)) dispatch(msg.event, ...msg.data)
-        else dispatch(msg.event, msg.data)
+        // Always deliver the payload as a single argument.
+        // Note: Arrays (e.g., list of users) must remain arrays for handlers expecting one param.
+        dispatch(msg.event, msg.data)
       }
     } catch {}
   })
