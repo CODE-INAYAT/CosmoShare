@@ -26,8 +26,8 @@ type ReceiveCallbacks = {
 export const useWebRTC = (socket: any, roomNumber: string, callbacks: ReceiveCallbacks = {}) => {
   const [peers, setPeers] = useState<Map<string, SimplePeer.Instance>>(new Map())
   const peersRef = useRef<Map<string, SimplePeer.Instance>>(new Map())
-  // Receiver assembly buffers (store Uint8Array to avoid extra copies)
-  const recvState = useRef<Map<string, { meta?: any; buffers: (Uint8Array | ArrayBuffer)[]; received: number }>>(new Map())
+  // Receiver assembly buffers (store BlobPart to avoid extra copies)
+  const recvState = useRef<Map<string, { meta?: any; buffers: BlobPart[]; received: number }>>(new Map())
   // Sender in-flight state per peer
   const sendState = useRef<Map<string, { fileName: string; total: number; sent: number }>>(new Map())
   // Cache method per connected peer: PW-RTC | SW-RTC | TW-RTC
@@ -176,15 +176,7 @@ export const useWebRTC = (socket: any, roomNumber: string, callbacks: ReceiveCal
             case 'file-complete': {
               const state = recvState.current.get(targetId)
               if (state && state.meta) {
-                const parts: BlobPart[] = state.buffers.map((b) => {
-                  if (b instanceof Uint8Array) {
-                    const copy = new Uint8Array(b.byteLength)
-                    copy.set(b)
-                    return copy
-                  }
-                  return b
-                })
-                const blob = new Blob(parts, { type: state.meta.fileType })
+                const blob = new Blob(state.buffers as BlobPart[], { type: state.meta.fileType })
                 const url = URL.createObjectURL(blob)
                 callbacks.onFileComplete?.(targetId, url, state.meta)
                 recvState.current.delete(targetId)
@@ -232,15 +224,7 @@ export const useWebRTC = (socket: any, roomNumber: string, callbacks: ReceiveCal
               if (obj.type === 'file-complete') {
                 const state = recvState.current.get(targetId)
                 if (state && state.meta) {
-                  const parts: BlobPart[] = state.buffers.map((b) => {
-                    if (b instanceof Uint8Array) {
-                      const copy = new Uint8Array(b.byteLength)
-                      copy.set(b)
-                      return copy
-                    }
-                    return b
-                  })
-                  const blob = new Blob(parts, { type: state.meta.fileType })
+                  const blob = new Blob(state.buffers as BlobPart[], { type: state.meta.fileType })
                   const url = URL.createObjectURL(blob)
                   callbacks.onFileComplete?.(targetId, url, state.meta)
                   recvState.current.delete(targetId)
@@ -256,8 +240,8 @@ export const useWebRTC = (socket: any, roomNumber: string, callbacks: ReceiveCal
         }
         const state = recvState.current.get(targetId)
         if (state) {
-          // Avoid extra copies; store the Uint8Array directly
-          state.buffers.push(u8)
+          // Avoid extra copies; store the Uint8Array directly (BlobPart)
+          state.buffers.push(u8 as unknown as BlobPart)
           state.received += u8.byteLength
           callbacks.onFileChunk?.(targetId, state.received, state.meta?.fileSize || 0)
         }
@@ -369,10 +353,10 @@ export const useWebRTC = (socket: any, roomNumber: string, callbacks: ReceiveCal
       peer.send(JSON.stringify(meta))
     } catch {}
 
-  // Adaptive chunk size per connection type (mobile-friendly defaults)
-  let chunkSize = 16 * 1024
-  if (method === 'PW-RTC') chunkSize = 32 * 1024
-  if (method === 'TW-RTC') chunkSize = 12 * 1024
+  // Adaptive chunk size per connection type (32 = SW-RTC) 
+  let chunkSize = 32 * 1024
+  if (method === 'PW-RTC') chunkSize = 60 * 1024
+  if (method === 'TW-RTC') chunkSize = 16 * 1024
     let offset = 0
     callbacks.onSendStart?.(targetId, file.name, file.size)
   sendState.current.set(targetId, { fileName: file.name, total: file.size, sent: 0 })
