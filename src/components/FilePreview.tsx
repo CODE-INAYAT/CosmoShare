@@ -31,6 +31,7 @@ interface FilePreviewProps {
     fileSize: number
     fileType: string
     fileData?: string
+    fileUrl?: string
     isLink: boolean
     linkUrl?: string
     message?: string
@@ -102,8 +103,11 @@ export default function FilePreview({ file, senderName, senderUniqueId, recipien
       } else {
         setPreviewUrl(file.linkUrl)
       }
+    } else if (file.fileUrl) {
+      // We already have a blob/object URL
+      setPreviewUrl(file.fileUrl)
     } else if (file.fileData) {
-      // For base64 encoded files, create a blob URL
+      // Backward-compat: base64 encoded file -> create a blob URL
       try {
         const byteCharacters = atob(file.fileData.split(',')[1])
         const byteNumbers = new Array(byteCharacters.length)
@@ -114,7 +118,6 @@ export default function FilePreview({ file, senderName, senderUniqueId, recipien
         const blob = new Blob([byteArray], { type: file.fileType })
         const url = URL.createObjectURL(blob)
         setPreviewUrl(url)
-        
         return () => {
           URL.revokeObjectURL(url)
         }
@@ -127,9 +130,9 @@ export default function FilePreview({ file, senderName, senderUniqueId, recipien
   const handleDownload = () => {
     if (file.isLink && file.linkUrl) {
       window.open(file.linkUrl, '_blank')
-    } else if (file.fileData) {
+    } else if (file.fileUrl || file.fileData) {
       const link = document.createElement('a')
-      link.href = file.fileData
+      link.href = file.fileUrl || file.fileData!
       link.download = file.fileName
       document.body.appendChild(link)
       link.click()

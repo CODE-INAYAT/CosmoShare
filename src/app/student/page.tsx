@@ -54,6 +54,7 @@ interface FileShare {
   fileSize: number
   fileType: string
   fileData?: string
+  fileUrl?: string
   isLink: boolean
   linkUrl?: string
   message?: string
@@ -122,6 +123,8 @@ function StudentDashboardInner() {
     setUploadProgress(pct)
   }
 
+  const blobUrlsRef = useRef<Set<string>>(new Set())
+
   const webrtc = useWebRTC(socketState, userData?.roomNumber || '', {
     onFileMetadata: (fromId, meta) => {
       const key = `${fromId}:${meta.fileName}:${meta.fileSize}`
@@ -143,7 +146,7 @@ function StudentDashboardInner() {
         return next
       })
     },
-  onFileComplete: (fromId, fileBase64, meta) => {
+  onFileComplete: (fromId, fileUrl, meta) => {
       const key = `${fromId}:${meta.fileName}:${meta.fileSize}`
       setRecvProgress(prev => {
         const { [key]: _, ...rest } = prev
@@ -152,12 +155,14 @@ function StudentDashboardInner() {
   const sender = onlineUsers.find(u => u.id === fromId)
   const senderName = (meta as any)?.senderName || sender?.name || (fromId === adminId ? `Lab Admin (Room ${adminRoom || userData?.roomNumber || ''})` : 'Unknown')
   const senderUniqueId = (meta as any)?.senderUniqueId || sender?.uniqueId || (fromId === adminId ? 'ADMIN' : '')
+      // Track blob URL for cleanup
+      try { if (fileUrl?.startsWith('blob:')) blobUrlsRef.current.add(fileUrl) } catch {}
       setReceivedFiles(prev => [{
         id: Date.now().toString() + Math.random(),
         fileName: meta.fileName,
         fileSize: meta.fileSize,
         fileType: meta.fileType,
-        fileData: fileBase64,
+        fileUrl: fileUrl,
         isLink: false,
         message: meta.message,
         allowReshare: (meta as any)?.allowReshare ?? true,
@@ -259,6 +264,15 @@ function StudentDashboardInner() {
   }, [searchParams])
 
   // No local/session storage: keep history/UI only in memory for this session
+  // Cleanup blob URLs on unmount
+  useEffect(() => {
+    return () => {
+      try {
+        blobUrlsRef.current.forEach((u) => { try { URL.revokeObjectURL(u) } catch {} })
+        blobUrlsRef.current.clear()
+      } catch {}
+    }
+  }, [])
 
   const initializeSocket = (user: any, roomNumber: string) => {
     // Initialize socket connection
@@ -406,13 +420,14 @@ function StudentDashboardInner() {
 
       // Handle file uploads
       for (const file of selectedFiles) {
-        const fileData = await readFileAsBase64(file)
+        const fileUrlLocal = URL.createObjectURL(file)
+        try { blobUrlsRef.current.add(fileUrlLocal) } catch {}
         filesToShare.push({
           id: Date.now().toString() + Math.random(),
           fileName: file.name,
           fileSize: file.size,
           fileType: file.type,
-          fileData,
+          fileUrl: fileUrlLocal,
           isLink: false,
           message,
           allowReshare,
@@ -534,6 +549,7 @@ function StudentDashboardInner() {
     performShare(online, isPrintRequest)
   }
 
+  // Legacy helper kept for compatibility if needed
   const readFileAsBase64 = (file: File): Promise<string> => {
     return new Promise((resolve, reject) => {
       const reader = new FileReader()
@@ -556,23 +572,31 @@ function StudentDashboardInner() {
   }
 
   // Reshare: bring user to Share tab and prefill file/link
-  const handleResharePrefill = async (item: { fileName: string; fileType: string; fileSize: number; fileData?: string; linkUrl?: string }) => {
+  const handleResharePrefill = async (item: { fileName: string; fileType: string; fileSize: number; fileData?: string; fileUrl?: string; linkUrl?: string }) => {
     setActiveTab('share')
     if (item.linkUrl) {
       setShareMode('links')
       setLinkUrl(item.linkUrl)
-    } else if (item.fileData) {
+    } else if (item.fileUrl || item.fileData) {
       try {
         setShareMode('files')
-        // Convert dataURL back to File
-        const base64 = item.fileData
-        const arr = base64.split(',')
-        const mime = arr[0].match(/:(.*?);/)?.[1] || item.fileType
-        const bstr = atob(arr[1])
-        let n = bstr.length
-        const u8arr = new Uint8Array(n)
-        while (n--) u8arr[n] = bstr.charCodeAt(n)
-        const f = new File([u8arr], item.fileName, { type: mime })
+        let blob: Blob
+        if (item.fileUrl) {
+          // Fetch blob from object URL
+          const resp = await fetch(item.fileUrl)
+          blob = await resp.blob()
+        } else {
+          // Convert dataURL back to Blob
+          const base64 = item.fileData as string
+          const arr = base64.split(',')
+          const mime = arr[0].match(/:(.*?);/)?.[1] || item.fileType
+          const bstr = atob(arr[1])
+          let n = bstr.length
+          const u8arr = new Uint8Array(n)
+          while (n--) u8arr[n] = bstr.charCodeAt(n)
+          blob = new Blob([u8arr], { type: mime })
+        }
+        const f = new File([blob], item.fileName, { type: item.fileType })
         setSelectedFiles([f])
       } catch (e) {
         console.error('Failed to prefill file for reshare:', e)

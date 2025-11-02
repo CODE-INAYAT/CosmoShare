@@ -26,8 +26,8 @@ type ReceiveCallbacks = {
 export const useWebRTC = (socket: any, roomNumber: string, callbacks: ReceiveCallbacks = {}) => {
   const [peers, setPeers] = useState<Map<string, SimplePeer.Instance>>(new Map())
   const peersRef = useRef<Map<string, SimplePeer.Instance>>(new Map())
-  // Receiver assembly buffers
-  const recvState = useRef<Map<string, { meta?: any; buffers: ArrayBuffer[]; received: number }>>(new Map())
+  // Receiver assembly buffers (store Uint8Array to avoid extra copies)
+  const recvState = useRef<Map<string, { meta?: any; buffers: (Uint8Array | ArrayBuffer)[]; received: number }>>(new Map())
   // Sender in-flight state per peer
   const sendState = useRef<Map<string, { fileName: string; total: number; sent: number }>>(new Map())
   // Cache method per connected peer: PW-RTC | SW-RTC | TW-RTC
@@ -148,10 +148,22 @@ export const useWebRTC = (socket: any, roomNumber: string, callbacks: ReceiveCal
         const method = await getPeerMethod(targetId)
         peerMethodRef.current.set(targetId, method)
       }, 0)
+
+      // Tune underlying RTCDataChannel for binary throughput on mobile
+      try {
+        const ch: any = (peer as any)?._channel || (peer as any)?.channel || (peer as any)?.dataChannel
+        if (ch) {
+          // Prefer ArrayBuffer to avoid Blob/TypedArray conversions
+          try { ch.binaryType = 'arraybuffer' } catch {}
+          // Set a reasonable low threshold so 'bufferedamountlow' fires earlier
+          // Mobile browsers benefit from smaller thresholds
+          try { ch.bufferedAmountLowThreshold = 64 * 1024 } catch {}
+        }
+      } catch {}
     })
 
     peer.on('data', async (data: any) => {
-      // Try to parse control frames as JSON
+      // Control frames: primarily strings, but some browsers can deliver as UTF-8 bytes.
       if (typeof data === 'string') {
         try {
           const obj = JSON.parse(data)
@@ -164,13 +176,17 @@ export const useWebRTC = (socket: any, roomNumber: string, callbacks: ReceiveCal
             case 'file-complete': {
               const state = recvState.current.get(targetId)
               if (state && state.meta) {
-                const blob = new Blob(state.buffers, { type: state.meta.fileType })
-                const reader = new FileReader()
-                reader.onload = () => {
-                  const base64 = reader.result as string
-                  callbacks.onFileComplete?.(targetId, base64, state.meta)
-                }
-                reader.readAsDataURL(blob)
+                const parts: BlobPart[] = state.buffers.map((b) => {
+                  if (b instanceof Uint8Array) {
+                    const copy = new Uint8Array(b.byteLength)
+                    copy.set(b)
+                    return copy
+                  }
+                  return b
+                })
+                const blob = new Blob(parts, { type: state.meta.fileType })
+                const url = URL.createObjectURL(blob)
+                callbacks.onFileComplete?.(targetId, url, state.meta)
                 recvState.current.delete(targetId)
               }
               return
@@ -183,42 +199,11 @@ export const useWebRTC = (socket: any, roomNumber: string, callbacks: ReceiveCal
               return
           }
         } catch {
-          // not JSON; continue
-        }
-      } else if (ArrayBuffer.isView(data)) {
-        // Sometimes control arrives as typed array of text; attempt parse
-        try {
-          const text = new TextDecoder().decode(data as Uint8Array)
-          const obj = JSON.parse(text)
-          if (obj && obj.type) {
-            if (obj.type === 'file-metadata') {
-              recvState.current.set(targetId, { meta: obj, buffers: [], received: 0 })
-              callbacks.onFileMetadata?.(targetId, obj)
-              return
-            }
-            if (obj.type === 'file-complete') {
-              const state = recvState.current.get(targetId)
-              if (state && state.meta) {
-                const blob = new Blob(state.buffers, { type: state.meta.fileType })
-                const reader = new FileReader()
-                reader.onload = () => {
-                  const base64 = reader.result as string
-                  callbacks.onFileComplete?.(targetId, base64, state.meta)
-                }
-                reader.readAsDataURL(blob)
-                recvState.current.delete(targetId)
-              }
-              return
-            }
-            if (obj.type === 'message') { callbacks.onMessage?.(targetId, obj.message); return }
-            if (obj.type === 'link') { callbacks.onLink?.(targetId, obj.linkUrl, obj.message, { name: obj.senderName, uniqueId: obj.senderUniqueId, allowReshare: obj.allowReshare }); return }
-          }
-        } catch {
-          // fallthrough to binary handling
+          // ignore malformed control frames
         }
       }
 
-      // Binary chunk path
+      // Binary chunk path (ArrayBuffer, TypedArray, or Blob). Heuristic decode for small JSON control frames.
       let u8: Uint8Array | null = null
       if (data instanceof ArrayBuffer) {
         u8 = new Uint8Array(data)
@@ -231,15 +216,48 @@ export const useWebRTC = (socket: any, roomNumber: string, callbacks: ReceiveCal
       }
 
       if (u8) {
+        // If it looks like a small JSON control frame (starts with '{' or '['), try to parse as control
+        const firstByte = u8.byteLength > 0 ? u8[0] : 0
+        const looksJson = (firstByte === 0x7b /* '{' */ || firstByte === 0x5b /* '[' */)
+        if (looksJson && u8.byteLength <= 8 * 1024) {
+          try {
+            const text = new TextDecoder().decode(u8)
+            const obj = JSON.parse(text)
+            if (obj && obj.type) {
+              if (obj.type === 'file-metadata') {
+                recvState.current.set(targetId, { meta: obj, buffers: [], received: 0 })
+                callbacks.onFileMetadata?.(targetId, obj)
+                return
+              }
+              if (obj.type === 'file-complete') {
+                const state = recvState.current.get(targetId)
+                if (state && state.meta) {
+                  const parts: BlobPart[] = state.buffers.map((b) => {
+                    if (b instanceof Uint8Array) {
+                      const copy = new Uint8Array(b.byteLength)
+                      copy.set(b)
+                      return copy
+                    }
+                    return b
+                  })
+                  const blob = new Blob(parts, { type: state.meta.fileType })
+                  const url = URL.createObjectURL(blob)
+                  callbacks.onFileComplete?.(targetId, url, state.meta)
+                  recvState.current.delete(targetId)
+                }
+                return
+              }
+              if (obj.type === 'message') { callbacks.onMessage?.(targetId, obj.message); return }
+              if (obj.type === 'link') { callbacks.onLink?.(targetId, obj.linkUrl, obj.message, { name: obj.senderName, uniqueId: obj.senderUniqueId, allowReshare: obj.allowReshare }); return }
+            }
+          } catch {
+            // fall through to binary handling
+          }
+        }
         const state = recvState.current.get(targetId)
         if (state) {
-          let raw = u8.buffer.slice(u8.byteOffset, u8.byteOffset + u8.byteLength)
-          if (!(raw instanceof ArrayBuffer)) {
-            const copy = new Uint8Array(u8.byteLength)
-            copy.set(u8)
-            raw = copy.buffer
-          }
-          state.buffers.push(raw as ArrayBuffer)
+          // Avoid extra copies; store the Uint8Array directly
+          state.buffers.push(u8)
           state.received += u8.byteLength
           callbacks.onFileChunk?.(targetId, state.received, state.meta?.fileSize || 0)
         }
@@ -351,17 +369,18 @@ export const useWebRTC = (socket: any, roomNumber: string, callbacks: ReceiveCal
       peer.send(JSON.stringify(meta))
     } catch {}
 
-  const chunkSize = 16 * 1024 // 16KB for better compatibility
+  // Adaptive chunk size per connection type (mobile-friendly defaults)
+  let chunkSize = 16 * 1024
+  if (method === 'PW-RTC') chunkSize = 32 * 1024
+  if (method === 'TW-RTC') chunkSize = 12 * 1024
     let offset = 0
     callbacks.onSendStart?.(targetId, file.name, file.size)
   sendState.current.set(targetId, { fileName: file.name, total: file.size, sent: 0 })
 
-    const readSlice = (start: number, end: number) => new Promise<ArrayBuffer>((resolve, reject) => {
-      const reader = new FileReader()
-      reader.onerror = reject
-      reader.onload = () => resolve(reader.result as ArrayBuffer)
-      reader.readAsArrayBuffer(file.slice(start, end))
-    })
+    const readSlice = async (start: number, end: number): Promise<ArrayBuffer> => {
+      // Use Blob.arrayBuffer() to avoid FileReader overhead on mobile
+      return await file.slice(start, end).arrayBuffer()
+    }
 
     while (offset < file.size) {
       if (peer.destroyed || !(peer as any).connected) {
@@ -379,9 +398,31 @@ export const useWebRTC = (socket: any, roomNumber: string, callbacks: ReceiveCal
         // Likely channel closing mid-send; exit loop
         break
       }
+      // Honor stream backpressure via simple-peer 'drain'
       if (ok === false && (peer as any).once) {
         await new Promise<void>(res => (peer as any).once('drain', () => res()))
       }
+      // Additional RTCDataChannel backpressure for mobile devices with robust fallback
+      try {
+        const ch: any = (peer as any)?._channel || (peer as any)?.channel || (peer as any)?.dataChannel
+        if (ch && typeof ch.bufferedAmount === 'number') {
+          const MAX_BUFFER = 512 * 1024 // 512KB cap for mobile
+          const LOW_WATER = 256 * 1024
+          if (ch.bufferedAmount > MAX_BUFFER) {
+            try { if (!ch.bufferedAmountLowThreshold || ch.bufferedAmountLowThreshold > LOW_WATER) ch.bufferedAmountLowThreshold = LOW_WATER } catch {}
+            // Wait using both event and polling with timeout to avoid hangs on browsers not firing the event
+            await new Promise<void>((resolve) => {
+              let done = false
+              const clearAll = () => { done = true; try { ch.removeEventListener?.('bufferedamountlow', onLow as any) } catch {} ; try { clearInterval(timer) } catch {} ; try { clearTimeout(tmo) } catch {} }
+              const onLow = () => { if (done) return; clearAll(); resolve() }
+              const poll = () => { if (done) return; if (ch.bufferedAmount <= LOW_WATER) { clearAll(); resolve() } }
+              let timer: any = setInterval(poll, 50)
+              let tmo: any = setTimeout(() => { if (done) return; clearAll(); resolve() }, 2000)
+              try { ch.addEventListener?.('bufferedamountlow', onLow as any, { once: true }) } catch {}
+            })
+          }
+        }
+      } catch {}
       offset = next
       callbacks.onSendProgress?.(targetId, file.name, offset, file.size)
       const s = sendState.current.get(targetId)
