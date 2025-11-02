@@ -290,13 +290,21 @@ function StudentDashboardInner() {
     socketRef.current = socket
     setSocketState(socket)
 
+    let presenceTimer: any = null
+
     socket.on('connect', () => {
       setIsConnected(true)
       socket.emit('join-room', { roomNumber, user })
+      // Periodically request fresh roster to purge stale users server-side
+      try { if (presenceTimer) clearInterval(presenceTimer) } catch {}
+      presenceTimer = setInterval(() => {
+        try { socket.emit('get-room-users', { roomNumber }) } catch {}
+      }, 20000)
     })
 
     socket.on('disconnect', () => {
       setIsConnected(false)
+      try { if (presenceTimer) clearInterval(presenceTimer); presenceTimer = null } catch {}
     })
 
     socket.on('room-users', (users: User[]) => {
@@ -324,17 +332,6 @@ function StudentDashboardInner() {
     socket.on('user-left', (user: User) => {
       const key = (user as any).logicalId || user.uniqueId || user.id
       setOnlineUsers(prev => prev.filter(u => ((u as any).logicalId || u.uniqueId || u.id) !== key))
-    })
-
-    // Server-driven presence snapshot (alarm-based). Semantics match 'room-users'.
-    socket.on('presence-snapshot', (users: User[]) => {
-      const filtered = users.filter(u => (u as any).uniqueId !== 'ADMIN' && u.id !== adminId)
-      const byKey: Record<string, User> = {}
-      for (const u of filtered) {
-        const key = (u as any).logicalId || u.uniqueId || u.id
-        byKey[key] = u as any
-      }
-      setOnlineUsers(Object.values(byKey))
     })
 
     // Admin presence
