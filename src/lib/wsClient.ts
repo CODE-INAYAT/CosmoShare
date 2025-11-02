@@ -25,8 +25,14 @@ export function connectSignaling(baseUrl: string): SocketLike {
   const handlers = new Map<string, Set<Handler>>()
   const onceHandlers = new Map<string, Set<Handler>>()
   let isConnected = false
+  let heartbeatTimer: any = null
+  let lastActivity = Date.now()
+  const HEARTBEAT_ACTIVE_MS = 30_000 // 30s when tab visible
+  const HEARTBEAT_BG_MS = 60_000 // 60s when tab hidden
 
   const dispatch = (event: string, ...args: any[]) => {
+    // Mark inbound activity so idle-only heartbeat can skip sending
+    lastActivity = Date.now()
     const hs = handlers.get(event)
     if (hs) hs.forEach((h) => {
       try { h(...args) } catch {}
@@ -40,13 +46,33 @@ export function connectSignaling(baseUrl: string): SocketLike {
     }
   }
 
+  const clearHeartbeat = () => {
+    try { if (heartbeatTimer) clearInterval(heartbeatTimer) } catch {}
+    heartbeatTimer = null
+  }
+
+  const scheduleHeartbeat = () => {
+    clearHeartbeat()
+    const interval = (typeof document !== 'undefined' && document.visibilityState === 'visible') ? HEARTBEAT_ACTIVE_MS : HEARTBEAT_BG_MS
+    heartbeatTimer = setInterval(() => {
+      if (ws.readyState !== WebSocket.OPEN) return
+      const idleFor = Date.now() - lastActivity
+      if (idleFor >= interval - 500) {
+        try { ws.send(JSON.stringify({ event: 'heartbeat', data: {} })) } catch {}
+      }
+    }, interval)
+  }
+
   ws.addEventListener('open', () => {
     isConnected = true
     dispatch('connect')
+    // Start adaptive idle-only heartbeat
+    scheduleHeartbeat()
   })
   ws.addEventListener('close', () => {
     isConnected = false
     dispatch('disconnect')
+    clearHeartbeat()
   })
   ws.addEventListener('error', () => {
     dispatch('connect_error')
@@ -61,6 +87,13 @@ export function connectSignaling(baseUrl: string): SocketLike {
       }
     } catch {}
   })
+
+  if (typeof document !== 'undefined') {
+    document.addEventListener('visibilitychange', () => {
+      if (!isConnected) return
+      scheduleHeartbeat()
+    })
+  }
 
   const api: SocketLike = {
     on: (event, handler) => {
@@ -77,10 +110,14 @@ export function connectSignaling(baseUrl: string): SocketLike {
       onceHandlers.get(event)?.delete(handler)
     },
     emit: (event, data) => {
-      try { ws.send(JSON.stringify({ event, data })) } catch {}
+      try {
+        ws.send(JSON.stringify({ event, data }))
+        lastActivity = Date.now()
+      } catch {}
     },
     disconnect: () => {
       try { ws.close() } catch {}
+      clearHeartbeat()
     },
     get connected() {
       return isConnected && ws.readyState === WebSocket.OPEN

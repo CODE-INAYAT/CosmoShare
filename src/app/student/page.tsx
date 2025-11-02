@@ -326,12 +326,26 @@ function StudentDashboardInner() {
       setOnlineUsers(prev => prev.filter(u => ((u as any).logicalId || u.uniqueId || u.id) !== key))
     })
 
+    // Server-driven presence snapshot (alarm-based). Semantics match 'room-users'.
+    socket.on('presence-snapshot', (users: User[]) => {
+      const filtered = users.filter(u => (u as any).uniqueId !== 'ADMIN' && u.id !== adminId)
+      const byKey: Record<string, User> = {}
+      for (const u of filtered) {
+        const key = (u as any).logicalId || u.uniqueId || u.id
+        byKey[key] = u as any
+      }
+      setOnlineUsers(Object.values(byKey))
+    })
+
     // Admin presence
     socket.on('admin-online', (data: { adminId: string; roomNumber: string }) => {
       setAdminId(data.adminId)
       setAdminRoom(data.roomNumber)
     })
     socket.on('admin-offline', () => { setAdminId(null); setAdminRoom(null) })
+
+    // Safety: clear presence timer on unmount of this initializer lifecycle
+    // Note: this function is not a React effect; ensure timers cleared on disconnect above
   }
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
