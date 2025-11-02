@@ -11,7 +11,8 @@
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
     "postinstall": "prisma generate",
-    "db:reset": "prisma migrate reset"
+    "db:reset": "prisma migrate reset",
+    "loadtest": "node scripts/loadtest.mjs"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
@@ -102,6 +103,7 @@
     "nodemon": "^3.1.10",
     "tailwindcss": "^4",
     "tw-animate-css": "^1.3.5",
-    "typescript": "^5"
+    "typescript": "^5",
+    "ws": "^8.17.0"
   }
 }
