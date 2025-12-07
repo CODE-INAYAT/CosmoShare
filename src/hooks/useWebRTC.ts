@@ -4,19 +4,18 @@ import { useEffect, useRef, useState } from 'react'
 import SimplePeer from 'simple-peer'
 
 type ReceiveCallbacks = {
-  onFileMetadata?: (fromId: string, meta: { fileName: string; fileSize: number; fileType: string; message?: string; senderName?: string; senderUniqueId?: string; allowReshare?: boolean }) => void
+  onFileMetadata?: (fromId: string, meta: { fileName: string; fileSize: number; fileType: string; message?: string; senderName?: string; senderUniqueId?: string; allowReshare?: boolean; fileId?: string }) => void
   onFileChunk?: (fromId: string, receivedBytes: number, total: number) => void
-  onFileComplete?: (fromId: string, fileBase64: string, meta: { fileName: string; fileSize: number; fileType: string; message?: string; senderName?: string; senderUniqueId?: string; allowReshare?: boolean }) => void
+  onFileComplete?: (fromId: string, fileBase64: string, meta: { fileName: string; fileSize: number; fileType: string; message?: string; senderName?: string; senderUniqueId?: string; allowReshare?: boolean; fileId?: string }) => void
   onMessage?: (fromId: string, message: string) => void
   onLink?: (
     fromId: string,
     linkUrl: string,
     message?: string,
-    sender?: { name?: string; uniqueId?: string; allowReshare?: boolean }
+    sender?: { name?: string; uniqueId?: string; allowReshare?: boolean; fileId?: string }
   ) => void
   onConnect?: (peerId: string) => void
   onClose?: (peerId: string) => void
-  // Sender-side progress
   onSendStart?: (targetId: string, fileName: string, totalBytes: number) => void
   onSendProgress?: (targetId: string, fileName: string, sentBytes: number, totalBytes: number) => void
   onSendComplete?: (targetId: string, fileName: string) => void
@@ -311,7 +310,7 @@ export const useWebRTC = (socket: any, roomNumber: string, callbacks: ReceiveCal
     if (peer) peer.signal(candidate)
   }
 
-  const sendFile = async (targetId: string, file: File, metadata?: { message?: string; senderName?: string; senderUniqueId?: string; allowReshare?: boolean }): Promise<'PW-RTC' | 'SW-RTC' | 'TW-RTC' | 'PW-RTC-F' | void> => {
+  const sendFile = async (targetId: string, file: File, metadata?: { message?: string; senderName?: string; senderUniqueId?: string; allowReshare?: boolean; fileId?: string }): Promise<'PW-RTC' | 'SW-RTC' | 'TW-RTC' | 'PW-RTC-F' | void> => {
     let peer = peersRef.current.get(targetId)
     if (!peer) {
       peer = createPeer(targetId, true)
@@ -347,6 +346,7 @@ export const useWebRTC = (socket: any, roomNumber: string, callbacks: ReceiveCal
       senderName: metadata?.senderName,
       senderUniqueId: metadata?.senderUniqueId,
       allowReshare: metadata?.allowReshare,
+      fileId: metadata?.fileId,
       method,
     }
     try {
@@ -449,7 +449,8 @@ export const useWebRTC = (socket: any, roomNumber: string, callbacks: ReceiveCal
     linkUrl: string,
     message?: string,
     sender?: { name?: string; uniqueId?: string },
-    allowReshare?: boolean
+    allowReshare?: boolean,
+    fileId?: string
   ): Promise<'PW-RTC' | 'SW-RTC' | 'TW-RTC' | 'PW-RTC-F' | void> => {
     const peer = peersRef.current.get(targetId)
     if (!peer || peer.destroyed) return
@@ -461,8 +462,8 @@ export const useWebRTC = (socket: any, roomNumber: string, callbacks: ReceiveCal
     }
     if (!peer.destroyed && (peer as any).connected) {
       try {
-  const method = await getPeerMethod(targetId)
-        peer.send(JSON.stringify({ type: 'link', linkUrl, message, senderName: sender?.name, senderUniqueId: sender?.uniqueId, allowReshare, method }))
+        const method = await getPeerMethod(targetId)
+        peer.send(JSON.stringify({ type: 'link', linkUrl, message, senderName: sender?.name, senderUniqueId: sender?.uniqueId, allowReshare, method, fileId }))
         return method
       } catch {}
     }

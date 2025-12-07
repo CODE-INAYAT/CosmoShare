@@ -1,6 +1,7 @@
 "use client"
 export const runtime = 'edge'
 
+import { generateGradient } from '@/lib/avatarUtils'
 import { useState, useEffect, useRef, Suspense } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -9,36 +10,47 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
 import { Alert, AlertDescription } from '@/components/ui/alert'
-import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Progress } from '@/components/ui/progress'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Switch } from '@/components/ui/switch'
-import { 
-  Upload, 
-  Send, 
-  Users, 
-  Printer, 
-  FileText, 
-  Link, 
-  Wifi, 
+import {
+  Upload,
+  Send,
+  Users,
+  Printer,
+  FileText,
+  Link,
+  Wifi,
   WifiOff,
   Download,
+  ArrowDown,
   Eye,
   MessageSquare,
   Folder,
   X,
   Plus,
   Share2,
-  Search
+  Search,
+  Filter,
+  Check,
+  CheckCircle2,
+  Copy
 } from 'lucide-react'
 import { useSearchParams } from 'next/navigation'
 import { io } from 'socket.io-client'
 import { connectSignaling } from '@/lib/wsClient'
 import { useWebRTC } from '@/hooks/useWebRTC'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
+import { GoogleDocsIcon, GoogleSheetsIcon, GoogleSlidesIcon, GoogleDriveIcon } from '@/components/GoogleIcons'
 import { useDropzone } from 'react-dropzone'
 import FilePreview from '@/components/FilePreview'
 import LoadingSpinner from '@/components/LoadingSpinner'
+import { Virtuoso } from 'react-virtuoso'
+import { toast } from '@/hooks/use-toast'
+import { formatBytes } from '@/lib/utils'
+import { ToastAction } from '@/components/ui/toast'
 
 interface User {
   id: string
@@ -66,6 +78,7 @@ interface FileShare {
   senderUniqueId?: string
   recipients?: { id: string; name: string; uniqueId: string }[]
   method?: 'PW-RTC' | 'SW-RTC' | 'TW-RTC' | 'PW-RTC-F'
+  fileId?: string
   timestamp: Date
 }
 
@@ -86,6 +99,9 @@ function StudentDashboardInner() {
   const [sentFiles, setSentFiles] = useState<FileShare[]>([])
   const [isUploading, setIsUploading] = useState(false)
   const [uploadProgress, setUploadProgress] = useState(0)
+  const [googleWarningOpen, setGoogleWarningOpen] = useState(false)
+  const [googleLinkType, setGoogleLinkType] = useState<'docs' | 'sheets' | 'slides' | 'drive' | null>(null)
+  const [pendingShareIsPrint, setPendingShareIsPrint] = useState<boolean | null>(null)
   const socketRef = useRef<any>(null)
   const [socketState, setSocketState] = useState<any>(null)
   const [adminId, setAdminId] = useState<string | null>(null)
@@ -101,6 +117,8 @@ function StudentDashboardInner() {
   // Tabs control for programmatic switching (reshare flow)
   const [activeTab, setActiveTab] = useState<'share' | 'history' | 'users'>('share')
   const [shareMode, setShareMode] = useState<'files' | 'links'>('files')
+  // Nested File History sub-tab
+  const [historySubTab, setHistorySubTab] = useState<'received' | 'sent'>('received')
   // Preflight modal for offline recipients
   const [offlineModalOpen, setOfflineModalOpen] = useState(false)
   const [offlineUsersInfo, setOfflineUsersInfo] = useState<{ id: string; name: string; uniqueId: string }[]>([])
@@ -113,6 +131,165 @@ function StudentDashboardInner() {
   const sendingTargetsCountRef = useRef(0)
   // Cache recipient info at selection time for better labels even if they go offline
   const recipientInfoRef = useRef<Record<string, { name: string; uniqueId: string }>>({})
+  // Success + progress dialogs
+  const [successModalOpen, setSuccessModalOpen] = useState(false)
+  const [successInfo, setSuccessInfo] = useState<null | {
+    mode: 'sent' | 'received'
+    to: string
+    from: string
+    totalSize: string
+    totalFiles: number
+    totalLinks: number
+    recipients: { name: string; uniqueId: string }[]
+    senders?: { name: string; uniqueId: string }[]
+  }>(null)
+  const [showAllRecipients, setShowAllRecipients] = useState(false)
+  const [uiProgress, setUiProgress] = useState(0)
+  const uiProgressRef = useRef(0)
+  useEffect(() => { uiProgressRef.current = uiProgress }, [uiProgress])
+  const uploadStartAtRef = useRef<number | null>(null)
+  const [forceProgress, setForceProgress] = useState(false)
+  // Receiving speed dial state
+  const [receiveDialogOpen, setReceiveDialogOpen] = useState(false)
+  // Receiving counters for badge (received/total)
+  const [recvCounter, setRecvCounter] = useState<{ total: number; received: number }>({ total: 0, received: 0 })
+  // Track current receive batch items & senders
+  const receiveBatchItemsRef = useRef<any[]>([])
+  const receiveBatchSendersRef = useRef<Map<string, { name: string; uniqueId: string }>>(new Map())
+  // Gating state: defer received success modal until speed dial fully hides
+  const [receivedBatchCompletePending, setReceivedBatchCompletePending] = useState(false)
+  const receivedBatchCompleteTimerRef = useRef<any>(null)
+  // Track last receive-side activity to enforce an inactivity settle window
+  const lastRecvActivityAtRef = useRef<number>(0)
+  const noteRecvActivity = () => {
+    lastRecvActivityAtRef.current = Date.now()
+    // If a new activity occurs while a completion is pending, cancel the pending flag
+    // so that the summary will only show after the next true completion.
+    if (receivedBatchCompletePending) setReceivedBatchCompletePending(false)
+  }
+
+  // Ensure progress visibly reaches 100% before showing success
+  const ensureProgressComplete = async (minVisibleMs = 1200) => {
+    const startedAt = uploadStartAtRef.current || performance.now()
+    setForceProgress(true)
+    setIsUploading(true)
+    setUploadProgress(100)
+    return new Promise<void>((resolve) => {
+      const check = () => {
+        const elapsed = performance.now() - startedAt
+        const uiDone = uiProgressRef.current >= 99.8
+        if (elapsed >= minVisibleMs && uiDone) {
+          resolve()
+        } else {
+          requestAnimationFrame(check)
+        }
+      }
+      requestAnimationFrame(check)
+    })
+  }
+
+  // History: Received controls
+  const [rSearchQuery, setRSearchQuery] = useState('')
+  const [rDebouncedQuery, setRDebouncedQuery] = useState('')
+  const [rSortOrder, setRSortOrder] = useState<'newest' | 'oldest'>('newest')
+  const [rTypeFilter, setRTypeFilter] = useState<'all' | 'files' | 'links'>('all')
+  const [rSortMenuOpen, setRSortMenuOpen] = useState(false)
+  const [rIndex, setRIndex] = useState<Map<string, string>>(new Map())
+
+  // History: Sent controls
+  const [sSearchQuery, setSSearchQuery] = useState('')
+  const [sDebouncedQuery, setSDebouncedQuery] = useState('')
+  const [sSortOrder, setSSortOrder] = useState<'newest' | 'oldest'>('newest')
+  const [sTypeFilter, setSTypeFilter] = useState<'all' | 'files' | 'links'>('all')
+  const [sSortMenuOpen, setSSortMenuOpen] = useState(false)
+  const [sIndex, setSIndex] = useState<Map<string, string>>(new Map())
+
+  // Debouncers
+  useEffect(() => { const id = setTimeout(() => setRDebouncedQuery(rSearchQuery.trim().toLowerCase()), 200); return () => clearTimeout(id) }, [rSearchQuery])
+  useEffect(() => { const id = setTimeout(() => setSDebouncedQuery(sSearchQuery.trim().toLowerCase()), 200); return () => clearTimeout(id) }, [sSearchQuery])
+
+  // Build indices
+  useEffect(() => {
+    const idx = new Map<string, string>()
+    for (const it of receivedFiles) {
+      const text = [it.fileName, it.senderName || '', it.senderUniqueId || '', it.message || '', it.fileId || '']
+        .join(' ')
+        .toLowerCase()
+      idx.set(it.id, text)
+    }
+    setRIndex(idx)
+  }, [receivedFiles])
+  useEffect(() => {
+    const idx = new Map<string, string>()
+    for (const it of sentFiles) {
+      const recips = (it.recipients || []).map(r => `${r.name} ${r.uniqueId}`).join(' ')
+      const text = [it.fileName, recips, it.message || '', it.fileId || '']
+        .join(' ')
+        .toLowerCase()
+      idx.set(it.id, text)
+    }
+    setSIndex(idx)
+  }, [sentFiles])
+
+  const escapeRegExp = (s: string) => s.replace(/[.*+?^${}()|[\\]\\]/g, '\\$&')
+  const highlightWith = (query: string, text: string) => {
+    if (!query || !text) return text
+    try {
+      const re = new RegExp(`(${escapeRegExp(query)})`, 'ig')
+      const parts = text.split(re)
+      return parts.map((p, i) => i % 2 === 1
+        ? <mark key={i} className="bg-blue-200/60 dark:bg-blue-300/30 text-blue-900 dark:text-blue-50 rounded px-0.5 animate-in fade-in-0 duration-200">{p}</mark>
+        : <span key={i}>{p}</span>)
+    } catch {
+      return text
+    }
+  }
+
+  // Moved up so metrics can call it safely before declaration
+  const formatFileSize = (bytes: number) => {
+    if (bytes === 0) return '0 Bytes'
+    const k = 1024
+    const sizes = ['Bytes', 'KB', 'MB', 'GB']
+    const i = Math.floor(Math.log(bytes) / Math.log(k))
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
+  }
+
+  // ID helpers
+  const random5 = () => String(Math.floor(10000 + Math.random() * 90000))
+  const isGoogleDocs = (url?: string) => !!url && (url.includes('docs.google.com') || url.includes('drive.google.com'))
+  const makeFileId = (isLink: boolean, linkUrl?: string) => {
+    if (isLink) return (isGoogleDocs(linkUrl) ? 'D' : 'L') + random5()
+    return 'F' + random5()
+  }
+
+  const rProcessed = (() => {
+    let arr = receivedFiles
+    if (rTypeFilter === 'files') arr = arr.filter(a => !a.isLink)
+    else if (rTypeFilter === 'links') arr = arr.filter(a => a.isLink)
+    if (rDebouncedQuery) arr = arr.filter(a => (rIndex.get(a.id) || '').includes(rDebouncedQuery))
+    arr = arr.slice().sort((a, b) => rSortOrder === 'newest' ? +new Date(b.timestamp) - +new Date(a.timestamp) : +new Date(a.timestamp) - +new Date(b.timestamp))
+    return arr
+  })()
+
+  const sProcessed = (() => {
+    let arr = sentFiles
+    if (sTypeFilter === 'files') arr = arr.filter(a => !a.isLink)
+    else if (sTypeFilter === 'links') arr = arr.filter(a => a.isLink)
+    if (sDebouncedQuery) arr = arr.filter(a => (sIndex.get(a.id) || '').includes(sDebouncedQuery))
+    arr = arr.slice().sort((a, b) => sSortOrder === 'newest' ? +new Date(b.timestamp) - +new Date(a.timestamp) : +new Date(a.timestamp) - +new Date(b.timestamp))
+    return arr
+  })()
+
+  // Metrics for processed (visible) lists
+  const rFilesCount = rProcessed.filter(f => !f.isLink).length
+  const rLinksCount = rProcessed.filter(f => f.isLink).length
+  const rTotalSize = formatFileSize(rProcessed.reduce((sum, f) => sum + (f.isLink ? 0 : f.fileSize), 0))
+  const sFilesCount = sProcessed.filter(f => !f.isLink).length
+  const sLinksCount = sProcessed.filter(f => f.isLink).length
+  const sTotalSize = formatFileSize(sProcessed.reduce((sum, f) => sum + (f.isLink ? 0 : f.fileSize), 0))
+  // Active filter indicators (ignore search; only sort/type deviations)
+  const rHasActiveFilters = rSortOrder !== 'newest' || rTypeFilter !== 'all'
+  const sHasActiveFilters = sSortOrder !== 'newest' || sTypeFilter !== 'all'
 
   // Helper to update combined batch progress (files bytes + links as unit weight)
   const updateBatchProgress = () => {
@@ -122,11 +299,51 @@ function StudentDashboardInner() {
     const pct = Math.min(100, Math.round((numer / denom) * 100))
     setUploadProgress(pct)
   }
+  // Smooth progress for better UX on small files: continuous ramp towards true progress
+  useEffect(() => {
+    if (!isUploading && !forceProgress) return
+    let raf: number
+    let running = true
+    let last = performance.now()
+    const tick = (now?: number) => {
+      const t = now ?? performance.now()
+      const dt = Math.min(100, Math.max(0, t - last)) // cap dt to avoid jumps
+      last = t
+      setUiProgress(prev => {
+        // Never go backwards
+        const target = forceProgress ? 100 : Math.max(prev, uploadProgress)
+        const diff = target - prev
+        if (diff <= 0.05) return target
+        // Time-based easing: base speed + proportional gain
+        const basePerSec = 22 // minimum 22% per second
+        const gain = 3.0      // accelerates when far from target
+        const step = (basePerSec * (dt / 1000)) + diff * gain * (dt / 1000)
+        const next = Math.min(prev + step, target)
+        return Math.min(100, next)
+      })
+      if (running) raf = requestAnimationFrame(tick)
+    }
+    raf = requestAnimationFrame(tick)
+    return () => { running = false; try { cancelAnimationFrame(raf) } catch { } }
+  }, [isUploading, uploadProgress, forceProgress])
 
   const blobUrlsRef = useRef<Set<string>>(new Set())
+  // Recycle bin for undo (holds items briefly until permanent delete)
+  const recycleRef = useRef<Map<string, { item: FileShare; timer: any; list: 'received' | 'sent' }>>(new Map())
+  const UNDO_MS = 30000
 
   const webrtc = useWebRTC(socketState, userData?.roomNumber || '', {
     onFileMetadata: (fromId, meta) => {
+      noteRecvActivity()
+      // Count total incoming files for session badge
+      setRecvCounter(prev => {
+        // Initialize new batch if starting fresh
+        if (prev.total === 0 && prev.received === 0) {
+          receiveBatchItemsRef.current = []
+          receiveBatchSendersRef.current.clear()
+        }
+        return { ...prev, total: prev.total + 1 }
+      })
       const key = `${fromId}:${meta.fileName}:${meta.fileSize}`
       setRecvProgress(prev => ({
         ...prev,
@@ -134,6 +351,7 @@ function StudentDashboardInner() {
       }))
     },
     onFileChunk: (fromId, receivedBytes, total) => {
+      noteRecvActivity()
       // Update all entries from this sender that match total size
       setRecvProgress(prev => {
         const next = { ...prev }
@@ -146,17 +364,56 @@ function StudentDashboardInner() {
         return next
       })
     },
-  onFileComplete: (fromId, fileUrl, meta) => {
+    onFileComplete: (fromId, fileUrl, meta) => {
+      noteRecvActivity()
       const key = `${fromId}:${meta.fileName}:${meta.fileSize}`
       setRecvProgress(prev => {
         const { [key]: _, ...rest } = prev
         return rest
       })
-  const sender = onlineUsers.find(u => u.id === fromId)
-  const senderName = (meta as any)?.senderName || sender?.name || (fromId === adminId ? `Lab Admin (Room ${adminRoom || userData?.roomNumber || ''})` : 'Unknown')
-  const senderUniqueId = (meta as any)?.senderUniqueId || sender?.uniqueId || (fromId === adminId ? 'ADMIN' : '')
+      // Increment received count; when all reached, reset after a short delay
+      setRecvCounter(prev => {
+        const next = { total: prev.total, received: Math.min(prev.total, prev.received + 1) }
+        // Track this completed file for batch success summary
+        try {
+          receiveBatchItemsRef.current.push({ fileName: meta.fileName, fileSize: meta.fileSize, isLink: false })
+          const sender = onlineUsers.find(u => u.id === fromId)
+          const senderName = (meta as any)?.senderName || sender?.name || 'Unknown'
+          const senderUniqueId = (meta as any)?.senderUniqueId || sender?.uniqueId || ''
+          if (!receiveBatchSendersRef.current.has(fromId)) {
+            receiveBatchSendersRef.current.set(fromId, { name: senderName, uniqueId: senderUniqueId })
+          }
+        } catch { }
+        if (next.received >= next.total && next.total > 0) {
+          // Build & store summary, but defer showing modal until speed dial hides
+          const totalBytes = receiveBatchItemsRef.current.reduce((sum, f: any) => sum + (f.fileSize || 0), 0)
+          const totalFiles = receiveBatchItemsRef.current.filter(f => !f.isLink).length
+          const totalLinks = receiveBatchItemsRef.current.filter(f => f.isLink).length
+          const senders = Array.from(receiveBatchSendersRef.current.values())
+          const fromStr = senders.length === 1
+            ? `${senders[0].name} (${senders[0].uniqueId || '—'})`
+            : senders.slice(0, 3).map(s => `${s.name} (${s.uniqueId || '—'})`).join(', ') + (senders.length > 3 ? ` +${senders.length - 3} more` : '')
+          const toStr = `${userData?.name || 'You'} (${userData?.uniqueId || '—'}) (You)`
+          setSuccessInfo({
+            mode: 'received',
+            to: toStr,
+            from: fromStr,
+            totalSize: formatFileSize(totalBytes),
+            totalFiles,
+            totalLinks,
+            recipients: [{ name: userData?.name || 'You', uniqueId: userData?.uniqueId || '—' }],
+            senders: senders
+          })
+          // Flag pending completion; effect will open modal once speed dial auto-hides
+          setReceivedBatchCompletePending(true)
+        }
+        return next
+      })
+      const sender = onlineUsers.find(u => u.id === fromId)
+      const senderName = (meta as any)?.senderName || sender?.name || (fromId === adminId ? `Lab Admin (Room ${adminRoom || userData?.roomNumber || ''})` : 'Unknown')
+      const senderUniqueId = (meta as any)?.senderUniqueId || sender?.uniqueId || (fromId === adminId ? 'ADMIN' : '')
       // Track blob URL for cleanup
-      try { if (fileUrl?.startsWith('blob:')) blobUrlsRef.current.add(fileUrl) } catch {}
+      try { if (fileUrl?.startsWith('blob:')) blobUrlsRef.current.add(fileUrl) } catch { }
       setReceivedFiles(prev => [{
         id: Date.now().toString() + Math.random(),
         fileName: meta.fileName,
@@ -170,14 +427,18 @@ function StudentDashboardInner() {
         receiverId: userData?.id || '',
         senderName,
         senderUniqueId,
+        fileId: (meta as any)?.fileId || makeFileId(false),
         method: (meta as any)?.method,
         timestamp: new Date()
       }, ...prev])
     },
     onLink: (fromId, linkUrl, message, senderInfo) => {
+      noteRecvActivity()
       const sender = onlineUsers.find(u => u.id === fromId)
       const senderName = senderInfo?.name || sender?.name || (fromId === adminId ? `Lab Admin (Room ${adminRoom || userData?.roomNumber || ''})` : 'Unknown')
       const senderUniqueId = senderInfo?.uniqueId || sender?.uniqueId || (fromId === adminId ? 'ADMIN' : '')
+
+      // Add to history immediately
       setReceivedFiles(prev => [{
         id: Date.now().toString() + Math.random(),
         fileName: linkUrl,
@@ -191,9 +452,65 @@ function StudentDashboardInner() {
         receiverId: userData?.id || '',
         senderName,
         senderUniqueId,
+        fileId: (senderInfo as any)?.fileId || makeFileId(true, linkUrl),
         method: (senderInfo as any)?.method,
         timestamp: new Date()
       }, ...prev])
+
+      // Treat link as an instant progress item so the speed dial and dialog appear
+      const key = `${fromId}:link:${Date.now()}:${Math.random()}`
+      setRecvProgress(prev => ({
+        ...prev,
+        [key]: { fileName: linkUrl, fileType: 'link', total: 1, received: 1, fromId, message }
+      }))
+
+      // Initialize new batch if starting fresh and track for success summary
+      setRecvCounter(prev => {
+        if (prev.total === 0 && prev.received === 0) {
+          receiveBatchItemsRef.current = []
+          receiveBatchSendersRef.current.clear()
+        }
+        // Track this completed link for batch summary
+        try {
+          receiveBatchItemsRef.current.push({ fileName: linkUrl, fileSize: 0, isLink: true })
+          if (!receiveBatchSendersRef.current.has(fromId)) {
+            receiveBatchSendersRef.current.set(fromId, { name: senderName, uniqueId: senderUniqueId })
+          }
+        } catch { }
+
+        const next = { total: prev.total + 1, received: prev.received + 1 }
+        if (next.received >= next.total && next.total > 0) {
+          // Build & store summary, but defer showing modal until speed dial hides
+          const totalBytes = receiveBatchItemsRef.current.reduce((sum, f: any) => sum + (f.fileSize || 0), 0)
+          const totalFiles = receiveBatchItemsRef.current.filter(f => !f.isLink).length
+          const totalLinks = receiveBatchItemsRef.current.filter(f => f.isLink).length
+          const senders = Array.from(receiveBatchSendersRef.current.values())
+          const fromStr = senders.length === 1
+            ? `${senders[0].name} (${senders[0].uniqueId || '—'})`
+            : senders.slice(0, 3).map(s => `${s.name} (${s.uniqueId || '—'})`).join(', ') + (senders.length > 3 ? ` +${senders.length - 3} more` : '')
+          const toStr = `${userData?.name || 'You'} (${userData?.uniqueId || '—'}) (You)`
+          setSuccessInfo({
+            mode: 'received',
+            to: toStr,
+            from: fromStr,
+            totalSize: formatFileSize(totalBytes),
+            totalFiles,
+            totalLinks,
+            recipients: [{ name: userData?.name || 'You', uniqueId: userData?.uniqueId || '—' }],
+            senders: senders
+          })
+          setReceivedBatchCompletePending(true)
+        }
+        return next
+      })
+
+      // Hold the link entry briefly so the FAB/dialog are visible, then remove it
+      setTimeout(() => {
+        setRecvProgress(prev => {
+          const { [key]: _omit, ...rest } = prev
+          return rest
+        })
+      }, 700)
     },
     // Sender-side progress (aggregated across batch)
     onSendStart: (_to, _name, total) => {
@@ -247,6 +564,43 @@ function StudentDashboardInner() {
     }
   })
 
+  // Effect: when received batch is marked complete AND speed dial visibility condition becomes false, show success modal.
+  useEffect(() => {
+    if (!receivedBatchCompletePending) return
+    const speedDialVisible = (Object.keys(recvProgress).length > 0 || (recvCounter.total > 0 && recvCounter.received < recvCounter.total))
+    const settleMs = 800
+    const now = Date.now()
+    const sinceLast = now - (lastRecvActivityAtRef.current || 0)
+    const ready = !speedDialVisible && sinceLast >= settleMs && successInfo?.mode === 'received'
+
+    if (ready) {
+      setReceiveDialogOpen(false)
+      setSuccessModalOpen(true)
+      setReceivedBatchCompletePending(false)
+      setRecvCounter({ total: 0, received: 0 })
+      return
+    }
+
+    // Otherwise, wait for whichever condition isn't yet satisfied
+    if (receivedBatchCompleteTimerRef.current) clearTimeout(receivedBatchCompleteTimerRef.current)
+    const delay = Math.max(0, settleMs - sinceLast, 200)
+    receivedBatchCompleteTimerRef.current = setTimeout(() => {
+      const stillHidden = !(Object.keys(recvProgress).length > 0 || (recvCounter.total > 0 && recvCounter.received < recvCounter.total))
+      const inactive = (Date.now() - (lastRecvActivityAtRef.current || 0)) >= settleMs
+      if (receivedBatchCompletePending && stillHidden && inactive && successInfo?.mode === 'received') {
+        setReceiveDialogOpen(false)
+        setSuccessModalOpen(true)
+        setReceivedBatchCompletePending(false)
+        setRecvCounter({ total: 0, received: 0 })
+      }
+    }, delay)
+  }, [receivedBatchCompletePending, recvProgress, recvCounter, successInfo])
+
+  // Cleanup timer on unmount
+  useEffect(() => {
+    return () => { if (receivedBatchCompleteTimerRef.current) clearTimeout(receivedBatchCompleteTimerRef.current) }
+  }, [])
+
   useEffect(() => {
     const userParam = searchParams?.get('user')
     const roomParam = searchParams?.get('room')
@@ -268,11 +622,78 @@ function StudentDashboardInner() {
   useEffect(() => {
     return () => {
       try {
-        blobUrlsRef.current.forEach((u) => { try { URL.revokeObjectURL(u) } catch {} })
+        blobUrlsRef.current.forEach((u) => { try { URL.revokeObjectURL(u) } catch { } })
         blobUrlsRef.current.clear()
-      } catch {}
+      } catch { }
     }
   }, [])
+
+  // Delete with confirm is handled in FilePreview; here we implement Undo window and delayed revoke
+  const schedulePermanentDelete = (id: string, list: 'received' | 'sent', item: FileShare) => {
+    const timer = setTimeout(() => {
+      // Finalize: revoke object URL if applicable
+      try {
+        if (item?.fileUrl && item.fileUrl.startsWith('blob:')) {
+          URL.revokeObjectURL(item.fileUrl)
+          blobUrlsRef.current.delete(item.fileUrl)
+        }
+      } catch { }
+      recycleRef.current.delete(id)
+    }, UNDO_MS)
+    recycleRef.current.set(id, { item, timer, list })
+  }
+
+  const deleteReceived = (id: string) => {
+    let removed: FileShare | undefined
+    setReceivedFiles(prev => {
+      removed = prev.find(f => f.id === id)
+      return prev.filter(f => f.id !== id)
+    })
+    if (!removed) return
+    schedulePermanentDelete(id, 'received', removed)
+    let t: any
+    t = toast({
+      title: 'Item deleted',
+      description: 'You can undo this action for the next 30 seconds.',
+      action: (
+        <ToastAction altText="Undo delete" onClick={() => {
+          const rec = recycleRef.current.get(id)
+          if (rec) {
+            clearTimeout(rec.timer)
+            recycleRef.current.delete(id)
+            setReceivedFiles(prev => [rec.item, ...prev])
+          }
+          try { t?.dismiss?.() } catch { }
+        }}>Undo</ToastAction>
+      ),
+    })
+  }
+
+  const deleteSent = (id: string) => {
+    let removed: FileShare | undefined
+    setSentFiles(prev => {
+      removed = prev.find(f => f.id === id)
+      return prev.filter(f => f.id !== id)
+    })
+    if (!removed) return
+    schedulePermanentDelete(id, 'sent', removed)
+    let t: any
+    t = toast({
+      title: 'Item deleted',
+      description: 'You can undo this action for the next 30 seconds.',
+      action: (
+        <ToastAction altText="Undo delete" onClick={() => {
+          const rec = recycleRef.current.get(id)
+          if (rec) {
+            clearTimeout(rec.timer)
+            recycleRef.current.delete(id)
+            setSentFiles(prev => [rec.item, ...prev])
+          }
+          try { t?.dismiss?.() } catch { }
+        }}>Undo</ToastAction>
+      ),
+    })
+  }
 
   const initializeSocket = (user: any, roomNumber: string) => {
     // Initialize socket connection
@@ -296,15 +717,15 @@ function StudentDashboardInner() {
       setIsConnected(true)
       socket.emit('join-room', { roomNumber, user })
       // Periodically request fresh roster to purge stale users server-side
-      try { if (presenceTimer) clearInterval(presenceTimer) } catch {}
+      try { if (presenceTimer) clearInterval(presenceTimer) } catch { }
       presenceTimer = setInterval(() => {
-        try { socket.emit('get-room-users', { roomNumber }) } catch {}
+        try { socket.emit('get-room-users', { roomNumber }) } catch { }
       }, 20000)
     })
 
     socket.on('disconnect', () => {
       setIsConnected(false)
-      try { if (presenceTimer) clearInterval(presenceTimer); presenceTimer = null } catch {}
+      try { if (presenceTimer) clearInterval(presenceTimer); presenceTimer = null } catch { }
     })
 
     socket.on('room-users', (users: User[]) => {
@@ -355,7 +776,7 @@ function StudentDashboardInner() {
   // Handle browser back/navigation away: alert and disconnect to leave room
   useEffect(() => {
     const handleLeave = () => {
-      try { socketRef.current?.disconnect() } catch {}
+      try { socketRef.current?.disconnect() } catch { }
     }
     const handlePopState = () => {
       // Remove user instantly, then alert
@@ -411,13 +832,18 @@ function StudentDashboardInner() {
     if (batchTotalRef.current > 0 || linkCountRef.current > 0) {
       setIsUploading(true)
       setUploadProgress(0)
+      setUiProgress(0)
+      uploadStartAtRef.current = performance.now()
     }
+    // Reset previous success info
+    setSuccessInfo(null)
+    setSuccessModalOpen(false)
 
     try {
       const filesToShare: FileShare[] = []
-  // Track aggregate method across recipients: PW-RTC(-F) < SW-RTC < TW-RTC
-  const rank: Record<string, number> = { 'PW-RTC-F': 1, 'PW-RTC': 1, 'SW-RTC': 2, 'TW-RTC': 3 }
-  let aggregateMethod: 'PW-RTC' | 'SW-RTC' | 'TW-RTC' | 'PW-RTC-F' | undefined
+      // Track aggregate method across recipients: PW-RTC(-F) < SW-RTC < TW-RTC
+      const rank: Record<string, number> = { 'PW-RTC-F': 1, 'PW-RTC': 1, 'SW-RTC': 2, 'TW-RTC': 3 }
+      let aggregateMethod: 'PW-RTC' | 'SW-RTC' | 'TW-RTC' | 'PW-RTC-F' | undefined
 
       // Build recipients info for UI display based on targets
       const recipientsInfo: { id: string; name: string; uniqueId: string }[] = targets.map((tid) => {
@@ -432,7 +858,7 @@ function StudentDashboardInner() {
       // Handle file uploads
       for (const file of selectedFiles) {
         const fileUrlLocal = URL.createObjectURL(file)
-        try { blobUrlsRef.current.add(fileUrlLocal) } catch {}
+        try { blobUrlsRef.current.add(fileUrlLocal) } catch { }
         filesToShare.push({
           id: Date.now().toString() + Math.random(),
           fileName: file.name,
@@ -445,6 +871,7 @@ function StudentDashboardInner() {
           senderId: userData.id,
           receiverId: isPrintRequest ? 'admin' : 'multi',
           recipients: recipientsInfo,
+          fileId: makeFileId(false),
           timestamp: new Date()
         })
       }
@@ -463,6 +890,7 @@ function StudentDashboardInner() {
           senderId: userData.id,
           receiverId: isPrintRequest ? 'admin' : 'multi',
           recipients: recipientsInfo,
+          fileId: makeFileId(true, linkUrl),
           timestamp: new Date()
         })
       }
@@ -474,11 +902,11 @@ function StudentDashboardInner() {
           if (!entry.isLink) {
             const fileObj = selectedFiles.find(f => f.name === entry.fileName && f.size === entry.fileSize)
             if (fileObj) {
-              const m = await webrtc.sendFile(targetId, fileObj, { message: entry.message, senderName: userData.name, senderUniqueId: userData.uniqueId, allowReshare })
+              const m = await webrtc.sendFile(targetId, fileObj, { message: entry.message, senderName: userData.name, senderUniqueId: userData.uniqueId, allowReshare, fileId: entry.fileId })
               if (m && (!aggregateMethod || rank[m] > rank[aggregateMethod])) aggregateMethod = m
             }
           } else if (entry.isLink && entry.linkUrl) {
-            const m = await webrtc.sendLink(targetId, entry.linkUrl, entry.message, { name: userData.name, uniqueId: userData.uniqueId }, allowReshare)
+            const m = await webrtc.sendLink(targetId, entry.linkUrl, entry.message, { name: userData.name, uniqueId: userData.uniqueId }, allowReshare, entry.fileId)
             if (m && (!aggregateMethod || rank[m] > rank[aggregateMethod])) aggregateMethod = m
             linksCompletedRef.current += 1
             const doneBytes = batchCompletedRef.current >= batchTotalRef.current
@@ -505,6 +933,29 @@ function StudentDashboardInner() {
       setMessage('')
       setSelectedRecipients([])
       setAllowReshare(true)
+
+      // Prepare success feedback info
+      const totalBytes = filesToShare.filter(f => !f.isLink).reduce((sum, f) => sum + f.fileSize, 0)
+      const totalFiles = filesToShare.filter(f => !f.isLink).length
+      const totalLinks = filesToShare.filter(f => f.isLink).length
+      const recipientsInfoStr = (filesToShare[0]?.recipients || []).map(r => `${r.name} (${r.uniqueId})`).join(', ')
+      const fromInfo = `${userData.name} (${userData.uniqueId})`
+      setSuccessInfo({
+        mode: 'sent',
+        to: recipientsInfoStr || (isPrintRequest ? `Lab Admin (Room ${adminRoom || userData.roomNumber})` : '—'),
+        from: `${fromInfo} (You)`,
+        totalSize: formatFileSize(totalBytes),
+        totalFiles,
+        totalLinks,
+        recipients: (filesToShare[0]?.recipients || []).map(r => ({ name: r.name, uniqueId: r.uniqueId }))
+      })
+      // Ensure progress reaches 100% smoothly before showing success
+      await ensureProgressComplete(1200)
+      // End of progress & open success modal
+      resetUploadState()
+      setIsUploading(false)
+      setForceProgress(false)
+      setSuccessModalOpen(true)
     } catch (error) {
       console.error('Failed to share files:', error)
       resetUploadState()
@@ -518,8 +969,31 @@ function StudentDashboardInner() {
   }
 
   // Preflight: check recipients are online; show modal if some are offline
-  const preflightAndMaybeShare = (isPrintRequest: boolean) => {
+  const preflightAndMaybeShare = (isPrintRequest: boolean, bypassGoogleCheck = false) => {
     if (selectedFiles.length === 0 && !linkUrl) return
+
+    // Google Link Check
+    if (!bypassGoogleCheck && linkUrl) {
+      let type: 'docs' | 'sheets' | 'slides' | 'drive' | null = null
+      const lowerUrl = linkUrl.toLowerCase()
+
+      if (lowerUrl.includes('docs.google.com/spreadsheets') || lowerUrl.includes('sheets.google.com')) {
+        type = 'sheets'
+      } else if (lowerUrl.includes('docs.google.com/presentation') || lowerUrl.includes('slides.google.com')) {
+        type = 'slides'
+      } else if (lowerUrl.includes('docs.google.com/document') || lowerUrl.includes('docs.google.com')) {
+        type = 'docs'
+      } else if (lowerUrl.includes('drive.google.com')) {
+        type = 'drive'
+      }
+
+      if (type) {
+        setGoogleLinkType(type)
+        setPendingShareIsPrint(isPrintRequest)
+        setGoogleWarningOpen(true)
+        return
+      }
+    }
 
     // Determine intended recipients in selection form (keep 'admin' placeholder)
     const intended = isPrintRequest ? ['admin'] : selectedRecipients
@@ -570,13 +1044,6 @@ function StudentDashboardInner() {
     })
   }
 
-  const formatFileSize = (bytes: number) => {
-    if (bytes === 0) return '0 Bytes'
-    const k = 1024
-    const sizes = ['Bytes', 'KB', 'MB', 'GB']
-    const i = Math.floor(Math.log(bytes) / Math.log(k))
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
-  }
 
   const removeFile = (index: number) => {
     setSelectedFiles(prev => prev.filter((_, i) => i !== index))
@@ -635,11 +1102,9 @@ function StudentDashboardInner() {
         {/* Header */}
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center gap-4">
-            <Avatar className="w-12 h-12">
-              <AvatarFallback className="bg-blue-600 text-white">
-                {userData.name.charAt(0).toUpperCase()}
-              </AvatarFallback>
-            </Avatar>
+            <div className="w-12 h-12 rounded-full flex items-center justify-center text-white font-semibold text-xl" style={{ backgroundImage: generateGradient(userData.name) }}>
+              {userData.name.charAt(0).toUpperCase()}
+            </div>
             <div>
               <h1 className="text-2xl font-bold">{userData.name}</h1>
               <p className="text-gray-600">ID: {userData.uniqueId} | Room {userData.roomNumber}</p>
@@ -686,9 +1151,8 @@ function StudentDashboardInner() {
                     {/* Dropzone */}
                     <div
                       {...getRootProps()}
-                      className={`border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-colors ${
-                        isDragActive ? 'border-blue-500 bg-blue-50' : 'border-gray-300 hover:border-gray-400'
-                      }`}
+                      className={`border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-colors ${isDragActive ? 'border-blue-500 bg-blue-50' : 'border-gray-300 hover:border-gray-400'
+                        }`}
                     >
                       <input {...getInputProps()} />
                       <Upload className="w-12 h-12 mx-auto mb-4 text-gray-400" />
@@ -705,7 +1169,9 @@ function StudentDashboardInner() {
                     {/* Selected files below dropzone */}
                     {selectedFiles.length > 0 && (
                       <div className="space-y-2">
-                        <Label>Selected Files:</Label>
+                        <Label>
+                          {`Selected ${selectedFiles.length === 1 ? 'File' : 'Files'} (${selectedFiles.length} total, ${formatFileSize(selectedFiles.reduce((sum, f) => sum + f.size, 0))})`}
+                        </Label>
                         <div className="max-h-32 overflow-y-auto space-y-2">
                           {selectedFiles.map((file, index) => (
                             <div key={index} className="flex items-center justify-between p-2 bg-gray-50 rounded">
@@ -747,7 +1213,7 @@ function StudentDashboardInner() {
                       <Dialog open={selectModalOpen} onOpenChange={setSelectModalOpen}>
                         <DialogTrigger asChild>
                           <Button variant="outline" className="justify-between w-full">
-                            <span>{selectedRecipients.length > 0 ? `${selectedRecipients.length} recipient${selectedRecipients.length>1?'s':''} selected` : 'Select recipients'}</span>
+                            <span>{selectedRecipients.length > 0 ? `${selectedRecipients.length} recipient${selectedRecipients.length > 1 ? 's' : ''} selected` : 'Select recipients'}</span>
                           </Button>
                         </DialogTrigger>
                         <DialogContent className="sm:max-w-2xl">
@@ -794,7 +1260,7 @@ function StudentDashboardInner() {
                                           }}
                                         />
                                         <div className="flex items-center gap-3">
-                                          <Avatar className="w-8 h-8"><AvatarFallback>{u.name.charAt(0).toUpperCase()}</AvatarFallback></Avatar>
+                                          <div className="w-8 h-8 rounded-full flex items-center justify-center text-white font-semibold text-sm" style={{ backgroundImage: generateGradient(u.name) }}>{u.name.charAt(0).toUpperCase()}</div>
                                           <div>
                                             <p className="text-sm font-medium">{u.name}</p>
                                             <p className="text-xs text-gray-500">{u.uniqueId}</p>
@@ -824,8 +1290,10 @@ function StudentDashboardInner() {
                                       })
                                     }}
                                   />
-                                  <div className="flex items-center gap-2">
-                                    <Printer className="w-4 h-4" />
+                                  <div className="flex items-center gap-3">
+                                    <div className="w-8 h-8 rounded-full flex items-center justify-center text-white font-semibold text-sm" style={{ backgroundImage: generateGradient(`Lab Admin (Room ${adminRoom || userData.roomNumber})`) }}>
+                                      A
+                                    </div>
                                     <span>Lab Admin (Room {adminRoom || userData.roomNumber})</span>
                                   </div>
                                 </label>
@@ -841,12 +1309,7 @@ function StudentDashboardInner() {
                     </div>
 
                     {/* Progress */}
-                    {isUploading && (
-                      <div className="space-y-2">
-                        <Label>Upload Progress</Label>
-                        <Progress value={uploadProgress} className="w-full" />
-                      </div>
-                    )}
+                    {/* Progress moved to global dialog */}
 
                     {/* Actions */}
                     <div className="flex gap-2">
@@ -907,7 +1370,7 @@ function StudentDashboardInner() {
                       <Dialog open={selectModalOpen} onOpenChange={setSelectModalOpen}>
                         <DialogTrigger asChild>
                           <Button variant="outline" className="justify-between w-full">
-                            <span>{selectedRecipients.length > 0 ? `${selectedRecipients.length} recipient${selectedRecipients.length>1?'s':''} selected` : 'Select recipients'}</span>
+                            <span>{selectedRecipients.length > 0 ? `${selectedRecipients.length} recipient${selectedRecipients.length > 1 ? 's' : ''} selected` : 'Select recipients'}</span>
                           </Button>
                         </DialogTrigger>
                         <DialogContent className="sm:max-w-2xl">
@@ -948,7 +1411,7 @@ function StudentDashboardInner() {
                                           }}
                                         />
                                         <div className="flex items-center gap-3">
-                                          <Avatar className="w-8 h-8"><AvatarFallback>{u.name.charAt(0).toUpperCase()}</AvatarFallback></Avatar>
+                                          <div className="w-8 h-8 rounded-full flex items-center justify-center text-white font-semibold text-sm" style={{ backgroundImage: generateGradient(u.name) }}>{u.name.charAt(0).toUpperCase()}</div>
                                           <div>
                                             <p className="text-sm font-medium">{u.name}</p>
                                             <p className="text-xs text-gray-500">{u.uniqueId}</p>
@@ -973,8 +1436,10 @@ function StudentDashboardInner() {
                                       setSelectedRecipients(prev => e.target.checked ? Array.from(new Set([...prev, 'admin'])) : prev.filter(id => id !== 'admin'))
                                     }}
                                   />
-                                  <div className="flex items-center gap-2">
-                                    <Printer className="w-4 h-4" />
+                                  <div className="flex items-center gap-3">
+                                    <div className="w-8 h-8 rounded-full flex items-center justify-center text-white font-semibold text-sm" style={{ backgroundImage: generateGradient(`Lab Admin (Room ${adminRoom || userData.roomNumber})`) }}>
+                                      A
+                                    </div>
                                     <span>Lab Admin (Room {adminRoom || userData.roomNumber})</span>
                                   </div>
                                 </label>
@@ -990,12 +1455,7 @@ function StudentDashboardInner() {
                     </div>
 
                     {/* Progress */}
-                    {isUploading && (
-                      <div className="space-y-2">
-                        <Label>Upload Progress</Label>
-                        <Progress value={uploadProgress} className="w-full" />
-                      </div>
-                    )}
+                    {/* Progress moved to global dialog */}
 
                     {/* Actions */}
                     <div className="flex gap-2">
@@ -1030,66 +1490,257 @@ function StudentDashboardInner() {
                 <CardTitle>File History</CardTitle>
               </CardHeader>
               <CardContent>
-                <Tabs defaultValue="received" className="w-full">
+                <Tabs value={historySubTab} onValueChange={(v) => setHistorySubTab(v as any)} className="w-full">
                   <TabsList className="grid w-full grid-cols-2">
                     <TabsTrigger value="received">Received</TabsTrigger>
                     <TabsTrigger value="sent">Sent</TabsTrigger>
                   </TabsList>
 
                   <TabsContent value="received" className="space-y-2">
-                    {Object.keys(recvProgress).length > 0 && (
-                      <div className="space-y-2">
-                        {Object.values(recvProgress).map((p, idx) => {
-                          const percent = p.total ? Math.min(100, Math.round((p.received / p.total) * 100)) : 0
-                          return (
-                            <div key={idx} className="p-2 bg-blue-50 border border-blue-100 rounded">
-                              <div className="flex items-center justify-between mb-1 text-sm text-blue-800">
-                                <span>Receiving: {p.fileName}</span>
-                                <span>{percent}%</span>
-                              </div>
-                              <Progress value={percent} />
-                            </div>
-                          )
-                        })}
-                      </div>
-                    )}
-
-                    {receivedFiles.length === 0 && Object.keys(recvProgress).length === 0 ? (
-                      <p className="text-gray-500 text-center py-4">No files received yet</p>
-                    ) : (
-                      <div className="space-y-3 max-h-96 overflow-y-auto">
-                        {receivedFiles.map((file) => (
-                          <FilePreview
-                            key={file.id}
-                            file={file}
-                            senderName={file.senderName}
-                            senderUniqueId={file.senderUniqueId}
-                            recipients={undefined}
-                            timestamp={file.timestamp}
-                            onReshare={handleResharePrefill}
+                    {/* Unified toolbar */}
+                    <div className="sticky top-0 z-10 space-y-2 md:space-y-0 md:flex md:items-center md:justify-between bg-white/90 backdrop-blur-sm border rounded-md p-2 shadow-sm">
+                      <div className="flex items-center gap-2 w-full md:w-auto">
+                        <div className="flex-1 md:flex-initial relative">
+                          <Search className="w-4 h-4 absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                          <Input
+                            placeholder="Search files, names, IDs, messages"
+                            value={rSearchQuery}
+                            onChange={(e) => setRSearchQuery(e.target.value)}
+                            className="h-9 pl-8"
                           />
-                        ))}
+                        </div>
+                        <TooltipProvider>
+                          <Popover open={rSortMenuOpen} onOpenChange={setRSortMenuOpen}>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <PopoverTrigger asChild>
+                                  <Button variant={rHasActiveFilters ? 'default' : 'outline'} size="sm" className="h-9">
+                                    <div className="relative">
+                                      <Filter className="w-4 h-4" />
+                                      {rHasActiveFilters && (
+                                        <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-emerald-500" />
+                                      )}
+                                    </div>
+                                  </Button>
+                                </PopoverTrigger>
+                              </TooltipTrigger>
+                              <TooltipContent side="bottom">Sort & filter</TooltipContent>
+                            </Tooltip>
+                            <PopoverContent align="end" className="w-64 p-2">
+                              <div className="px-1 py-1.5 text-xs text-muted-foreground">Sort order</div>
+                              <div className="flex flex-col gap-1 mb-2">
+                                <Button variant="ghost" size="sm" className="justify-start" onClick={() => setRSortOrder('newest')}>
+                                  {rSortOrder === 'newest' && <Check className="w-4 h-4 mr-2" />} Newest first
+                                </Button>
+                                <Button variant="ghost" size="sm" className="justify-start" onClick={() => setRSortOrder('oldest')}>
+                                  {rSortOrder === 'oldest' && <Check className="w-4 h-4 mr-2" />} Oldest first
+                                </Button>
+                              </div>
+                              <div className="border-t my-2" />
+                              <div className="px-1 py-1.5 text-xs text-muted-foreground">Types</div>
+                              <div className="flex flex-col gap-1">
+                                <Button variant="ghost" size="sm" className="justify-start" onClick={() => setRTypeFilter('all')}>
+                                  {rTypeFilter === 'all' && <Check className="w-4 h-4 mr-2" />} All types
+                                </Button>
+                                <Button variant="ghost" size="sm" className="justify-start" onClick={() => setRTypeFilter('files')}>
+                                  {rTypeFilter === 'files' && <Check className="w-4 h-4 mr-2" />} Files only
+                                </Button>
+                                <Button variant="ghost" size="sm" className="justify-start" onClick={() => setRTypeFilter('links')}>
+                                  {rTypeFilter === 'links' && <Check className="w-4 h-4 mr-2" />} Links only
+                                </Button>
+                              </div>
+                            </PopoverContent>
+                          </Popover>
+                        </TooltipProvider>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2 justify-start md:justify-end">
+                        <div className="px-2 py-1 rounded-full border bg-muted/40 flex items-center gap-1 text-xs">
+                          <FileText className="w-3 h-3" /> {rFilesCount} Files
+                        </div>
+                        <div className="px-2 py-1 rounded-full border bg-muted/40 flex items-center gap-1 text-xs">
+                          <Link className="w-3 h-3" /> {rLinksCount} Links
+                        </div>
+                        <div className="px-2 py-1 rounded-full border bg-muted/40 flex items-center gap-1 text-xs">
+                          <Folder className="w-3 h-3" /> {rTotalSize}
+                        </div>
+                      </div>
+                    </div>
+                    {/* Inline receiving progress removed in favor of floating dial */}
+
+                    {rProcessed.length === 0 && Object.keys(recvProgress).length === 0 ? (
+                      <div className="text-center py-8 animate-in fade-in-0 zoom-in-95">
+                        {rTypeFilter === 'links' ? (
+                          <Link className="w-12 h-12 mx-auto mb-4 text-blue-500 animate-pulse" />
+                        ) : rTypeFilter === 'files' ? (
+                          <FileText className="w-12 h-12 mx-auto mb-4 text-gray-400 animate-pulse" />
+                        ) : (
+                          <FileText className="w-12 h-12 mx-auto mb-4 text-gray-400 animate-pulse" />
+                        )}
+                        <p className="text-gray-700 font-medium">
+                          {rDebouncedQuery ? (
+                            <>No matches for {highlightWith(rDebouncedQuery, `"${rDebouncedQuery}"`)}.</>
+                          ) : (
+                            <>No items yet.</>
+                          )}
+                        </p>
+                        <div className="flex items-center justify-center gap-2 mt-2">
+                          {rDebouncedQuery && (
+                            <Button variant="outline" size="sm" onClick={() => setRSearchQuery('')} className="transition hover:scale-[1.02]">Clear search</Button>
+                          )}
+                          {(rTypeFilter !== 'all') && (
+                            <Button variant="ghost" size="sm" onClick={() => setRTypeFilter('all')} className="transition hover:scale-[1.02]">Reset filters</Button>
+                          )}
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="max-h-96">
+                        <Virtuoso
+                          style={{ height: '24rem' }}
+                          totalCount={rProcessed.length}
+                          itemContent={(index) => {
+                            const file = rProcessed[index]
+                            return (
+                              <div className={`mb-3 ${rDebouncedQuery ? 'animate-in fade-in-0 zoom-in-95' : ''}`}>
+                                <FilePreview
+                                  key={file.id}
+                                  file={file}
+                                  senderName={file.senderName}
+                                  senderUniqueId={file.senderUniqueId}
+                                  recipients={undefined}
+                                  timestamp={file.timestamp}
+                                  onReshare={handleResharePrefill}
+                                  onDelete={() => deleteReceived(file.id)}
+                                  highlightQuery={rDebouncedQuery}
+                                />
+                              </div>
+                            )
+                          }}
+                          overscan={8}
+                        />
                       </div>
                     )}
                   </TabsContent>
 
                   <TabsContent value="sent" className="space-y-2">
-                    {sentFiles.length === 0 ? (
-                      <p className="text-gray-500 text-center py-4">No files sent yet</p>
-                    ) : (
-                      <div className="space-y-3 max-h-96 overflow-y-auto">
-                        {sentFiles.map((file) => (
-                          <FilePreview
-                            key={file.id}
-                            file={file}
-                            senderName={`${userData.name}`}
-                            senderUniqueId={userData.uniqueId}
-                            recipients={file.recipients}
-                            timestamp={file.timestamp}
-                            onReshare={handleResharePrefill}
-                            isOwnItem
+                    {/* Unified toolbar */}
+                    <div className="sticky top-0 z-10 space-y-2 md:space-y-0 md:flex md:items-center md:justify-between bg-white/90 backdrop-blur-sm border rounded-md p-2 shadow-sm">
+                      <div className="flex items-center gap-2 w-full md:w-auto">
+                        <div className="flex-1 md:flex-initial relative">
+                          <Search className="w-4 h-4 absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                          <Input
+                            placeholder="Search files, recipients, messages"
+                            value={sSearchQuery}
+                            onChange={(e) => setSSearchQuery(e.target.value)}
+                            className="h-9 pl-8"
                           />
-                        ))}
+                        </div>
+                        <TooltipProvider>
+                          <Popover open={sSortMenuOpen} onOpenChange={setSSortMenuOpen}>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <PopoverTrigger asChild>
+                                  <Button variant={sHasActiveFilters ? 'default' : 'outline'} size="sm" className="h-9">
+                                    <div className="relative">
+                                      <Filter className="w-4 h-4" />
+                                      {sHasActiveFilters && (
+                                        <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-emerald-500" />
+                                      )}
+                                    </div>
+                                  </Button>
+                                </PopoverTrigger>
+                              </TooltipTrigger>
+                              <TooltipContent side="bottom">Sort & filter</TooltipContent>
+                            </Tooltip>
+                            <PopoverContent align="end" className="w-64 p-2">
+                              <div className="px-1 py-1.5 text-xs text-muted-foreground">Sort order</div>
+                              <div className="flex flex-col gap-1 mb-2">
+                                <Button variant="ghost" size="sm" className="justify-start" onClick={() => setSSortOrder('newest')}>
+                                  {sSortOrder === 'newest' && <Check className="w-4 h-4 mr-2" />} Newest first
+                                </Button>
+                                <Button variant="ghost" size="sm" className="justify-start" onClick={() => setSSortOrder('oldest')}>
+                                  {sSortOrder === 'oldest' && <Check className="w-4 h-4 mr-2" />} Oldest first
+                                </Button>
+                              </div>
+                              <div className="border-t my-2" />
+                              <div className="px-1 py-1.5 text-xs text-muted-foreground">Types</div>
+                              <div className="flex flex-col gap-1">
+                                <Button variant="ghost" size="sm" className="justify-start" onClick={() => setSTypeFilter('all')}>
+                                  {sTypeFilter === 'all' && <Check className="w-4 h-4 mr-2" />} All types
+                                </Button>
+                                <Button variant="ghost" size="sm" className="justify-start" onClick={() => setSTypeFilter('files')}>
+                                  {sTypeFilter === 'files' && <Check className="w-4 h-4 mr-2" />} Files only
+                                </Button>
+                                <Button variant="ghost" size="sm" className="justify-start" onClick={() => setSTypeFilter('links')}>
+                                  {sTypeFilter === 'links' && <Check className="w-4 h-4 mr-2" />} Links only
+                                </Button>
+                              </div>
+                            </PopoverContent>
+                          </Popover>
+                        </TooltipProvider>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2 justify-start md:justify-end">
+                        <div className="px-2 py-1 rounded-full border bg-muted/40 flex items-center gap-1 text-xs">
+                          <FileText className="w-3 h-3" /> {sFilesCount} Files
+                        </div>
+                        <div className="px-2 py-1 rounded-full border bg-muted/40 flex items-center gap-1 text-xs">
+                          <Link className="w-3 h-3" /> {sLinksCount} Links
+                        </div>
+                        <div className="px-2 py-1 rounded-full border bg-muted/40 flex items-center gap-1 text-xs">
+                          <Folder className="w-3 h-3" /> {sTotalSize}
+                        </div>
+                      </div>
+                    </div>
+                    {sProcessed.length === 0 ? (
+                      <div className="text-center py-8 animate-in fade-in-0 zoom-in-95">
+                        {sTypeFilter === 'links' ? (
+                          <Link className="w-12 h-12 mx-auto mb-4 text-blue-500 animate-pulse" />
+                        ) : sTypeFilter === 'files' ? (
+                          <FileText className="w-12 h-12 mx-auto mb-4 text-gray-400 animate-pulse" />
+                        ) : (
+                          <FileText className="w-12 h-12 mx-auto mb-4 text-gray-400 animate-pulse" />
+                        )}
+                        <p className="text-gray-700 font-medium">
+                          {sDebouncedQuery ? (
+                            <>No matches for {highlightWith(sDebouncedQuery, `"${sDebouncedQuery}"`)}.</>
+                          ) : (
+                            <>No items yet.</>
+                          )}
+                        </p>
+                        <div className="flex items-center justify-center gap-2 mt-2">
+                          {sDebouncedQuery && (
+                            <Button variant="outline" size="sm" onClick={() => setSSearchQuery('')} className="transition hover:scale-[1.02]">Clear search</Button>
+                          )}
+                          {(sTypeFilter !== 'all') && (
+                            <Button variant="ghost" size="sm" onClick={() => setSTypeFilter('all')} className="transition hover:scale-[1.02]">Reset filters</Button>
+                          )}
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="max-h-96">
+                        <Virtuoso
+                          style={{ height: '24rem' }}
+                          totalCount={sProcessed.length}
+                          itemContent={(index) => {
+                            const file = sProcessed[index]
+                            return (
+                              <div className={`mb-3 ${sDebouncedQuery ? 'animate-in fade-in-0 zoom-in-95' : ''}`}>
+                                <FilePreview
+                                  key={file.id}
+                                  file={file}
+                                  senderName={`${userData.name}`}
+                                  senderUniqueId={userData.uniqueId}
+                                  recipients={file.recipients}
+                                  timestamp={file.timestamp}
+                                  onReshare={handleResharePrefill}
+                                  isOwnItem
+                                  onDelete={() => deleteSent(file.id)}
+                                  highlightQuery={sDebouncedQuery}
+                                />
+                              </div>
+                            )
+                          }}
+                          overscan={8}
+                        />
                       </div>
                     )}
                   </TabsContent>
@@ -1111,11 +1762,9 @@ function StudentDashboardInner() {
               <CardContent>
                 <div className="space-y-3">
                   <div className="flex items-center gap-3 p-2 bg-blue-50 rounded-lg">
-                    <Avatar className="w-8 h-8">
-                      <AvatarFallback className="bg-blue-600 text-white text-sm">
-                        {userData.name.charAt(0).toUpperCase()}
-                      </AvatarFallback>
-                    </Avatar>
+                    <div className="w-8 h-8 rounded-full flex items-center justify-center text-white font-semibold text-sm" style={{ backgroundImage: generateGradient(userData.name) }}>
+                      {userData.name.charAt(0).toUpperCase()}
+                    </div>
                     <div className="flex-1">
                       <p className="font-medium text-sm">{userData.name}</p>
                       <p className="text-xs text-gray-500">{userData.uniqueId} (You)</p>
@@ -1126,11 +1775,9 @@ function StudentDashboardInner() {
                   {/* Lab Admin shown at top if online */}
                   {adminId && (
                     <div className="flex items-center gap-3 p-2 hover:bg-gray-50 rounded-lg">
-                      <Avatar className="w-8 h-8">
-                        <AvatarFallback className="bg-gray-700 text-white text-sm">
-                          A
-                        </AvatarFallback>
-                      </Avatar>
+                      <div className="w-8 h-8 rounded-full flex items-center justify-center text-white font-semibold text-sm" style={{ backgroundImage: generateGradient(`Lab Admin (Room ${adminRoom || userData.roomNumber})`) }}>
+                        A
+                      </div>
                       <div className="flex-1">
                         <p className="font-medium text-sm">Lab Admin (Room {adminRoom || userData.roomNumber})</p>
                         <p className="text-xs text-gray-500">ADMIN</p>
@@ -1139,20 +1786,28 @@ function StudentDashboardInner() {
                     </div>
                   )}
 
-                  {onlineUsers.map((user) => (
-                    <div key={user.id} className="flex items-center gap-3 p-2 hover:bg-gray-50 rounded-lg">
-                      <Avatar className="w-8 h-8">
-                        <AvatarFallback className="bg-gray-600 text-white text-sm">
-                          {user.name.charAt(0).toUpperCase()}
-                        </AvatarFallback>
-                      </Avatar>
-                      <div className="flex-1">
-                        <p className="font-medium text-sm">{user.name}</p>
-                        <p className="text-xs text-gray-500">{user.uniqueId}</p>
-                      </div>
-                      <Badge variant="outline">Online</Badge>
-                    </div>
-                  ))}
+                  <div className="max-h-96">
+                    <Virtuoso
+                      style={{ height: '24rem' }}
+                      totalCount={onlineUsers.length}
+                      itemContent={(index) => {
+                        const user = onlineUsers[index]
+                        return (
+                          <div key={user.id} className="flex items-center gap-3 p-2 hover:bg-gray-50 rounded-lg">
+                            <div className="w-8 h-8 rounded-full flex items-center justify-center text-white font-semibold text-sm" style={{ backgroundImage: generateGradient(user.name) }}>
+                              {user.name.charAt(0).toUpperCase()}
+                            </div>
+                            <div className="flex-1">
+                              <p className="font-medium text-sm">{user.name}</p>
+                              <p className="text-xs text-gray-500">{user.uniqueId}</p>
+                            </div>
+                            <Badge variant="outline">Online</Badge>
+                          </div>
+                        )
+                      }}
+                      overscan={8}
+                    />
+                  </div>
 
                   {onlineUsers.length === 0 && !adminId && (
                     <p className="text-gray-500 text-center py-4">No other users online</p>
@@ -1163,6 +1818,84 @@ function StudentDashboardInner() {
           </TabsContent>
         </Tabs>
 
+        {/* Google Link Warning Dialog */}
+        <Dialog open={googleWarningOpen} onOpenChange={setGoogleWarningOpen}>
+          <DialogContent className="sm:max-w-[500px] p-0 overflow-hidden border-none shadow-lg">
+            {/* Top colored bar */}
+            <div className={`h-2 w-full ${googleLinkType === 'sheets' ? 'bg-[#0F9D58]' :
+                googleLinkType === 'slides' ? 'bg-[#F4B400]' :
+                  googleLinkType === 'docs' ? 'bg-[#4285F4]' :
+                    'bg-[#4285F4]'
+              }`} />
+
+            <div className="p-6 flex flex-col gap-6">
+              {/* Header with Icon */}
+              <div className="flex items-start gap-4">
+                <div className="p-3 bg-gray-50 rounded-full shrink-0">
+                  {googleLinkType === 'sheets' ? (
+                    <GoogleSheetsIcon className="w-8 h-8" />
+                  ) : googleLinkType === 'slides' ? (
+                    <GoogleSlidesIcon className="w-8 h-8" />
+                  ) : googleLinkType === 'docs' ? (
+                    <GoogleDocsIcon className="w-8 h-8" />
+                  ) : (
+                    <GoogleDriveIcon className="w-8 h-8" />
+                  )}
+                </div>
+                <div className="space-y-1 pt-1">
+                  <DialogTitle className="text-xl font-semibold text-gray-900">
+                    {googleLinkType === 'sheets' ? 'Google Sheets Detected' :
+                      googleLinkType === 'slides' ? 'Google Slides Detected' :
+                        googleLinkType === 'docs' ? 'Google Docs Detected' :
+                          'Google Drive Link Detected'}
+                  </DialogTitle>
+                  <DialogDescription className="text-base text-gray-500">
+                    Check sharing permissions
+                  </DialogDescription>
+                </div>
+              </div>
+
+              {/* Content */}
+              <div className="text-gray-600 text-[15px] leading-relaxed">
+                You are sharing a <span className="font-medium text-gray-900">
+                  {googleLinkType === 'sheets' ? 'Google Sheet' :
+                    googleLinkType === 'slides' ? 'Google Slide' :
+                      googleLinkType === 'docs' ? 'Google Doc' :
+                        'Google Drive File'}
+                </span>.
+                <br />
+                Please ensure that the link has <span className="font-bold text-gray-900 italic">"Anyone with the link"</span> access enabled so recipients can view it without requesting permission.
+              </div>
+
+              {/* Actions */}
+              <div className="flex items-center justify-end gap-3 pt-2">
+                <Button
+                  variant="outline"
+                  onClick={() => setGoogleWarningOpen(false)}
+                  className="border-gray-200 hover:bg-gray-50 text-gray-700 font-medium"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={() => {
+                    setGoogleWarningOpen(false)
+                    if (pendingShareIsPrint !== null) {
+                      preflightAndMaybeShare(pendingShareIsPrint, true)
+                    }
+                  }}
+                  className={`font-medium text-white shadow-sm ${googleLinkType === 'sheets' ? 'bg-[#0F9D58] hover:bg-[#0B8043]' :
+                      googleLinkType === 'slides' ? 'bg-[#F4B400] hover:bg-[#F09300]' :
+                        googleLinkType === 'docs' ? 'bg-[#4285F4] hover:bg-[#3367D6]' :
+                          'bg-[#4285F4] hover:bg-[#3367D6]'
+                    }`}
+                >
+                  I've Checked, Continue
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+
         {/* Offline recipients modal */}
         <Dialog open={offlineModalOpen} onOpenChange={setOfflineModalOpen}>
           <DialogContent>
@@ -1170,7 +1903,7 @@ function StudentDashboardInner() {
               <DialogTitle className="flex items-center gap-2">
                 <span className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-yellow-100 text-yellow-700">
                   {/* alert icon */}
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5"><path d="M10.3 2.7c.9-1.6 3.5-1.6 4.4 0l8.3 15.1c.8 1.5-.3 3.2-2.2 3.2H4.2c-1.9 0-3.1-1.7-2.2-3.2L10.3 2.7zM12 8c-.6 0-1 .4-1 1v4c0 .6.4 1 1 1s1-.4 1-1V9c0-.6-.4-1-1-1zm0 8.5a1.25 1.25 0 1 0 0-2.5 1.25 1.25 0 0 0 0 2.5z"/></svg>
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5"><path d="M10.3 2.7c.9-1.6 3.5-1.6 4.4 0l8.3 15.1c.8 1.5-.3 3.2-2.2 3.2H4.2c-1.9 0-3.1-1.7-2.2-3.2L10.3 2.7zM12 8c-.6 0-1 .4-1 1v4c0 .6.4 1 1 1s1-.4 1-1V9c0-.6-.4-1-1-1zm0 8.5a1.25 1.25 0 1 0 0-2.5 1.25 1.25 0 0 0 0 2.5z" /></svg>
                 </span>
                 Some recipients are offline
               </DialogTitle>
@@ -1182,7 +1915,7 @@ function StudentDashboardInner() {
               {offlineUsersInfo.map(u => (
                 <div key={u.id} className="flex items-center justify-between p-2 bg-gray-50 rounded">
                   <div className="flex items-center gap-2">
-                    <Avatar className="w-8 h-8"><AvatarFallback>{u.name.charAt(0).toUpperCase()}</AvatarFallback></Avatar>
+                    <div className="w-8 h-8 rounded-full flex items-center justify-center text-white font-semibold text-sm" style={{ backgroundImage: generateGradient(u.name) }}>{u.name.charAt(0).toUpperCase()}</div>
                     <div>
                       <p className="text-sm font-medium">{u.name}</p>
                       <p className="text-xs text-gray-500">{u.uniqueId}</p>
@@ -1197,7 +1930,7 @@ function StudentDashboardInner() {
             </div>
             {pendingTargets.length > 0 && (selectedRecipients.length > 1 || (offlineUsersInfo.length > 0)) && (
               <div className="mt-3 flex items-start gap-2 rounded-md border border-yellow-200 bg-yellow-50 p-3 text-sm text-yellow-800">
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4 mt-0.5"><path d="M10.3 2.7c.9-1.6 3.5-1.6 4.4 0l8.3 15.1c.8 1.5-.3 3.2-2.2 3.2H4.2c-1.9 0-3.1-1.7-2.2-3.2L10.3 2.7zM12 8c-.6 0-1 .4-1 1v4c0 .6.4 1 1 1s1-.4 1-1V9c0-.6-.4-1-1-1zm0 8.5a1.25 1.25 0 1 0 0-2.5 1.25 1.25 0 0 0 0 2.5z"/></svg>
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4 mt-0.5"><path d="M10.3 2.7c.9-1.6 3.5-1.6 4.4 0l8.3 15.1c.8 1.5-.3 3.2-2.2 3.2H4.2c-1.9 0-3.1-1.7-2.2-3.2L10.3 2.7zM12 8c-.6 0-1 .4-1 1v4c0 .6.4 1 1 1s1-.4 1-1V9c0-.6-.4-1-1-1zm0 8.5a1.25 1.25 0 1 0 0-2.5 1.25 1.25 0 0 0 0 2.5z" /></svg>
                 <p>File will be shared with other online recipients.</p>
               </div>
             )}
@@ -1213,13 +1946,186 @@ function StudentDashboardInner() {
           </DialogContent>
         </Dialog>
 
+        {/* Upload progress dialog (circular redesigned) */}
+        <Dialog open={isUploading || forceProgress}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle className="text-lg text-center font-semibold flex items-center gap-2">
+                <Upload className="w-5 h-5 text-black dark:text-white" />
+                Transferring...
+              </DialogTitle>
+              <DialogDescription className="text-sm text-center text-gray-600 dark:text-gray-400">
+                Keep this tab open until your files finish sending.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="flex flex-col items-center gap-8 py-4">
+              <div className="relative">
+                <svg className="w-44 h-44 -rotate-90" viewBox="0 0 100 100">
+                  <circle cx="50" cy="50" r="46" stroke="#e5e5e5" strokeWidth="8" fill="none" />
+                  <circle
+                    cx="50"
+                    cy="50"
+                    r="46"
+                    stroke="currentColor"
+                    strokeWidth="8"
+                    strokeLinecap="round"
+                    fill="none"
+                    className="text-black dark:text-white"
+                    strokeDasharray={2 * Math.PI * 46}
+                    strokeDashoffset={(1 - uiProgress / 100) * 2 * Math.PI * 46}
+                  />
+                </svg>
+                <div className="absolute inset-0 flex flex-col items-center justify-center">
+                  <div className="text-3xl font-bold text-black dark:text-white">{Math.round(uiProgress)}%</div>
+                  <div className="text-xs tracking-wide text-gray-500 dark:text-gray-400 mt-1">SENDING</div>
+                </div>
+              </div>
+              <p className="text-sm text-center text-gray-600 dark:text-gray-400 max-w-sm">
+                Do not close this window.
+              </p>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Success feedback dialog (enhanced) */}
+        <Dialog open={successModalOpen} onOpenChange={setSuccessModalOpen}>
+          <DialogContent className="sm:max-w-lg p-0 overflow-hidden">
+            <DialogHeader className="sr-only">
+              <DialogTitle>Transfer complete summary</DialogTitle>
+              <DialogDescription>Summary of recently completed file/link transfer</DialogDescription>
+            </DialogHeader>
+            {successInfo && (
+              <div className="p-5">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center">
+                      <CheckCircle2 className="w-6 h-6" />
+                    </div>
+                    <div>
+                      <h3 className="text-base font-semibold leading-none">{successInfo.mode === 'received' ? 'Files received' : 'Transfer complete'}</h3>
+                      <p className="text-xs text-gray-500">{successInfo.mode === 'received' ? 'Your items were received successfully' : 'Your items were delivered successfully'}</p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="rounded-md border bg-white dark:bg-neutral-900">
+                  <div className="grid grid-cols-3 gap-4 p-4">
+                    {successInfo.mode === 'sent' ? (
+                      <>
+                        <div className="col-span-3">
+                          <div className="text-[11px] uppercase tracking-wide text-gray-500 mb-1">To</div>
+                          <div className="flex flex-wrap gap-1.5">
+                            {successInfo.recipients.slice(0, 6).map((r, i) => {
+                              const isSelf = r.uniqueId === userData.uniqueId
+                              const isAdmin = r.uniqueId === 'ADMIN'
+                              const displayName = isAdmin ? `Lab Admin (Room ${userData.roomNumber})` : r.name
+                              const avatarText = isAdmin ? 'A' : r.name.charAt(0).toUpperCase()
+                              return (
+                                <span key={r.uniqueId + i} className="inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-xs bg-gray-50 dark:bg-neutral-800">
+                                  <span className="inline-flex w-5 h-5 items-center justify-center rounded-full text-white text-[10px] font-medium" style={{ backgroundImage: generateGradient(displayName) }}>
+                                    {avatarText}
+                                  </span>
+                                  {isAdmin ? displayName : `${r.name} (${r.uniqueId})`}
+                                  {isSelf ? ' (You)' : ''}
+                                </span>
+                              )
+                            })}
+                            {successInfo.recipients.length > 6 && (
+                              <span className="inline-flex items-center rounded-full border px-2.5 py-1 text-xs bg-gray-50 dark:bg-neutral-800">+{successInfo.recipients.length - 6} more</span>
+                            )}
+                          </div>
+                        </div>
+                        <div className="col-span-3 border-t my-1" />
+                        <div className="col-span-3 grid grid-cols-2 gap-4">
+                          <div>
+                            <div className="text-[11px] uppercase tracking-wide text-gray-500 mb-1">From</div>
+                            <div className="text-sm font-medium">{successInfo.from}</div>
+                          </div>
+                          <div>
+                            <div className="text-[11px] uppercase tracking-wide text-gray-500 mb-1">Total Size</div>
+                            <div className="text-sm font-medium">{successInfo.totalSize}</div>
+                          </div>
+                          <div>
+                            <div className="text-[11px] uppercase tracking-wide text-gray-500 mb-1">Files</div>
+                            <div className="text-sm font-medium">{successInfo.totalFiles}</div>
+                          </div>
+                          <div>
+                            <div className="text-[11px] uppercase tracking-wide text-gray-500 mb-1">Links</div>
+                            <div className="text-sm font-medium">{successInfo.totalLinks}</div>
+                          </div>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div className="col-span-3">
+                          <div className="text-[11px] uppercase tracking-wide text-gray-500 mb-1">From</div>
+                          <div className="flex flex-wrap gap-1.5">
+                            {(successInfo.senders || []).slice(0, 6).map((s, i) => {
+                              const isSelf = s.uniqueId === userData.uniqueId
+                              const isAdmin = s.uniqueId === 'ADMIN'
+                              const displayName = isAdmin ? `Lab Admin (Room ${userData.roomNumber})` : (s.name || 'Unknown')
+                              const avatarText = isAdmin ? 'A' : (s.name?.charAt(0).toUpperCase() || '?')
+                              return (
+                                <span key={(s.uniqueId || '') + i} className="inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-xs bg-gray-50 dark:bg-neutral-800">
+                                  <span className="inline-flex w-5 h-5 items-center justify-center rounded-full text-white text-[10px] font-medium" style={{ backgroundImage: generateGradient(displayName) }}>
+                                    {avatarText}
+                                  </span>
+                                  {isAdmin ? displayName : `${s.name} (${s.uniqueId || '—'})`}
+                                  {isSelf ? ' (You)' : ''}
+                                </span>
+                              )
+                            })}
+                            {successInfo.senders && successInfo.senders.length > 6 && (
+                              <span className="inline-flex items-center rounded-full border px-2.5 py-1 text-xs bg-gray-50 dark:bg-neutral-800">+{successInfo.senders.length - 6} more</span>
+                            )}
+                            {!successInfo.senders?.length && (
+                              <span className="text-sm font-medium">{successInfo.from}</span>
+                            )}
+                          </div>
+                        </div>
+                        <div className="col-span-3 border-t my-1" />
+                        <div className="col-span-3 grid grid-cols-2 gap-4">
+                          <div>
+                            <div className="text-[11px] uppercase tracking-wide text-gray-500 mb-1">To</div>
+                            <div className="text-sm font-medium">{userData.name} ({userData.uniqueId}) (You)</div>
+                          </div>
+                          <div>
+                            <div className="text-[11px] uppercase tracking-wide text-gray-500 mb-1">Total Size</div>
+                            <div className="text-sm font-medium">{successInfo.totalSize}</div>
+                          </div>
+                          <div>
+                            <div className="text-[11px] uppercase tracking-wide text-gray-500 mb-1">Files</div>
+                            <div className="text-sm font-medium">{successInfo.totalFiles}</div>
+                          </div>
+                          <div>
+                            <div className="text-[11px] uppercase tracking-wide text-gray-500 mb-1">Links</div>
+                            <div className="text-sm font-medium">{successInfo.totalLinks}</div>
+                          </div>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                  <div className="border-t p-4 text-[11px] text-gray-600 dark:text-gray-400 bg-emerald-50/50 dark:bg-emerald-900/10">
+                    Each item gets a unique File ID. Check the File History tab to view and use them for tracking or resharing.
+                  </div>
+                </div>
+
+                <div className="mt-4 flex flex-wrap gap-4 justify-center">
+                  <Button variant="outline" onClick={() => { setActiveTab('history'); setHistorySubTab(successInfo.mode === 'received' ? 'received' : 'sent'); setSuccessModalOpen(false) }}>Open File History</Button>
+                  <Button onClick={() => setSuccessModalOpen(false)}>Done</Button>
+                </div>
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
+
         {/* Error modal */}
         <Dialog open={errorModalOpen} onOpenChange={setErrorModalOpen}>
           <DialogContent>
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
                 <span className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-red-100 text-red-700">
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5"><path d="M10.29 3.86c.9-1.53 3.12-1.53 4.02 0l7.69 13.1c.88 1.5-.21 3.39-2.01 3.39H4.61c-1.8 0-2.88-1.89-2.01-3.39l7.69-13.1zM12 8a1 1 0 0 0-1 1v4a1 1 0 1 0 2 0V9a1 1 0 0 0-1-1zm0 8.25a1.25 1.25 0 1 0 0-2.5 1.25 1.25 0 0 0 0 2.5z"/></svg>
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5"><path d="M10.29 3.86c.9-1.53 3.12-1.53 4.02 0l7.69 13.1c.88 1.5-.21 3.39-2.01 3.39H4.61c-1.8 0-2.88-1.89-2.01-3.39l7.69-13.1zM12 8a1 1 0 0 0-1 1v4a1 1 0 1 0 2 0V9a1 1 0 0 0-1-1zm0 8.25a1.25 1.25 0 1 0 0-2.5 1.25 1.25 0 0 0 0 2.5z" /></svg>
                 </span>
                 Couldn’t complete your share
               </DialogTitle>
@@ -1243,6 +2149,69 @@ function StudentDashboardInner() {
           </DialogContent>
         </Dialog>
       </div>
+      {/* Receiving Speed Dial (bottom-right) */}
+      {(Object.keys(recvProgress).length > 0 || (recvCounter.total > 0 && recvCounter.received < recvCounter.total)) && (
+        <div className="fixed bottom-6 right-6 z-50">
+          <Button
+            className="relative h-14 w-14 rounded-full shadow-lg ring-1 ring-primary/20 bg-neutral-900 text-white hover:scale-105 active:scale-95 transition-transform overflow-visible"
+            size="icon"
+            aria-label="Receiving files"
+            onClick={() => setReceiveDialogOpen(true)}
+          >
+            {/* Animated receiving icon */}
+            <ArrowDown className="relative animate-arrow-drop" style={{ height: '20px', width: '20px' }} />
+            {/* Pulse + blink badge (no count, no ring) */}
+            <span className="absolute -top-1 right-0">
+              <span className="inline-block w-3 h-3 rounded-full bg-emerald-500 ring-2 ring-white/80 shadow-md animate-badge-pulse-blink" />
+            </span>
+          </Button>
+        </div>
+      )}
+
+      {/* Receiving details dialog */}
+      <Dialog open={receiveDialogOpen} onOpenChange={setReceiveDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Download className="w-5 h-5" />
+              Receiving files
+            </DialogTitle>
+            <DialogDescription>Files currently being received.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 max-w-full">
+            {Object.values(recvProgress).map((p, idx) => (
+              <div key={idx} className="group relative overflow-hidden rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white/70 dark:bg-neutral-900/60 p-3 shadow-sm max-w-full">
+                <div className="flex items-start gap-3 max-w-full">
+                  <div className="mt-0.5 flex-1 min-w-0 max-w-full">
+                    <p className="text-sm font-medium flex items-center gap-2 max-w-full">
+                      <span className="truncate max-w-full" title={p.fileName}>{p.fileName}</span>
+                    </p>
+                    <div className="mt-2 h-2 w-full rounded-full bg-neutral-200 dark:bg-neutral-700 overflow-hidden">
+                      {(() => {
+                        const pct = p.total ? Math.min(100, (p.received / p.total) * 100) : 0
+                        return <div style={{ width: pct + '%' }} className="h-full bg-emerald-700 transition-[width] duration-300 ease-out" />
+                      })()}
+                    </div>
+                    <div className="mt-1 text-[11px] text-neutral-600 dark:text-neutral-400 flex justify-between">
+                      {(() => {
+                        const pct = p.total ? Math.min(100, Math.round((p.received / p.total) * 100)) : 0
+                        return <span>{pct}%</span>
+                      })()}
+                      <span>{p.fileType === 'link' ? '' : (p.total ? `${formatBytes(p.received)} / ${formatBytes(p.total)}` : '')}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ))}
+            {Object.keys(recvProgress).length === 0 && (
+              <div className="flex flex-col items-center justify-center py-6 text-center border border-dashed border-neutral-300 dark:border-neutral-700 rounded-lg">
+                <p className="text-sm text-muted-foreground">All files received.</p>
+              </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+      {/* Animations moved to global utilities in globals.css */}
     </div>
   )
 }
