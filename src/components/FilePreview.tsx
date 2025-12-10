@@ -276,7 +276,7 @@ function FilePreviewInner({ file, senderName, senderUniqueId, recipients, timest
     } catch (error) {
       console.error('Error creating preview URL:', error)
     }
-    return () => { if (revokeUrl) { try { URL.revokeObjectURL(revokeUrl) } catch {} } }
+    return () => { if (revokeUrl) { try { URL.revokeObjectURL(revokeUrl) } catch { } } }
   }, [isPreviewOpen, file])
 
   const handleDownload = () => {
@@ -298,7 +298,7 @@ function FilePreviewInner({ file, senderName, senderUniqueId, recipients, timest
     if (file.fileType.startsWith('image/')) {
       if (mode === 'dialog') {
         return (
-          <div className="w-full h-full bg-gray-50 dark:bg-gray-800 flex items-center justify-center">
+          <div className="w-full h-full bg-muted/50 dark:bg-muted flex items-center justify-center">
             <img src={previewUrl} alt={file.fileName} className="max-h-full max-w-full object-contain" />
           </div>
         )
@@ -318,7 +318,7 @@ function FilePreviewInner({ file, senderName, senderUniqueId, recipients, timest
     if (file.fileType.startsWith('audio/')) {
       if (mode === 'dialog') {
         return (
-          <div className="w-full h-full bg-gray-50 dark:bg-gray-800 flex items-center justify-center p-6">
+          <div className="w-full h-full bg-muted/50 dark:bg-muted flex items-center justify-center p-6">
             <audio src={previewUrl} controls className="w-full max-w-2xl" />
           </div>
         )
@@ -335,9 +335,9 @@ function FilePreviewInner({ file, senderName, senderUniqueId, recipients, timest
       return mode === 'dialog' ? (
         <div className="w-full h-full flex items-center justify-center p-6 text-center">
           <div>
-            <Link className="w-16 h-16 mx-auto mb-4 text-blue-500" />
+            <Link className="w-16 h-16 mx-auto mb-4 text-primary" />
             <h3 className="text-lg font-semibold mb-2">External Link</h3>
-            <p className="text-gray-600 mb-4">Open the link in a new tab to view.</p>
+            <p className="text-muted-foreground mb-4">Open the link in a new tab to view.</p>
             <Button asChild>
               <a href={ensureAbsoluteUrl(file.linkUrl)} target="_blank" rel="noopener noreferrer">
                 <ExternalLink className="w-4 h-4 mr-2" />
@@ -348,9 +348,9 @@ function FilePreviewInner({ file, senderName, senderUniqueId, recipients, timest
         </div>
       ) : (
         <div className="text-center py-8">
-          <Link className="w-16 h-16 mx-auto mb-4 text-blue-500" />
+          <Link className="w-16 h-16 mx-auto mb-4 text-primary" />
           <h3 className="text-lg font-semibold mb-2">External Link</h3>
-          <p className="text-gray-600 mb-4">{file.linkUrl}</p>
+          <p className="text-muted-foreground mb-4">{file.linkUrl}</p>
           <Button asChild>
             <a href={ensureAbsoluteUrl(file.linkUrl)} target="_blank" rel="noopener noreferrer">
               <ExternalLink className="w-4 h-4 mr-2" />
@@ -363,17 +363,17 @@ function FilePreviewInner({ file, senderName, senderUniqueId, recipients, timest
     return mode === 'dialog' ? (
       <div className="w-full h-full flex items-center justify-center p-6 text-center">
         <div>
-          <FileIcon className="w-16 h-16 mx-auto mb-4 text-gray-400" />
+          <FileIcon className="w-16 h-16 mx-auto mb-4 text-muted-foreground" />
           <h3 className="text-lg font-semibold mb-2">Preview Not Available</h3>
-          <p className="text-gray-600 mb-4">This file type cannot be previewed.</p>
+          <p className="text-muted-foreground mb-4">This file type cannot be previewed.</p>
           <Button onClick={handleDownload}><Download className="w-4 h-4 mr-2" />Download File</Button>
         </div>
       </div>
     ) : (
       <div className="text-center py-8">
-        <FileIcon className="w-16 h-16 mx-auto mb-4 text-gray-400" />
+        <FileIcon className="w-16 h-16 mx-auto mb-4 text-muted-foreground" />
         <h3 className="text-lg font-semibold mb-2">Preview Not Available</h3>
-        <p className="text-gray-600 mb-4">This file type cannot be previewed.</p>
+        <p className="text-muted-foreground mb-4">This file type cannot be previewed.</p>
         <Button onClick={handleDownload}><Download className="w-4 h-4 mr-2" />Download File</Button>
       </div>
     )
@@ -384,7 +384,7 @@ function FilePreviewInner({ file, senderName, senderUniqueId, recipients, timest
   const userGradient = useMemo(() => generateGradient(senderName || 'Unknown'), [senderName])
 
   return (
-    <Card className="group relative mb-5 chat-bubble border-none shadow-none bg-transparent">
+    <Card className="group relative chat-bubble border-none shadow-none bg-transparent">
       <CardContent className="p-0">
         <div className="mb-3 flex items-center gap-3">
           <div className="relative">
@@ -394,14 +394,14 @@ function FilePreviewInner({ file, senderName, senderUniqueId, recipients, timest
             <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 border border-white dark:border-gray-700 rounded-full" style={{ backgroundImage: userGradient }} />
           </div>
           <div className="flex-1">
-            <p className="text-xs text-gray-500 dark:text-gray-400">{isOwnItem ? 'Uploaded By' : 'Received From'}</p>
-            <h4 className="text-sm font-semibold text-gray-900 dark:text-white">{senderName || 'Unknown'}{senderUniqueId ? ` (${senderUniqueId})` : ''}{isOwnItem ? ' (You)' : ''}</h4>
+            <p className="text-xs text-muted-foreground dark:text-muted-foreground">{isOwnItem ? 'Uploaded By' : 'Received From'}</p>
+            <h4 className="text-sm font-semibold text-foreground dark:text-white">{senderName || 'Unknown'}{senderUniqueId ? ` (${senderUniqueId})` : ''}{isOwnItem ? ' (You)' : ''}</h4>
           </div>
         </div>
-        <div className="p-4 ms-8 mr-4 bg-white border border-gray-200 rounded-lg shadow-lg dark:bg-gray-700 dark:border-gray-600 relative group cursor-default min-h-fit" style={{ borderRadius: 35, paddingBottom: 10, paddingTop: 10 }}>
+        <div className="p-4 ms-8 mr-4 bg-card border border-border rounded-lg shadow-lg dark:bg-card dark:border-border relative group cursor-default min-h-fit" style={{ borderRadius: 35, paddingBottom: 10, paddingTop: 10 }}>
           <div className="items-center justify-between mb-3 sm:flex">
-            <div className="text-sm font-normal text-gray-500 dark:text-gray-300">
-              {file.fileId && <span className="italic text-gray-600 dark:text-white ml-[5px]">File ID : {highlight(file.fileId)}</span>}
+            <div className="text-sm font-normal text-muted-foreground dark:text-gray-300">
+              {file.fileId && <span className="italic text-muted-foreground dark:text-white ml-[5px]">File ID : {highlight(file.fileId)}</span>}
             </div>
             {onMarkPrinted && !isPrinted && (
               <Button
@@ -420,14 +420,14 @@ function FilePreviewInner({ file, senderName, senderUniqueId, recipients, timest
               </Badge>
             )}
           </div>
-          <div className="p-3 mb-2 text-xs italic font-normal text-gray-500 border border-gray-200 rounded-lg bg-gray-50 dark:bg-gray-600 dark:border-gray-500 dark:text-gray-300 min-h-fit" style={{ borderRadius: 30 }}>
+          <div className="p-3 mb-2 text-xs italic font-normal text-muted-foreground border border-border rounded-lg bg-muted/50 dark:bg-muted dark:border-border dark:text-gray-300 min-h-fit" style={{ borderRadius: 30 }}>
             <div className="flex items-center justify-between gap-2.5">
               <div className="flex flex-col gap-2.5">
                 <div className="leading-1.5 flex w-full max-w-md flex-col">
-                  <div className="flex items-start bg-gray-50 dark:bg-gray-700 rounded-xl p-2 h-auto w-full md:w-auto" style={{ borderRadius: 15 }}>
+                  <div className="flex items-start bg-muted/50 rounded-xl p-2 h-auto w-full md:w-auto" style={{ borderRadius: 15 }}>
                     <div className="me-2 flex-1">
-                      <span className="flex items-center gap-2 text-sm font-medium text-gray-900 dark:text-white pb-2 flex-wrap">
-                        <span className="file-icon">{file.isLink ? <Link className="h-10 w-10 text-gray-700 dark:text-gray-200" /> : <FileIcon className="h-10 w-10 text-gray-700 dark:text-gray-200" />}</span>
+                      <span className="flex items-center gap-2 text-sm font-medium text-foreground dark:text-white pb-2 flex-wrap">
+                        <span className="file-icon">{file.isLink ? <Link className="h-10 w-10 text-foreground dark:text-gray-200" /> : <FileIcon className="h-10 w-10 text-foreground dark:text-gray-200" />}</span>
                         <TooltipProvider delayDuration={150}>
                           <Tooltip>
                             <TooltipTrigger asChild>
@@ -443,7 +443,7 @@ function FilePreviewInner({ file, senderName, senderUniqueId, recipients, timest
                           </Tooltip>
                         </TooltipProvider>
                       </span>
-                      <span className="flex text-xs font-normal text-gray-500 dark:text-gray-400 gap-2 flex-wrap">
+                      <span className="flex text-xs font-normal text-muted-foreground dark:text-muted-foreground gap-2 flex-wrap">
                         <span className="file-size">{formatFileSize(file.fileSize)}</span>
                         <svg xmlns="http://www.w3.org/2000/svg" aria-hidden="true" className="self-center" width="3" height="4" viewBox="0 0 3 4" fill="none"><circle cx="1.5" cy="2" r="1.5" fill="#6B7280" /></svg>
                         <span className="file-type">{getDisplayExtension(file.fileType, file.fileName, file.isLink)}</span>
@@ -470,7 +470,7 @@ function FilePreviewInner({ file, senderName, senderUniqueId, recipients, timest
                         <TooltipContent side="top">Preview</TooltipContent>
                       </Tooltip>
                       <DialogContent showCloseButton={false} className="sm:max-w-[92vw] max-w-[92vw] w-[92vw] h-[85vh] p-0 rounded-2xl overflow-hidden flex flex-col">
-                        <div className="flex items-center justify-between px-4 py-3 border-b bg-white dark:bg-gray-900 dark:border-gray-800">
+                        <div className="flex items-center justify-between px-4 py-3 border-b bg-card dark:bg-gray-900 dark:border-gray-800">
                           <DialogHeader className="p-0 m-0">
                             <DialogTitle className="flex items-center gap-2 text-base font-semibold truncate max-w-[60vw]">
                               {file.isLink ? <Link className="w-5 h-5" /> : <FileIcon className="w-5 h-5" />}
@@ -509,7 +509,7 @@ function FilePreviewInner({ file, senderName, senderUniqueId, recipients, timest
                                 <DialogClose asChild>
                                   <button
                                     aria-label="Close"
-                                    className="cursor-pointer inline-flex items-center justify-center h-9 w-9 rounded-full text-gray-600 hover:text-gray-900 hover:bg-gray-100 dark:text-gray-400 dark:hover:text-white dark:hover:bg-gray-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-400/50 focus-visible:ring-offset-2 focus-visible:ring-offset-background active:scale-95"
+                                    className="cursor-pointer inline-flex items-center justify-center h-9 w-9 rounded-full text-muted-foreground hover:text-foreground hover:bg-gray-100 dark:text-muted-foreground dark:hover:text-white dark:hover:bg-gray-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-400/50 focus-visible:ring-offset-2 focus-visible:ring-offset-background active:scale-95"
                                   >
                                     <X className="w-5 h-5" />
                                   </button>
@@ -519,7 +519,7 @@ function FilePreviewInner({ file, senderName, senderUniqueId, recipients, timest
                             </Tooltip>
                           </div>
                         </div>
-                        <div className="flex-1 overflow-hidden bg-white dark:bg-gray-900">
+                        <div className="flex-1 overflow-hidden bg-card dark:bg-gray-900">
                           {renderPreview('dialog')}
                         </div>
                       </DialogContent>
@@ -567,31 +567,40 @@ function FilePreviewInner({ file, senderName, senderUniqueId, recipients, timest
                         <TooltipContent side="top">Delete</TooltipContent>
                       </Tooltip>
                       <AlertDialogContent>
-                      <AlertDialogHeader>
-                        <AlertDialogTitle>Delete this item?</AlertDialogTitle>
-                        <AlertDialogDescription>This will remove it from your history. You can undo for 30 seconds.</AlertDialogDescription>
-                      </AlertDialogHeader>
-                      <AlertDialogFooter>
-                        <AlertDialogCancel>Cancel</AlertDialogCancel>
-                        <AlertDialogAction onClick={onDelete}>Delete</AlertDialogAction>
-                      </AlertDialogFooter>
-                    </AlertDialogContent>
-                  </AlertDialog>
-                )}
-              </div>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>Delete this item?</AlertDialogTitle>
+                          <AlertDialogDescription>This will remove it from your history. You can undo for 30 seconds.</AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>Cancel</AlertDialogCancel>
+                          <AlertDialogAction onClick={onDelete} className="bg-destructive text-white hover:bg-destructive/90">Delete</AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
+                  )}
+                </div>
               </TooltipProvider>
             </div>
           </div>
+          {/* Message Chat Bubble */}
+          {file.message && (
+            <div className="mt-3 flex items-center gap-2 px-4 py-3 bg-primary/10 dark:bg-primary/15 rounded-lg border border-primary/20">
+              <svg className="w-6 h-6 text-primary flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+              </svg>
+              <span className="text-sm font-medium text-primary">{file.message}</span>
+            </div>
+          )}
           {timestamp && (
-            <time className="mb-1 text-xs font-normal text-gray-400 sm:order-last sm:mb-0 flex justify-end" style={{ marginTop: 4 }}>
-              <span className="text-blue-800 text-xs font-medium inline-flex items-center px-2.5 py-0.5 dark:bg-gray-700 dark:text-blue-400" style={{ borderRadius: 30 }}>
+            <time className="mb-1 text-xs font-normal text-muted-foreground sm:order-last sm:mb-0 flex justify-end" style={{ marginTop: 4 }}>
+              <span className="text-primary text-xs font-medium inline-flex items-center px-2.5 py-0.5 dark:bg-card dark:text-primary" style={{ borderRadius: 30 }}>
                 <svg className="w-2.5 h-2.5 me-1.5" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 20 20"><path d="M10 0a10 10 0 1 0 10 10A10.011 10.011 0 0 0 10 0Zm3.982 13.982a1 1 0 0 1-1.414 0l-3.274-3.274A1.012 1.012 0 0 1 9 10V6a1 1 0 0 1 2 0v3.586l2.982 2.982a1 1 0 0 1 0 1.414Z" /></svg>
                 {new Date(timestamp).toLocaleTimeString()}
               </span>
             </time>
           )}
         </div>
-        <div className="ms-8 mt-2 flex flex-wrap items-center gap-3 text-xs text-gray-500">
+        <div className="ms-8 mt-2 flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
           {recipients && recipients.length > 0 && (
             <span className="truncate">To: {(() => {
               const maxShow = 2
@@ -600,25 +609,25 @@ function FilePreviewInner({ file, senderName, senderUniqueId, recipients, timest
               return (
                 <>
                   <span className="truncate inline-block max-w-[220px] align-middle">{parts.join(', ')}{remaining > 0 && ', '}</span>
-                  {remaining > 0 && <button className="text-blue-600 hover:underline" onClick={() => setIsRecipientsOpen(true)}>{`and ${remaining} more`}</button>}
+                  {remaining > 0 && <button className="text-primary hover:underline" onClick={() => setIsRecipientsOpen(true)}>{`and ${remaining} more`}</button>}
                 </>
               )
             })()}</span>
           )}
-          {file.method && <span className="text-blue-700 dark:text-blue-300 font-medium">Method : {file.method}</span>}
+          {file.method && <span className="text-primary dark:text-primary font-medium">Method : {file.method}</span>}
         </div>
       </CardContent>
       <Dialog open={isRecipientsOpen} onOpenChange={setIsRecipientsOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader><DialogTitle>Recipients</DialogTitle></DialogHeader>
-            <div className="space-y-2 max-h-80 overflow-y-auto">
-              {recipients && recipients.length > 0 ? recipients.map(r => (
-                <div key={r.id} className="flex items-center justify-between p-2 rounded border border-gray-200">
-                  <span className="text-sm font-medium">{r.name}</span>
-                  <span className="text-xs text-gray-500">{r.uniqueId}</span>
-                </div>
-              )) : <p className="text-sm text-gray-500">No recipients</p>}
-            </div>
+          <div className="space-y-2 max-h-80 overflow-y-auto">
+            {recipients && recipients.length > 0 ? recipients.map(r => (
+              <div key={r.id} className="flex items-center justify-between p-2 rounded border border-border">
+                <span className="text-sm font-medium">{r.name}</span>
+                <span className="text-xs text-muted-foreground">{r.uniqueId}</span>
+              </div>
+            )) : <p className="text-sm text-muted-foreground">No recipients</p>}
+          </div>
         </DialogContent>
       </Dialog>
     </Card>

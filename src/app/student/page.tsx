@@ -1097,26 +1097,26 @@ function StudentDashboardInner() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50">
-      <div className="container mx-auto px-4 py-8">
+    <div className="min-h-screen bg-background text-foreground">
+      <div className="container mx-auto px-4 py-6">
         {/* Header */}
-        <div className="flex items-center justify-between mb-6">
+        <div className="dashboard-header p-4 rounded-xl mb-6 flex flex-col md:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-4">
-            <div className="w-12 h-12 rounded-full flex items-center justify-center text-white font-semibold text-xl" style={{ backgroundImage: generateGradient(userData.name) }}>
+            <div className="w-11 h-11 rounded-full flex items-center justify-center text-white font-semibold text-lg" style={{ backgroundImage: generateGradient(userData.name) }}>
               {userData.name.charAt(0).toUpperCase()}
             </div>
             <div>
-              <h1 className="text-2xl font-bold">{userData.name}</h1>
-              <p className="text-gray-600">ID: {userData.uniqueId} | Room {userData.roomNumber}</p>
+              <h1 className="text-xl font-semibold text-foreground">{userData.name}</h1>
+              <p className="text-sm text-muted-foreground">ID: {userData.uniqueId} • Room {userData.roomNumber}</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <Badge variant={isConnected ? 'default' : 'destructive'} className="flex items-center gap-2">
-              {isConnected ? <Wifi className="w-4 h-4" /> : <WifiOff className="w-4 h-4" />}
+            <Badge variant={isConnected ? 'default' : 'destructive'} className={`flex items-center gap-1.5 px-2.5 py-1 text-xs ${isConnected ? 'bg-primary hover:bg-primary text-primary-foreground' : ''}`}>
+              {isConnected ? <Wifi className="w-3.5 h-3.5" /> : <WifiOff className="w-3.5 h-3.5" />}
               {isConnected ? 'Connected' : 'Disconnected'}
             </Badge>
-            <Badge variant="outline" className="flex items-center gap-2">
-              <Users className="w-4 h-4" />
+            <Badge variant="outline" className="flex items-center gap-1.5 px-2.5 py-1 text-xs">
+              <Users className="w-3.5 h-3.5" />
               {onlineUsers.length + 1 + (adminId ? 1 : 0)} Online
             </Badge>
           </div>
@@ -1124,7 +1124,7 @@ function StudentDashboardInner() {
 
         {/* Top-level tabs */}
         <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)} className="w-full">
-          <TabsList className="grid w-full grid-cols-3">
+          <TabsList className="grid w-full grid-cols-3 h-10 p-1 bg-muted rounded-lg">
             <TabsTrigger value="share">Share Files</TabsTrigger>
             <TabsTrigger value="history">File History</TabsTrigger>
             <TabsTrigger value="users">Online Users</TabsTrigger>
@@ -1133,8 +1133,8 @@ function StudentDashboardInner() {
           {/* Share Files Tab */}
           <TabsContent value="share" className="mt-4">
             <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
+              <CardHeader className="pb-4">
+                <CardTitle className="flex items-center gap-2 text-lg font-semibold">
                   <Share2 className="w-5 h-5" />
                   Share Files
                 </CardTitle>
@@ -1142,7 +1142,7 @@ function StudentDashboardInner() {
               </CardHeader>
               <CardContent>
                 <Tabs value={shareMode} onValueChange={(v) => setShareMode(v as any)} className="w-full">
-                  <TabsList className="grid w-full grid-cols-2">
+                  <TabsList className="grid w-full grid-cols-2 h-9 p-1 bg-muted rounded-lg">
                     <TabsTrigger value="files">Files</TabsTrigger>
                     <TabsTrigger value="links">Links</TabsTrigger>
                   </TabsList>
@@ -1151,17 +1151,17 @@ function StudentDashboardInner() {
                     {/* Dropzone */}
                     <div
                       {...getRootProps()}
-                      className={`border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-colors ${isDragActive ? 'border-blue-500 bg-blue-50' : 'border-gray-300 hover:border-gray-400'
+                      className={`dropzone p-8 text-center cursor-pointer ${isDragActive ? 'dropzone-active border-primary' : ''
                         }`}
                     >
                       <input {...getInputProps()} />
-                      <Upload className="w-12 h-12 mx-auto mb-4 text-gray-400" />
+                      <Upload className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
                       {isDragActive ? (
-                        <p className="text-blue-600">Drop the files here...</p>
+                        <p className="text-primary">Drop the files here...</p>
                       ) : (
                         <div>
-                          <p className="text-gray-600 mb-2">Drag & drop files here, or click to select</p>
-                          <p className="text-sm text-gray-500">Support for multiple files</p>
+                          <p className="text-muted-foreground mb-2">Drag & drop files here, or click to select</p>
+                          <p className="text-sm text-muted-foreground">Support for multiple files</p>
                         </div>
                       )}
                     </div>
@@ -1174,11 +1174,11 @@ function StudentDashboardInner() {
                         </Label>
                         <div className="max-h-32 overflow-y-auto space-y-2">
                           {selectedFiles.map((file, index) => (
-                            <div key={index} className="flex items-center justify-between p-2 bg-gray-50 rounded">
+                            <div key={index} className="flex items-center justify-between p-2 bg-muted/50 rounded">
                               <div className="flex items-center gap-2">
                                 <FileText className="w-4 h-4" />
                                 <span className="text-sm truncate">{file.name}</span>
-                                <span className="text-xs text-gray-500">({formatFileSize(file.size)})</span>
+                                <span className="text-xs text-muted-foreground">({formatFileSize(file.size)})</span>
                               </div>
                               <Button variant="ghost" size="sm" onClick={() => removeFile(index)}>
                                 <X className="w-4 h-4" />
@@ -1245,7 +1245,7 @@ function StudentDashboardInner() {
                                   .map(u => {
                                     const checked = selectedRecipients.includes(u.id)
                                     return (
-                                      <label key={u.id} className={`flex items-center gap-3 p-2 rounded border ${checked ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:bg-gray-50'}`}>
+                                      <label key={u.id} className={`flex items-center gap-3 p-2 rounded border ${checked ? 'border-blue-500 bg-primary/5' : 'border-gray-200 hover:bg-muted/50'}`}>
                                         <input
                                           type="checkbox"
                                           className="accent-blue-600"
@@ -1263,21 +1263,21 @@ function StudentDashboardInner() {
                                           <div className="w-8 h-8 rounded-full flex items-center justify-center text-white font-semibold text-sm" style={{ backgroundImage: generateGradient(u.name) }}>{u.name.charAt(0).toUpperCase()}</div>
                                           <div>
                                             <p className="text-sm font-medium">{u.name}</p>
-                                            <p className="text-xs text-gray-500">{u.uniqueId}</p>
+                                            <p className="text-xs text-muted-foreground">{u.uniqueId}</p>
                                           </div>
                                         </div>
                                       </label>
                                     )
                                   })}
                                 {onlineUsers.length === 0 && (
-                                  <p className="text-sm text-gray-500">No users online</p>
+                                  <p className="text-sm text-muted-foreground">No users online</p>
                                 )}
                               </div>
                             </TabsContent>
                             {/* Lab Rooms tab (current room admin) */}
                             <TabsContent value="labs" className="space-y-3">
                               <div className="max-h-64 overflow-y-auto space-y-2">
-                                <label className={`flex items-center gap-3 p-2 rounded border ${selectedRecipients.includes('admin') ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:bg-gray-50'}`}>
+                                <label className={`flex items-center gap-3 p-2 rounded border ${selectedRecipients.includes('admin') ? 'border-blue-500 bg-primary/5' : 'border-gray-200 hover:bg-muted/50'}`}>
                                   <input
                                     type="checkbox"
                                     className="accent-blue-600"
@@ -1343,7 +1343,7 @@ function StudentDashboardInner() {
                         value={linkUrl}
                         onChange={(e) => setLinkUrl(e.target.value)}
                       />
-                      <p className="text-sm text-gray-500">Share Google Docs, Drive links, or any other web links</p>
+                      <p className="text-sm text-muted-foreground">Share Google Docs, Drive links, or any other web links</p>
                     </div>
 
                     {/* Message below link input */}
@@ -1401,7 +1401,7 @@ function StudentDashboardInner() {
                                   .map(u => {
                                     const checked = selectedRecipients.includes(u.id)
                                     return (
-                                      <label key={u.id} className={`flex items-center gap-3 p-2 rounded border ${checked ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:bg-gray-50'}`}>
+                                      <label key={u.id} className={`flex items-center gap-3 p-2 rounded border ${checked ? 'border-blue-500 bg-primary/5' : 'border-gray-200 hover:bg-muted/50'}`}>
                                         <input
                                           type="checkbox"
                                           className="accent-blue-600"
@@ -1414,20 +1414,20 @@ function StudentDashboardInner() {
                                           <div className="w-8 h-8 rounded-full flex items-center justify-center text-white font-semibold text-sm" style={{ backgroundImage: generateGradient(u.name) }}>{u.name.charAt(0).toUpperCase()}</div>
                                           <div>
                                             <p className="text-sm font-medium">{u.name}</p>
-                                            <p className="text-xs text-gray-500">{u.uniqueId}</p>
+                                            <p className="text-xs text-muted-foreground">{u.uniqueId}</p>
                                           </div>
                                         </div>
                                       </label>
                                     )
                                   })}
                                 {onlineUsers.length === 0 && (
-                                  <p className="text-sm text-gray-500">No users online</p>
+                                  <p className="text-sm text-muted-foreground">No users online</p>
                                 )}
                               </div>
                             </TabsContent>
                             <TabsContent value="labs" className="space-y-3">
                               <div className="max-h-64 overflow-y-auto space-y-2">
-                                <label className={`flex items-center gap-3 p-2 rounded border ${selectedRecipients.includes('admin') ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:bg-gray-50'}`}>
+                                <label className={`flex items-center gap-3 p-2 rounded border ${selectedRecipients.includes('admin') ? 'border-blue-500 bg-primary/5' : 'border-gray-200 hover:bg-muted/50'}`}>
                                   <input
                                     type="checkbox"
                                     className="accent-blue-600"
@@ -1486,19 +1486,19 @@ function StudentDashboardInner() {
           {/* File History Tab */}
           <TabsContent value="history" className="mt-4">
             <Card>
-              <CardHeader>
-                <CardTitle>File History</CardTitle>
+              <CardHeader className="pb-4">
+                <CardTitle className="text-lg font-semibold">File History</CardTitle>
               </CardHeader>
               <CardContent>
                 <Tabs value={historySubTab} onValueChange={(v) => setHistorySubTab(v as any)} className="w-full">
-                  <TabsList className="grid w-full grid-cols-2">
+                  <TabsList className="grid w-full grid-cols-2 h-9 p-1 bg-muted rounded-lg">
                     <TabsTrigger value="received">Received</TabsTrigger>
                     <TabsTrigger value="sent">Sent</TabsTrigger>
                   </TabsList>
 
                   <TabsContent value="received" className="space-y-2">
                     {/* Unified toolbar */}
-                    <div className="sticky top-0 z-10 space-y-2 md:space-y-0 md:flex md:items-center md:justify-between bg-white/90 backdrop-blur-sm border rounded-md p-2 shadow-sm">
+                    <div className="sticky top-0 z-10 space-y-2 md:space-y-0 md:flex md:items-center md:justify-between bg-card border rounded-md p-2">
                       <div className="flex items-center gap-2 w-full md:w-auto">
                         <div className="flex-1 md:flex-initial relative">
                           <Search className="w-4 h-4 absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground" />
@@ -1518,7 +1518,7 @@ function StudentDashboardInner() {
                                     <div className="relative">
                                       <Filter className="w-4 h-4" />
                                       {rHasActiveFilters && (
-                                        <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-emerald-500" />
+                                        <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-white ring-1 ring-primary-foreground" />
                                       )}
                                     </div>
                                   </Button>
@@ -1576,7 +1576,7 @@ function StudentDashboardInner() {
                         ) : (
                           <FileText className="w-12 h-12 mx-auto mb-4 text-gray-400 animate-pulse" />
                         )}
-                        <p className="text-gray-700 font-medium">
+                        <p className="text-muted-foreground font-medium">
                           {rDebouncedQuery ? (
                             <>No matches for {highlightWith(rDebouncedQuery, `"${rDebouncedQuery}"`)}.</>
                           ) : (
@@ -1588,7 +1588,7 @@ function StudentDashboardInner() {
                             <Button variant="outline" size="sm" onClick={() => setRSearchQuery('')} className="transition hover:scale-[1.02]">Clear search</Button>
                           )}
                           {(rTypeFilter !== 'all') && (
-                            <Button variant="ghost" size="sm" onClick={() => setRTypeFilter('all')} className="transition hover:scale-[1.02]">Reset filters</Button>
+                            <Button variant="outline" size="sm" onClick={() => setRTypeFilter('all')} className="transition hover:scale-[1.02]">Reset filters</Button>
                           )}
                         </div>
                       </div>
@@ -1623,7 +1623,7 @@ function StudentDashboardInner() {
 
                   <TabsContent value="sent" className="space-y-2">
                     {/* Unified toolbar */}
-                    <div className="sticky top-0 z-10 space-y-2 md:space-y-0 md:flex md:items-center md:justify-between bg-white/90 backdrop-blur-sm border rounded-md p-2 shadow-sm">
+                    <div className="sticky top-0 z-10 space-y-2 md:space-y-0 md:flex md:items-center md:justify-between bg-card border rounded-md p-2">
                       <div className="flex items-center gap-2 w-full md:w-auto">
                         <div className="flex-1 md:flex-initial relative">
                           <Search className="w-4 h-4 absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground" />
@@ -1643,7 +1643,7 @@ function StudentDashboardInner() {
                                     <div className="relative">
                                       <Filter className="w-4 h-4" />
                                       {sHasActiveFilters && (
-                                        <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-emerald-500" />
+                                        <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-white ring-1 ring-primary-foreground" />
                                       )}
                                     </div>
                                   </Button>
@@ -1699,7 +1699,7 @@ function StudentDashboardInner() {
                         ) : (
                           <FileText className="w-12 h-12 mx-auto mb-4 text-gray-400 animate-pulse" />
                         )}
-                        <p className="text-gray-700 font-medium">
+                        <p className="text-muted-foreground font-medium">
                           {sDebouncedQuery ? (
                             <>No matches for {highlightWith(sDebouncedQuery, `"${sDebouncedQuery}"`)}.</>
                           ) : (
@@ -1711,7 +1711,7 @@ function StudentDashboardInner() {
                             <Button variant="outline" size="sm" onClick={() => setSSearchQuery('')} className="transition hover:scale-[1.02]">Clear search</Button>
                           )}
                           {(sTypeFilter !== 'all') && (
-                            <Button variant="ghost" size="sm" onClick={() => setSTypeFilter('all')} className="transition hover:scale-[1.02]">Reset filters</Button>
+                            <Button variant="outline" size="sm" onClick={() => setSTypeFilter('all')} className="transition hover:scale-[1.02]">Reset filters</Button>
                           )}
                         </div>
                       </div>
@@ -1752,37 +1752,37 @@ function StudentDashboardInner() {
           {/* Online Users Tab */}
           <TabsContent value="users" className="mt-4">
             <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
+              <CardHeader className="pb-4">
+                <CardTitle className="flex items-center gap-2 text-lg font-semibold">
                   <Users className="w-5 h-5" />
                   Online Users
                 </CardTitle>
                 <CardDescription>Students currently in Room {userData.roomNumber}</CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="space-y-3">
-                  <div className="flex items-center gap-3 p-2 bg-blue-50 rounded-lg">
+                <div className="space-y-2">
+                  <div className="flex items-center gap-3 p-3 bg-muted/50 rounded-lg">
                     <div className="w-8 h-8 rounded-full flex items-center justify-center text-white font-semibold text-sm" style={{ backgroundImage: generateGradient(userData.name) }}>
                       {userData.name.charAt(0).toUpperCase()}
                     </div>
                     <div className="flex-1">
                       <p className="font-medium text-sm">{userData.name}</p>
-                      <p className="text-xs text-gray-500">{userData.uniqueId} (You)</p>
+                      <p className="text-xs text-muted-foreground">{userData.uniqueId} (You)</p>
                     </div>
-                    <Badge variant="default">Online</Badge>
+                    <Badge className="bg-primary hover:bg-primary text-primary-foreground text-xs">Online</Badge>
                   </div>
 
                   {/* Lab Admin shown at top if online */}
                   {adminId && (
-                    <div className="flex items-center gap-3 p-2 hover:bg-gray-50 rounded-lg">
+                    <div className="flex items-center gap-3 p-3 hover:bg-muted/50 rounded-lg transition-colors">
                       <div className="w-8 h-8 rounded-full flex items-center justify-center text-white font-semibold text-sm" style={{ backgroundImage: generateGradient(`Lab Admin (Room ${adminRoom || userData.roomNumber})`) }}>
                         A
                       </div>
                       <div className="flex-1">
                         <p className="font-medium text-sm">Lab Admin (Room {adminRoom || userData.roomNumber})</p>
-                        <p className="text-xs text-gray-500">ADMIN</p>
+                        <p className="text-xs text-muted-foreground">ADMIN</p>
                       </div>
-                      <Badge variant="outline">Online</Badge>
+                      <Badge className="bg-primary hover:bg-primary text-primary-foreground text-xs">Online</Badge>
                     </div>
                   )}
 
@@ -1793,15 +1793,15 @@ function StudentDashboardInner() {
                       itemContent={(index) => {
                         const user = onlineUsers[index]
                         return (
-                          <div key={user.id} className="flex items-center gap-3 p-2 hover:bg-gray-50 rounded-lg">
+                          <div key={user.id} className="flex items-center gap-3 p-3 hover:bg-muted/50 rounded-lg transition-colors">
                             <div className="w-8 h-8 rounded-full flex items-center justify-center text-white font-semibold text-sm" style={{ backgroundImage: generateGradient(user.name) }}>
                               {user.name.charAt(0).toUpperCase()}
                             </div>
                             <div className="flex-1">
                               <p className="font-medium text-sm">{user.name}</p>
-                              <p className="text-xs text-gray-500">{user.uniqueId}</p>
+                              <p className="text-xs text-muted-foreground">{user.uniqueId}</p>
                             </div>
-                            <Badge variant="outline">Online</Badge>
+                            <Badge className="bg-primary hover:bg-primary text-primary-foreground text-xs">Online</Badge>
                           </div>
                         )
                       }}
@@ -1810,7 +1810,7 @@ function StudentDashboardInner() {
                   </div>
 
                   {onlineUsers.length === 0 && !adminId && (
-                    <p className="text-gray-500 text-center py-4">No other users online</p>
+                    <p className="text-muted-foreground text-center py-4">No other users online</p>
                   )}
                 </div>
               </CardContent>
@@ -1823,15 +1823,15 @@ function StudentDashboardInner() {
           <DialogContent className="sm:max-w-[500px] p-0 overflow-hidden border-none shadow-lg">
             {/* Top colored bar */}
             <div className={`h-2 w-full ${googleLinkType === 'sheets' ? 'bg-[#0F9D58]' :
-                googleLinkType === 'slides' ? 'bg-[#F4B400]' :
-                  googleLinkType === 'docs' ? 'bg-[#4285F4]' :
-                    'bg-[#4285F4]'
+              googleLinkType === 'slides' ? 'bg-[#F4B400]' :
+                googleLinkType === 'docs' ? 'bg-[#4285F4]' :
+                  'bg-[#4285F4]'
               }`} />
 
             <div className="p-6 flex flex-col gap-6">
               {/* Header with Icon */}
               <div className="flex items-start gap-4">
-                <div className="p-3 bg-gray-50 rounded-full shrink-0">
+                <div className="p-3 bg-muted/50 rounded-full shrink-0">
                   {googleLinkType === 'sheets' ? (
                     <GoogleSheetsIcon className="w-8 h-8" />
                   ) : googleLinkType === 'slides' ? (
@@ -1843,28 +1843,28 @@ function StudentDashboardInner() {
                   )}
                 </div>
                 <div className="space-y-1 pt-1">
-                  <DialogTitle className="text-xl font-semibold text-gray-900">
+                  <DialogTitle className="text-xl font-semibold text-foreground">
                     {googleLinkType === 'sheets' ? 'Google Sheets Detected' :
                       googleLinkType === 'slides' ? 'Google Slides Detected' :
                         googleLinkType === 'docs' ? 'Google Docs Detected' :
                           'Google Drive Link Detected'}
                   </DialogTitle>
-                  <DialogDescription className="text-base text-gray-500">
+                  <DialogDescription className="text-base text-muted-foreground">
                     Check sharing permissions
                   </DialogDescription>
                 </div>
               </div>
 
               {/* Content */}
-              <div className="text-gray-600 text-[15px] leading-relaxed">
-                You are sharing a <span className="font-medium text-gray-900">
+              <div className="text-muted-foreground text-[15px] leading-relaxed">
+                You are sharing a <span className="font-medium text-foreground">
                   {googleLinkType === 'sheets' ? 'Google Sheet' :
                     googleLinkType === 'slides' ? 'Google Slide' :
                       googleLinkType === 'docs' ? 'Google Doc' :
                         'Google Drive File'}
                 </span>.
                 <br />
-                Please ensure that the link has <span className="font-bold text-gray-900 italic">"Anyone with the link"</span> access enabled so recipients can view it without requesting permission.
+                Please ensure that the link has <span className="font-bold text-foreground italic">"Anyone with the link"</span> access enabled so recipients can view it without requesting permission.
               </div>
 
               {/* Actions */}
@@ -1872,7 +1872,7 @@ function StudentDashboardInner() {
                 <Button
                   variant="outline"
                   onClick={() => setGoogleWarningOpen(false)}
-                  className="border-gray-200 hover:bg-gray-50 text-gray-700 font-medium"
+                  className="border-gray-200 hover:bg-muted/50 text-foreground font-medium"
                 >
                   Cancel
                 </Button>
@@ -1884,9 +1884,9 @@ function StudentDashboardInner() {
                     }
                   }}
                   className={`font-medium text-white shadow-sm ${googleLinkType === 'sheets' ? 'bg-[#0F9D58] hover:bg-[#0B8043]' :
-                      googleLinkType === 'slides' ? 'bg-[#F4B400] hover:bg-[#F09300]' :
-                        googleLinkType === 'docs' ? 'bg-[#4285F4] hover:bg-[#3367D6]' :
-                          'bg-[#4285F4] hover:bg-[#3367D6]'
+                    googleLinkType === 'slides' ? 'bg-[#F4B400] hover:bg-[#F09300]' :
+                      googleLinkType === 'docs' ? 'bg-[#4285F4] hover:bg-[#3367D6]' :
+                        'bg-[#4285F4] hover:bg-[#3367D6]'
                     }`}
                 >
                   I've Checked, Continue
@@ -1907,25 +1907,25 @@ function StudentDashboardInner() {
                 </span>
                 Some recipients are offline
               </DialogTitle>
-              <DialogDescription className="text-gray-600">
+              <DialogDescription className="text-muted-foreground">
                 These recipients are currently offline and won’t receive the file right now.
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-2 max-h-64 overflow-y-auto">
               {offlineUsersInfo.map(u => (
-                <div key={u.id} className="flex items-center justify-between p-2 bg-gray-50 rounded">
+                <div key={u.id} className="flex items-center justify-between p-2 bg-muted/50 rounded">
                   <div className="flex items-center gap-2">
                     <div className="w-8 h-8 rounded-full flex items-center justify-center text-white font-semibold text-sm" style={{ backgroundImage: generateGradient(u.name) }}>{u.name.charAt(0).toUpperCase()}</div>
                     <div>
                       <p className="text-sm font-medium">{u.name}</p>
-                      <p className="text-xs text-gray-500">{u.uniqueId}</p>
+                      <p className="text-xs text-muted-foreground">{u.uniqueId}</p>
                     </div>
                   </div>
                   <Badge variant="destructive">Offline</Badge>
                 </div>
               ))}
               {offlineUsersInfo.length === 0 && (
-                <p className="text-sm text-gray-500">No offline recipients detected.</p>
+                <p className="text-sm text-muted-foreground">No offline recipients detected.</p>
               )}
             </div>
             {pendingTargets.length > 0 && (selectedRecipients.length > 1 || (offlineUsersInfo.length > 0)) && (
@@ -1948,39 +1948,38 @@ function StudentDashboardInner() {
 
         {/* Upload progress dialog (circular redesigned) */}
         <Dialog open={isUploading || forceProgress}>
-          <DialogContent className="max-w-md">
+          <DialogContent className="max-w-md border-primary/20">
             <DialogHeader>
-              <DialogTitle className="text-lg text-center font-semibold flex items-center gap-2">
-                <Upload className="w-5 h-5 text-black dark:text-white" />
+              <DialogTitle className="text-lg text-center font-semibold flex items-center justify-center gap-2 text-primary">
+                <Upload className="w-5 h-5" />
                 Transferring...
               </DialogTitle>
-              <DialogDescription className="text-sm text-center text-gray-600 dark:text-gray-400">
+              <DialogDescription className="text-sm text-center text-muted-foreground">
                 Keep this tab open until your files finish sending.
               </DialogDescription>
             </DialogHeader>
             <div className="flex flex-col items-center gap-8 py-4">
               <div className="relative">
                 <svg className="w-44 h-44 -rotate-90" viewBox="0 0 100 100">
-                  <circle cx="50" cy="50" r="46" stroke="#e5e5e5" strokeWidth="8" fill="none" />
+                  <circle cx="50" cy="50" r="46" className="stroke-primary/20" strokeWidth="8" fill="none" />
                   <circle
                     cx="50"
                     cy="50"
                     r="46"
-                    stroke="currentColor"
+                    className="stroke-primary"
                     strokeWidth="8"
                     strokeLinecap="round"
                     fill="none"
-                    className="text-black dark:text-white"
                     strokeDasharray={2 * Math.PI * 46}
                     strokeDashoffset={(1 - uiProgress / 100) * 2 * Math.PI * 46}
                   />
                 </svg>
                 <div className="absolute inset-0 flex flex-col items-center justify-center">
-                  <div className="text-3xl font-bold text-black dark:text-white">{Math.round(uiProgress)}%</div>
-                  <div className="text-xs tracking-wide text-gray-500 dark:text-gray-400 mt-1">SENDING</div>
+                  <div className="text-3xl font-bold text-primary">{Math.round(uiProgress)}%</div>
+                  <div className="text-xs tracking-wide text-muted-foreground mt-1">SENDING</div>
                 </div>
               </div>
-              <p className="text-sm text-center text-gray-600 dark:text-gray-400 max-w-sm">
+              <p className="text-sm text-center text-muted-foreground max-w-sm">
                 Do not close this window.
               </p>
             </div>
@@ -2003,7 +2002,7 @@ function StudentDashboardInner() {
                     </div>
                     <div>
                       <h3 className="text-base font-semibold leading-none">{successInfo.mode === 'received' ? 'Files received' : 'Transfer complete'}</h3>
-                      <p className="text-xs text-gray-500">{successInfo.mode === 'received' ? 'Your items were received successfully' : 'Your items were delivered successfully'}</p>
+                      <p className="text-xs text-muted-foreground">{successInfo.mode === 'received' ? 'Your items were received successfully' : 'Your items were delivered successfully'}</p>
                     </div>
                   </div>
                 </div>
@@ -2013,7 +2012,7 @@ function StudentDashboardInner() {
                     {successInfo.mode === 'sent' ? (
                       <>
                         <div className="col-span-3">
-                          <div className="text-[11px] uppercase tracking-wide text-gray-500 mb-1">To</div>
+                          <div className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1">To</div>
                           <div className="flex flex-wrap gap-1.5">
                             {successInfo.recipients.slice(0, 6).map((r, i) => {
                               const isSelf = r.uniqueId === userData.uniqueId
@@ -2021,7 +2020,7 @@ function StudentDashboardInner() {
                               const displayName = isAdmin ? `Lab Admin (Room ${userData.roomNumber})` : r.name
                               const avatarText = isAdmin ? 'A' : r.name.charAt(0).toUpperCase()
                               return (
-                                <span key={r.uniqueId + i} className="inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-xs bg-gray-50 dark:bg-neutral-800">
+                                <span key={r.uniqueId + i} className="inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-xs bg-muted/50 dark:bg-neutral-800">
                                   <span className="inline-flex w-5 h-5 items-center justify-center rounded-full text-white text-[10px] font-medium" style={{ backgroundImage: generateGradient(displayName) }}>
                                     {avatarText}
                                   </span>
@@ -2031,26 +2030,26 @@ function StudentDashboardInner() {
                               )
                             })}
                             {successInfo.recipients.length > 6 && (
-                              <span className="inline-flex items-center rounded-full border px-2.5 py-1 text-xs bg-gray-50 dark:bg-neutral-800">+{successInfo.recipients.length - 6} more</span>
+                              <span className="inline-flex items-center rounded-full border px-2.5 py-1 text-xs bg-muted/50 dark:bg-neutral-800">+{successInfo.recipients.length - 6} more</span>
                             )}
                           </div>
                         </div>
                         <div className="col-span-3 border-t my-1" />
                         <div className="col-span-3 grid grid-cols-2 gap-4">
                           <div>
-                            <div className="text-[11px] uppercase tracking-wide text-gray-500 mb-1">From</div>
+                            <div className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1">From</div>
                             <div className="text-sm font-medium">{successInfo.from}</div>
                           </div>
                           <div>
-                            <div className="text-[11px] uppercase tracking-wide text-gray-500 mb-1">Total Size</div>
+                            <div className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1">Total Size</div>
                             <div className="text-sm font-medium">{successInfo.totalSize}</div>
                           </div>
                           <div>
-                            <div className="text-[11px] uppercase tracking-wide text-gray-500 mb-1">Files</div>
+                            <div className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1">Files</div>
                             <div className="text-sm font-medium">{successInfo.totalFiles}</div>
                           </div>
                           <div>
-                            <div className="text-[11px] uppercase tracking-wide text-gray-500 mb-1">Links</div>
+                            <div className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1">Links</div>
                             <div className="text-sm font-medium">{successInfo.totalLinks}</div>
                           </div>
                         </div>
@@ -2058,7 +2057,7 @@ function StudentDashboardInner() {
                     ) : (
                       <>
                         <div className="col-span-3">
-                          <div className="text-[11px] uppercase tracking-wide text-gray-500 mb-1">From</div>
+                          <div className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1">From</div>
                           <div className="flex flex-wrap gap-1.5">
                             {(successInfo.senders || []).slice(0, 6).map((s, i) => {
                               const isSelf = s.uniqueId === userData.uniqueId
@@ -2066,7 +2065,7 @@ function StudentDashboardInner() {
                               const displayName = isAdmin ? `Lab Admin (Room ${userData.roomNumber})` : (s.name || 'Unknown')
                               const avatarText = isAdmin ? 'A' : (s.name?.charAt(0).toUpperCase() || '?')
                               return (
-                                <span key={(s.uniqueId || '') + i} className="inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-xs bg-gray-50 dark:bg-neutral-800">
+                                <span key={(s.uniqueId || '') + i} className="inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-xs bg-muted/50 dark:bg-neutral-800">
                                   <span className="inline-flex w-5 h-5 items-center justify-center rounded-full text-white text-[10px] font-medium" style={{ backgroundImage: generateGradient(displayName) }}>
                                     {avatarText}
                                   </span>
@@ -2076,7 +2075,7 @@ function StudentDashboardInner() {
                               )
                             })}
                             {successInfo.senders && successInfo.senders.length > 6 && (
-                              <span className="inline-flex items-center rounded-full border px-2.5 py-1 text-xs bg-gray-50 dark:bg-neutral-800">+{successInfo.senders.length - 6} more</span>
+                              <span className="inline-flex items-center rounded-full border px-2.5 py-1 text-xs bg-muted/50 dark:bg-neutral-800">+{successInfo.senders.length - 6} more</span>
                             )}
                             {!successInfo.senders?.length && (
                               <span className="text-sm font-medium">{successInfo.from}</span>
@@ -2086,26 +2085,26 @@ function StudentDashboardInner() {
                         <div className="col-span-3 border-t my-1" />
                         <div className="col-span-3 grid grid-cols-2 gap-4">
                           <div>
-                            <div className="text-[11px] uppercase tracking-wide text-gray-500 mb-1">To</div>
+                            <div className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1">To</div>
                             <div className="text-sm font-medium">{userData.name} ({userData.uniqueId}) (You)</div>
                           </div>
                           <div>
-                            <div className="text-[11px] uppercase tracking-wide text-gray-500 mb-1">Total Size</div>
+                            <div className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1">Total Size</div>
                             <div className="text-sm font-medium">{successInfo.totalSize}</div>
                           </div>
                           <div>
-                            <div className="text-[11px] uppercase tracking-wide text-gray-500 mb-1">Files</div>
+                            <div className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1">Files</div>
                             <div className="text-sm font-medium">{successInfo.totalFiles}</div>
                           </div>
                           <div>
-                            <div className="text-[11px] uppercase tracking-wide text-gray-500 mb-1">Links</div>
+                            <div className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1">Links</div>
                             <div className="text-sm font-medium">{successInfo.totalLinks}</div>
                           </div>
                         </div>
                       </>
                     )}
                   </div>
-                  <div className="border-t p-4 text-[11px] text-gray-600 dark:text-gray-400 bg-emerald-50/50 dark:bg-emerald-900/10">
+                  <div className="border-t p-4 text-[11px] text-muted-foreground dark:text-gray-400 bg-emerald-50/50 dark:bg-emerald-900/10">
                     Each item gets a unique File ID. Check the File History tab to view and use them for tracking or resharing.
                   </div>
                 </div>
@@ -2129,12 +2128,12 @@ function StudentDashboardInner() {
                 </span>
                 Couldn’t complete your share
               </DialogTitle>
-              <DialogDescription className="text-gray-600">
+              <DialogDescription className="text-muted-foreground">
                 Something interrupted the transfer. Please review the notes below and try again.
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-3">
-              <div className="whitespace-pre-line text-sm text-gray-800 bg-gray-50 p-3 rounded border border-gray-200">
+              <div className="whitespace-pre-line text-sm text-gray-800 bg-muted/50 p-3 rounded border border-gray-200">
                 {errorModalMessage}
               </div>
               <ul className="text-sm text-gray-700 list-disc pl-5 space-y-1">
@@ -2150,23 +2149,25 @@ function StudentDashboardInner() {
         </Dialog>
       </div>
       {/* Receiving Speed Dial (bottom-right) */}
-      {(Object.keys(recvProgress).length > 0 || (recvCounter.total > 0 && recvCounter.received < recvCounter.total)) && (
-        <div className="fixed bottom-6 right-6 z-50">
-          <Button
-            className="relative h-14 w-14 rounded-full shadow-lg ring-1 ring-primary/20 bg-neutral-900 text-white hover:scale-105 active:scale-95 transition-transform overflow-visible"
-            size="icon"
-            aria-label="Receiving files"
-            onClick={() => setReceiveDialogOpen(true)}
-          >
-            {/* Animated receiving icon */}
-            <ArrowDown className="relative animate-arrow-drop" style={{ height: '20px', width: '20px' }} />
-            {/* Pulse + blink badge (no count, no ring) */}
-            <span className="absolute -top-1 right-0">
-              <span className="inline-block w-3 h-3 rounded-full bg-emerald-500 ring-2 ring-white/80 shadow-md animate-badge-pulse-blink" />
-            </span>
-          </Button>
-        </div>
-      )}
+      {
+        (Object.keys(recvProgress).length > 0 || (recvCounter.total > 0 && recvCounter.received < recvCounter.total)) && (
+          <div className="fixed bottom-6 right-6 z-50">
+            <Button
+              className="relative h-14 w-14 rounded-full shadow-lg gradient-primary text-white hover:opacity-90 active:scale-95 transition-all overflow-visible"
+              size="icon"
+              aria-label="Receiving files"
+              onClick={() => setReceiveDialogOpen(true)}
+            >
+              {/* Animated receiving icon */}
+              <ArrowDown className="relative animate-arrow-drop" style={{ height: '20px', width: '20px' }} />
+              {/* Pulse + blink badge */}
+              <span className="absolute -top-1 right-0">
+                <span className="inline-block w-3 h-3 rounded-full bg-white ring-2 ring-primary shadow-md animate-badge-pulse-blink" />
+              </span>
+            </Button>
+          </div>
+        )
+      }
 
       {/* Receiving details dialog */}
       <Dialog open={receiveDialogOpen} onOpenChange={setReceiveDialogOpen}>
@@ -2212,7 +2213,7 @@ function StudentDashboardInner() {
         </DialogContent>
       </Dialog>
       {/* Animations moved to global utilities in globals.css */}
-    </div>
+    </div >
   )
 }
 

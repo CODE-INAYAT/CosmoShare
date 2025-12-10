@@ -524,66 +524,70 @@ function AdminDashboardInner() {
 
   if (!isAuthenticated) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-purple-50 via-white to-blue-50 flex items-center justify-center">
-        <Card className="w-full max-w-md shadow-xl">
-          <CardHeader className="text-center">
-            <div className="flex justify-center mb-4">
-              <div className="p-3 bg-purple-600 rounded-xl">
-                <Printer className="w-8 h-8 text-white" />
+      <div className="min-h-screen bg-background text-foreground flex flex-col">
+        <div className="flex-1 flex items-center justify-center p-4">
+          <div className="w-full max-w-md p-8 rounded-xl border border-border bg-card shadow-lg">
+            <div className="text-center mb-8">
+              <div className="flex justify-center mb-4">
+                <div className="p-3 bg-muted rounded-xl">
+                  <Printer className="w-8 h-8 text-primary" />
+                </div>
               </div>
+              <h2 className="text-2xl font-semibold mb-2">Admin Portal</h2>
+              <p className="text-sm text-muted-foreground">
+                Authenticate to access Lab {roomNumber} admin dashboard
+              </p>
             </div>
-            <CardTitle className="text-2xl">Admin Portal</CardTitle>
-            <CardDescription>
-              Authenticate to access Lab {roomNumber} admin dashboard
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <form onSubmit={handleLogin} className="space-y-4">
+
+            <form onSubmit={handleLogin} className="space-y-5">
               <div className="space-y-2">
-                <Label htmlFor="password">Admin Password</Label>
+                <Label htmlFor="password" className="text-sm font-medium">Admin Password</Label>
                 <Input
                   id="password"
                   type="password"
                   placeholder="Enter admin password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="w-full"
+                  className="w-full h-11"
                 />
               </div>
-              <Button type="submit" className="w-full">
+              <Button
+                type="submit"
+                className="w-full h-11 bg-primary hover:bg-primary/90"
+              >
                 <Printer className="w-4 h-4 mr-2" />
                 Access Admin Panel
               </Button>
             </form>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
       </div>
     )
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-purple-50 via-white to-blue-50">
-      <div className="container mx-auto px-4 py-8">
+    <div className="min-h-screen bg-background text-foreground">
+      <div className="container mx-auto px-4 py-6">
         {/* Header */}
-        <div className="flex items-center justify-between mb-6">
+        <div className="dashboard-header p-4 rounded-xl mb-6 flex flex-col md:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-4">
-            <div className="p-3 bg-purple-600 rounded-xl">
-              <Printer className="w-8 h-8 text-white" />
+            <div className="p-2.5 bg-muted rounded-lg">
+              <Printer className="w-6 h-6 text-primary" />
             </div>
             <div>
-              <h1 className="text-3xl font-bold">Lab Admin Dashboard</h1>
-              <p className="text-gray-600">Room {roomNumber} Management</p>
+              <h1 className="text-xl font-semibold">Lab Admin Dashboard</h1>
+              <p className="text-sm text-muted-foreground">Room {roomNumber} Management</p>
             </div>
           </div>
 
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3">
             <div className="flex items-center gap-2">
-              <Badge variant={isConnected ? "default" : "destructive"} className="flex items-center gap-2">
-                {isConnected ? <Wifi className="w-4 h-4" /> : <WifiOff className="w-4 h-4" />}
+              <Badge variant={isConnected ? "default" : "destructive"} className={`flex items-center gap-1.5 px-2.5 py-1 text-xs ${isConnected ? 'bg-primary hover:bg-primary text-primary-foreground' : ''}`}>
+                {isConnected ? <Wifi className="w-3.5 h-3.5" /> : <WifiOff className="w-3.5 h-3.5" />}
                 {isConnected ? 'Connected' : 'Disconnected'}
               </Badge>
-              <Badge variant="outline" className="flex items-center gap-2">
-                <Users className="w-4 h-4" />
+              <Badge variant="outline" className="flex items-center gap-1.5 px-2.5 py-1 text-xs">
+                <Users className="w-3.5 h-3.5" />
                 {onlineUsers.length} Students
               </Badge>
             </div>
@@ -596,45 +600,45 @@ function AdminDashboardInner() {
 
         {/* Tabs: Received Files | Analytics | Students */}
         <Tabs defaultValue="received" className="w-full">
-          <TabsList className="mb-6">
-            <TabsTrigger value="received" className="flex items-center gap-2">
+          <TabsList className="mb-6 h-10 p-1 bg-muted rounded-lg">
+            <TabsTrigger value="received" className="flex items-center gap-2 rounded-md text-sm">
               <Printer className="w-4 h-4" />
               Received Files
             </TabsTrigger>
-            <TabsTrigger value="analytics" className="flex items-center gap-2">
+            <TabsTrigger value="analytics" className="flex items-center gap-2 rounded-md text-sm">
               <FileText className="w-4 h-4" />
               Analytics
             </TabsTrigger>
-            <TabsTrigger value="students" className="flex items-center gap-2">
+            <TabsTrigger value="students" className="flex items-center gap-2 rounded-md text-sm">
               <Users className="w-4 h-4" />
               Students
             </TabsTrigger>
           </TabsList>
 
           {/* Received Files Tab */}
-          <TabsContent value="received">
+          <TabsContent value="received" className="animate-fade-in">
             <div className="grid grid-cols-1 gap-6">
               <div className="col-span-1">
                 <Card>
-                  <CardHeader>
-                    <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                  <CardHeader className="pb-4 sticky top-0 z-20 bg-card border-b">
+                    <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
                       <div>
-                        <CardTitle className="flex items-center gap-2">
-                          <Printer className="w-5 h-5" />
+                        <CardTitle className="flex items-center gap-2 text-lg font-semibold">
+                          <Printer className="w-5 h-5 text-primary" />
                           Print Requests
                         </CardTitle>
-                        <CardDescription>
+                        <p className="text-sm text-muted-foreground">
                           Manage student print requests and file sharing
-                        </CardDescription>
+                        </p>
                       </div>
                       <div className="flex items-center gap-2 w-full md:w-auto">
                         <div className="flex-1 md:flex-initial relative">
-                          <Search className="w-4 h-4 absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                          <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
                           <Input
-                            placeholder="Search files, names, IDs, messages"
+                            placeholder="Search files..."
                             value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}
-                            className="h-9 pl-8"
+                            className="h-10 pl-9 bg-secondary/50 border-border focus:ring-primary/50 focus:border-primary/50 w-full md:w-64 rounded-lg"
                           />
                         </div>
                         <TooltipProvider>
@@ -650,7 +654,7 @@ function AdminDashboardInner() {
                                     <div className="relative">
                                       <Filter className="w-4 h-4" />
                                       {hasActiveSortType && (
-                                        <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-emerald-500" />
+                                        <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-white ring-1 ring-primary-foreground" />
                                       )}
                                     </div>
                                   </Button>
@@ -658,83 +662,91 @@ function AdminDashboardInner() {
                               </TooltipTrigger>
                               <TooltipContent side="bottom">Sort & filter</TooltipContent>
                             </Tooltip>
-                            <PopoverContent align="end" className="w-64 p-2">
-                              <div className="px-1 py-1.5 text-xs text-muted-foreground">Sort order</div>
+                            <PopoverContent align="end" className="w-64 p-2 glass-card border-border">
+                              <div className="px-1 py-1.5 text-xs text-muted-foreground font-semibold uppercase tracking-wider">Sort order</div>
                               <div className="flex flex-col gap-1 mb-2">
                                 <Button
                                   variant="ghost"
                                   size="sm"
-                                  className="justify-start"
+                                  className="justify-start hover:bg-secondary"
                                   onClick={() => setSortOrder('newest')}
                                 >
-                                  {sortOrder === 'newest' && <Check className="w-4 h-4 mr-2" />}
+                                  {sortOrder === 'newest' && <Check className="w-4 h-4 mr-2 text-primary" />}
                                   Newest first
                                 </Button>
                                 <Button
                                   variant="ghost"
                                   size="sm"
-                                  className="justify-start"
+                                  className="justify-start hover:bg-secondary"
                                   onClick={() => setSortOrder('oldest')}
                                 >
-                                  {sortOrder === 'oldest' && <Check className="w-4 h-4 mr-2" />}
+                                  {sortOrder === 'oldest' && <Check className="w-4 h-4 mr-2 text-primary" />}
                                   Oldest first
                                 </Button>
                               </div>
-                              <div className="border-t my-2" />
-                              <div className="px-1 py-1.5 text-xs text-muted-foreground">Types</div>
+                              <div className="border-t border-border my-2" />
+                              <div className="px-1 py-1.5 text-xs text-muted-foreground font-semibold uppercase tracking-wider">Types</div>
                               <div className="flex flex-col gap-1">
                                 <Button
                                   variant="ghost"
                                   size="sm"
-                                  className="justify-start"
+                                  className="justify-start hover:bg-secondary"
                                   onClick={() => setTypeFilter('all')}
                                 >
-                                  {typeFilter === 'all' && <Check className="w-4 h-4 mr-2" />}
+                                  {typeFilter === 'all' && <Check className="w-4 h-4 mr-2 text-primary" />}
                                   All types
                                 </Button>
                                 <Button
                                   variant="ghost"
                                   size="sm"
-                                  className="justify-start"
+                                  className="justify-start hover:bg-secondary"
                                   onClick={() => setTypeFilter('files')}
                                 >
-                                  {typeFilter === 'files' && <Check className="w-4 h-4 mr-2" />}
+                                  {typeFilter === 'files' && <Check className="w-4 h-4 mr-2 text-primary" />}
                                   Files only
                                 </Button>
                                 <Button
                                   variant="ghost"
                                   size="sm"
-                                  className="justify-start"
+                                  className="justify-start hover:bg-secondary"
                                   onClick={() => setTypeFilter('links')}
                                 >
-                                  {typeFilter === 'links' && <Check className="w-4 h-4 mr-2" />}
+                                  {typeFilter === 'links' && <Check className="w-4 h-4 mr-2 text-primary" />}
                                   Links only
                                 </Button>
                               </div>
                             </PopoverContent>
                           </Popover>
                         </TooltipProvider>
-                        <Button
-                          variant={filter === 'all' ? 'default' : 'outline'}
-                          size="sm"
-                          onClick={() => setFilter('all')}
-                        >
-                          All ({printRequests.length})
-                        </Button>
-                        <Button
-                          variant={filter === 'pending' ? 'default' : 'outline'}
-                          size="sm"
-                          onClick={() => setFilter('pending')}
-                        >
-                          Pending ({pendingCount})
-                        </Button>
-                        <Button
-                          variant={filter === 'printed' ? 'default' : 'outline'}
-                          size="sm"
-                          onClick={() => setFilter('printed')}
-                        >
-                          Printed ({printedCount})
-                        </Button>
+                        <div className="flex bg-muted rounded-lg p-1 gap-1">
+                          <button
+                            onClick={() => setFilter('all')}
+                            className={`h-8 px-3 rounded-md text-sm font-medium transition-all duration-150 ${filter === 'all'
+                              ? 'bg-primary text-primary-foreground shadow-sm'
+                              : 'text-muted-foreground hover:text-foreground hover:bg-muted-foreground/10'
+                              }`}
+                          >
+                            All
+                          </button>
+                          <button
+                            onClick={() => setFilter('pending')}
+                            className={`h-8 px-3 rounded-md text-sm font-medium transition-all duration-150 ${filter === 'pending'
+                              ? 'bg-amber-500 text-white shadow-sm'
+                              : 'text-muted-foreground hover:text-foreground hover:bg-muted-foreground/10'
+                              }`}
+                          >
+                            Pending
+                          </button>
+                          <button
+                            onClick={() => setFilter('printed')}
+                            className={`h-8 px-3 rounded-md text-sm font-medium transition-all duration-150 ${filter === 'printed'
+                              ? 'bg-primary text-primary-foreground shadow-sm'
+                              : 'text-muted-foreground hover:text-foreground hover:bg-muted-foreground/10'
+                              }`}
+                          >
+                            Printed
+                          </button>
+                        </div>
                       </div>
                     </div>
                   </CardHeader>
@@ -742,36 +754,30 @@ function AdminDashboardInner() {
                     {/* Inline receiving removed (handled via speed dial) */}
 
                     {processedRequests.length === 0 ? (
-                      <div className="text-center py-10 animate-in fade-in-0 zoom-in-95">
+                      <div className="text-center py-16 animate-in fade-in-0 zoom-in-95">
                         {/* Choose icon based on type filter */}
                         {typeFilter === 'links' ? (
-                          <Link className="w-12 h-12 mx-auto mb-4 text-blue-500 animate-pulse" />
+                          <div className="p-4 bg-blue-500/10 rounded-full inline-block mb-4">
+                            <Link className="w-12 h-12 text-blue-500 animate-pulse" />
+                          </div>
                         ) : typeFilter === 'files' ? (
-                          <FileText className="w-12 h-12 mx-auto mb-4 text-gray-400 animate-pulse" />
+                          <div className="p-4 bg-secondary rounded-full inline-block mb-4">
+                            <FileText className="w-12 h-12 text-muted-foreground animate-pulse" />
+                          </div>
                         ) : (
-                          <Printer className="w-12 h-12 mx-auto mb-4 text-gray-400 animate-pulse" />
+                          <div className="p-4 bg-secondary rounded-full inline-block mb-4">
+                            <Printer className="w-12 h-12 text-muted-foreground animate-pulse" />
+                          </div>
                         )}
                         <div className="space-y-2">
-                          <p className="text-gray-700 font-medium">
+                          <p className="text-lg font-medium">
                             {(() => {
-                              const typeLabel = typeFilter === 'links' ? (
-                                <>
-                                  <mark className="bg-blue-200/60 dark:bg-blue-300/30 text-blue-900 dark:text-blue-50 rounded px-1 animate-in fade-in-0">links</mark>
-                                </>
-                              ) : typeFilter === 'files' ? (
-                                <>
-                                  <mark className="bg-blue-200/60 dark:bg-blue-300/30 text-blue-900 dark:text-blue-50 rounded px-1 animate-in fade-in-0">files</mark>
-                                </>
-                              ) : (
-                                <>
-                                  <mark className="bg-blue-200/60 dark:bg-blue-300/30 text-blue-900 dark:text-blue-50 rounded px-1 animate-in fade-in-0">files</mark> or <mark className="bg-blue-200/60 dark:bg-blue-300/30 text-blue-900 dark:text-blue-50 rounded px-1 animate-in fade-in-0">links</mark>
-                                </>
-                              )
+                              const typeLabel = typeFilter === 'links' ? 'links' : typeFilter === 'files' ? 'files' : 'files or links'
                               const statusLabel = filter === 'pending' ? 'pending' : filter === 'printed' ? 'printed' : 'any'
                               if (debouncedQuery) {
                                 return (
                                   <>
-                                    No {typeLabel} match {highlight(`"${debouncedQuery}"`)} in {statusLabel} requests.
+                                    No {typeLabel} match <span className="text-accent">"{debouncedQuery}"</span> in {statusLabel} requests.
                                   </>
                                 )
                               }
@@ -783,7 +789,7 @@ function AdminDashboardInner() {
                           <p className="text-sm text-muted-foreground">
                             Try adjusting filters or clearing the search.
                           </p>
-                          <div className="flex items-center justify-center gap-2 mt-2">
+                          <div className="flex items-center justify-center gap-2 mt-4">
                             {debouncedQuery && (
                               <Button
                                 variant="outline"
@@ -796,7 +802,7 @@ function AdminDashboardInner() {
                             )}
                             {(filter !== 'all' || typeFilter !== 'all') && (
                               <Button
-                                variant="ghost"
+                                variant="outline"
                                 size="sm"
                                 onClick={() => { setTypeFilter('all'); setFilter('all') }}
                                 className="transition hover:scale-[1.02]"
@@ -808,22 +814,15 @@ function AdminDashboardInner() {
                         </div>
                       </div>
                     ) : (
-                      <div className="max-h-96">
+                      <div>
                         <Virtuoso
-                          style={{ height: '24rem' }}
+                          style={{ height: 'calc(100vh - 12rem)' }}
                           data={processedRequests}
                           totalCount={processedRequests.length}
                           overscan={8}
                           itemContent={(index, request) => {
                             return (
-                              <div className={`${debouncedQuery ? 'animate-in fade-in-0 zoom-in-95' : ''}`}>
-                                {request.message && (
-                                  <div className="flex items-start gap-2 mb-3 p-2 bg-blue-50 rounded">
-                                    <MessageSquare className="w-4 h-4 text-blue-600 mt-0.5" />
-                                    <p className="text-sm text-blue-800">{highlight(request.message)}</p>
-                                  </div>
-                                )}
-
+                              <div className={`p-3 transition-colors ${debouncedQuery ? 'animate-in fade-in-0 zoom-in-95' : ''}`}>
                                 <FilePreview
                                   file={{
                                     id: request.id,
@@ -857,71 +856,63 @@ function AdminDashboardInner() {
           </TabsContent>
 
           {/* Analytics Tab */}
-          <TabsContent value="analytics">
+          <TabsContent value="analytics" className="animate-fade-in">
             <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-              <Card>
-                <CardContent className="p-6">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm font-medium text-gray-600">Total Requests</p>
-                      <p className="text-2xl font-bold">{printRequests.length}</p>
-                    </div>
-                    <div className="p-2 bg-blue-100 rounded-lg">
-                      <FileText className="w-6 h-6 text-blue-600" />
-                    </div>
+              <div className="stat-card p-6 rounded-2xl">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-muted-foreground">Total Requests</p>
+                    <p className="text-3xl font-bold mt-1">{printRequests.length}</p>
                   </div>
-                </CardContent>
-              </Card>
+                  <div className="p-3 bg-primary/10 rounded-xl">
+                    <FileText className="w-6 h-6 text-primary" />
+                  </div>
+                </div>
+              </div>
 
-              <Card>
-                <CardContent className="p-6">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm font-medium text-gray-600">Pending</p>
-                      <p className="text-2xl font-bold text-orange-600">{pendingCount}</p>
-                    </div>
-                    <div className="p-2 bg-orange-100 rounded-lg">
-                      <Clock className="w-6 h-6 text-orange-600" />
-                    </div>
+              <div className="stat-card p-6 rounded-2xl">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-muted-foreground">Pending</p>
+                    <p className="text-3xl font-bold text-orange-500 mt-1">{pendingCount}</p>
                   </div>
-                </CardContent>
-              </Card>
+                  <div className="p-3 bg-orange-500/10 rounded-xl">
+                    <Clock className="w-6 h-6 text-orange-500" />
+                  </div>
+                </div>
+              </div>
 
-              <Card>
-                <CardContent className="p-6">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm font-medium text-gray-600">Printed</p>
-                      <p className="text-2xl font-bold text-green-600">{printedCount}</p>
-                    </div>
-                    <div className="p-2 bg-green-100 rounded-lg">
-                      <Check className="w-6 h-6 text-green-600" />
-                    </div>
+              <div className="stat-card p-6 rounded-2xl">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-muted-foreground">Printed</p>
+                    <p className="text-3xl font-bold text-green-500 mt-1">{printedCount}</p>
                   </div>
-                </CardContent>
-              </Card>
+                  <div className="p-3 bg-green-500/10 rounded-xl">
+                    <Check className="w-6 h-6 text-green-500" />
+                  </div>
+                </div>
+              </div>
 
-              <Card>
-                <CardContent className="p-6">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm font-medium text-gray-600">Online Now</p>
-                      <p className="text-2xl font-bold">{onlineUsers.length}</p>
-                    </div>
-                    <div className="p-2 bg-purple-100 rounded-lg">
-                      <Users className="w-6 h-6 text-purple-600" />
-                    </div>
+              <div className="stat-card p-6 rounded-2xl">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-muted-foreground">Online Now</p>
+                    <p className="text-3xl font-bold mt-1">{onlineUsers.length}</p>
                   </div>
-                </CardContent>
-              </Card>
+                  <div className="p-3 bg-accent/10 rounded-xl">
+                    <Users className="w-6 h-6 text-accent" />
+                  </div>
+                </div>
+              </div>
             </div>
           </TabsContent>
 
           {/* Students Tab */}
-          <TabsContent value="students">
+          <TabsContent value="students" className="mt-4">
             <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
+              <CardHeader className="pb-4">
+                <CardTitle className="flex items-center gap-2 text-lg font-semibold">
                   <Users className="w-5 h-5" />
                   Online Students
                 </CardTitle>
@@ -930,32 +921,37 @@ function AdminDashboardInner() {
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="max-h-96">
+                <div className="space-y-2">
                   {onlineUsers.length === 0 ? (
-                    <p className="text-gray-500 text-center py-4">No students online</p>
+                    <div className="text-center py-12">
+                      <div className="p-4 bg-muted rounded-full inline-block mb-4">
+                        <Users className="w-10 h-10 text-muted-foreground opacity-50" />
+                      </div>
+                      <p className="text-muted-foreground">No students online</p>
+                    </div>
                   ) : (
-                    <Virtuoso
-                      style={{ height: '24rem' }}
-                      totalCount={onlineUsers.length}
-                      overscan={8}
-                      itemContent={(index) => {
-                        const user = onlineUsers[index]
-                        return (
-                          <div key={user.id} className="flex items-center gap-3 p-2 hover:bg-gray-50 rounded-lg">
-                            <div className="w-8 h-8 rounded-full flex items-center justify-center text-white font-semibold text-sm" style={{ backgroundImage: generateGradient(user.name) }}>
-                              {user.name.charAt(0).toUpperCase()}
+                    <div className="max-h-96">
+                      <Virtuoso
+                        style={{ height: '24rem' }}
+                        totalCount={onlineUsers.length}
+                        overscan={8}
+                        itemContent={(index) => {
+                          const user = onlineUsers[index]
+                          return (
+                            <div key={user.id} className="flex items-center gap-3 p-3 hover:bg-muted/50 rounded-lg transition-colors">
+                              <div className="w-8 h-8 rounded-full flex items-center justify-center text-white font-semibold text-sm" style={{ backgroundImage: generateGradient(user.name) }}>
+                                {user.name.charAt(0).toUpperCase()}
+                              </div>
+                              <div className="flex-1">
+                                <p className="font-medium text-sm">{user.name}</p>
+                                <p className="text-xs text-muted-foreground">{user.uniqueId}</p>
+                              </div>
+                              <Badge className="bg-primary hover:bg-primary text-primary-foreground text-xs">Online</Badge>
                             </div>
-                            <div className="flex-1">
-                              <p className="font-medium text-sm">{user.name}</p>
-                              <p className="text-xs text-gray-500">{user.uniqueId}</p>
-                            </div>
-                            <Badge variant="outline" className="text-green-600 border-green-600">
-                              Online
-                            </Badge>
-                          </div>
-                        )
-                      }}
-                    />
+                          )
+                        }}
+                      />
+                    </div>
                   )}
                 </div>
               </CardContent>
@@ -969,7 +965,7 @@ function AdminDashboardInner() {
               <TooltipTrigger asChild>
                 <PopoverTrigger asChild>
                   <Button
-                    className="fixed bottom-6 right-6 h-14 w-14 rounded-full shadow-lg ring-1 ring-primary/20 transition transform duration-200 hover:scale-105 active:scale-95"
+                    className="fixed bottom-6 right-6 h-14 w-14 rounded-full shadow-lg gradient-primary text-white z-50"
                     size="icon"
                     aria-label={speedDialOpen ? 'Close quick actions' : 'Open quick actions'}
                   >
@@ -979,11 +975,11 @@ function AdminDashboardInner() {
               </TooltipTrigger>
               <TooltipContent side="left" align="center">Quick actions</TooltipContent>
             </Tooltip>
-            <PopoverContent align="end" className="w-60 p-2 mr-4 mb-2 animate-in fade-in-0 zoom-in-95 duration-150">
+            <PopoverContent align="end" className="w-60 p-2 mr-4 mb-2">
               <div className="flex flex-col gap-1">
                 <Button
                   variant="ghost"
-                  className="justify-start hover:bg-accent transition-colors"
+                  className="justify-start hover:bg-white/10 transition-colors"
                   onClick={() => { handleRefreshSocket(); setSpeedDialOpen(false) }}
                 >
                   <RefreshCw className="w-4 h-4 mr-2" />
@@ -995,7 +991,7 @@ function AdminDashboardInner() {
                     <div>
                       <Button
                         variant="ghost"
-                        className="justify-start hover:bg-accent transition-colors"
+                        className="justify-start hover:bg-white/10 transition-colors"
                         disabled={allDownloadableCount === 0}
                         onClick={() => { setDownloadDialogOpen(true) }}
                       >
@@ -1016,14 +1012,14 @@ function AdminDashboardInner() {
                         <AlertDialogTrigger asChild>
                           <Button
                             variant="ghost"
-                            className="justify-start hover:bg-accent transition-colors"
+                            className="justify-start hover:bg-white/10 transition-colors text-orange-500 hover:text-orange-400"
                             disabled={pendingCount === 0}
                           >
                             <Check className="w-4 h-4 mr-2" />
                             Mark all as printed
                           </Button>
                         </AlertDialogTrigger>
-                        <AlertDialogContent>
+                        <AlertDialogContent className="glass border-white/10">
                           <AlertDialogHeader>
                             <AlertDialogTitle>Mark all pending as printed?</AlertDialogTitle>
                             <AlertDialogDescription>
@@ -1031,8 +1027,8 @@ function AdminDashboardInner() {
                             </AlertDialogDescription>
                           </AlertDialogHeader>
                           <AlertDialogFooter>
-                            <AlertDialogCancel>Cancel</AlertDialogCancel>
-                            <AlertDialogAction onClick={() => { handleMarkAllPrinted(); setSpeedDialOpen(false) }}>Confirm</AlertDialogAction>
+                            <AlertDialogCancel className="bg-white/5 border-white/10 hover:bg-white/10">Cancel</AlertDialogCancel>
+                            <AlertDialogAction onClick={() => { handleMarkAllPrinted(); setSpeedDialOpen(false) }} className="bg-accent hover:bg-accent/90">Confirm</AlertDialogAction>
                           </AlertDialogFooter>
                         </AlertDialogContent>
                       </AlertDialog>
@@ -1050,20 +1046,20 @@ function AdminDashboardInner() {
         {(Object.keys(recvProgress).length > 0 || (recvCounter.total > 0 && recvCounter.received < recvCounter.total)) && (
           <div className="fixed bottom-24 right-6 z-50">
             <Button
-              className="relative h-14 w-14 rounded-full shadow-lg ring-1 ring-primary/20 bg-neutral-900 text-white hover:scale-105 active:scale-95 transition-transform overflow-visible"
+              className="relative h-14 w-14 rounded-full shadow-lg gradient-primary text-white hover:opacity-90 active:scale-95 transition-all overflow-visible"
               size="icon"
               aria-label="Receiving files"
               onClick={() => setReceiveDialogOpen(true)}
             >
               <ArrowDown className="relative animate-arrow-drop" style={{ height: '20px', width: '20px' }} />
               <span className="absolute -top-1 -right-1">
-                <span className="inline-block w-3 h-3 rounded-full bg-emerald-500 ring-2 ring-white/80 shadow-md animate-badge-pulse-blink" />
+                <span className="inline-block w-3 h-3 rounded-full bg-white ring-2 ring-primary shadow-md animate-badge-pulse-blink" />
               </span>
             </Button>
           </div>
         )}
         <Dialog open={receiveDialogOpen} onOpenChange={setReceiveDialogOpen}>
-          <DialogContent>
+          <DialogContent className="glass border-white/10">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
                 Receiving files
@@ -1072,19 +1068,19 @@ function AdminDashboardInner() {
             </DialogHeader>
             <div className="space-y-3 max-w-full">
               {Object.values(recvProgress).map((p, idx) => (
-                <div key={idx} className="group relative overflow-hidden rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white/70 dark:bg-neutral-900/60 p-3 shadow-sm max-w-full">
+                <div key={idx} className="group relative overflow-hidden rounded-xl border border-white/10 bg-white/5 p-3 shadow-sm max-w-full">
                   <div className="flex items-start gap-3 max-w-full">
                     <div className="mt-0.5 flex-1 min-w-0 max-w-full">
                       <p className="text-sm font-medium flex items-center gap-2 max-w-full">
                         <span className="truncate max-w-full" title={p.fileName}>{p.fileName}</span>
                       </p>
-                      <div className="mt-2 h-2 w-full rounded-full bg-neutral-200 dark:bg-neutral-700 overflow-hidden">
+                      <div className="mt-2 h-2 w-full rounded-full bg-white/10 overflow-hidden">
                         {(() => {
                           const pct = p.total ? Math.min(100, (p.received / p.total) * 100) : 0
-                          return <div style={{ width: pct + '%' }} className="h-full bg-emerald-700 transition-[width] duration-300 ease-out" />
+                          return <div style={{ width: pct + '%' }} className="h-full bg-primary transition-[width] duration-300 ease-out" />
                         })()}
                       </div>
-                      <div className="mt-1 text-[11px] text-neutral-600 dark:text-neutral-400 flex justify-between">
+                      <div className="mt-1 text-[11px] text-muted-foreground flex justify-between">
                         {(() => {
                           const pct = p.total ? Math.min(100, Math.round((p.received / p.total) * 100)) : 0
                           return <span>{pct}%</span>
@@ -1096,7 +1092,7 @@ function AdminDashboardInner() {
                 </div>
               ))}
               {Object.keys(recvProgress).length === 0 && (
-                <div className="flex flex-col items-center justify-center py-6 text-center border border-dashed border-neutral-300 dark:border-neutral-700 rounded-lg">
+                <div className="flex flex-col items-center justify-center py-6 text-center border border-dashed border-white/10 rounded-lg">
                   <p className="text-sm text-muted-foreground">All files received.</p>
                 </div>
               )}
@@ -1105,7 +1101,7 @@ function AdminDashboardInner() {
         </Dialog>
         {/* Download selection dialog */}
         <Dialog open={downloadDialogOpen} onOpenChange={setDownloadDialogOpen}>
-          <DialogContent>
+          <DialogContent className="glass border-white/10">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
                 <Download className="w-5 h-5" />
@@ -1121,7 +1117,7 @@ function AdminDashboardInner() {
                   variant="outline"
                   disabled={pendingDownloadableCount === 0}
                   onClick={() => { queueDownloads('pending'); setDownloadDialogOpen(false); setSpeedDialOpen(false) }}
-                  className="justify-start"
+                  className="justify-start bg-white/5 border-white/10 hover:bg-white/10"
                 >
                   <Clock className="w-4 h-4 mr-2" />
                   Pending only
@@ -1130,7 +1126,7 @@ function AdminDashboardInner() {
                 <Button
                   onClick={() => { queueDownloads('all'); setDownloadDialogOpen(false); setSpeedDialOpen(false) }}
                   disabled={allDownloadableCount === 0}
-                  className="justify-start"
+                  className="justify-start bg-accent hover:bg-accent/90"
                 >
                   <Download className="w-4 h-4 mr-2" />
                   All files
@@ -1144,7 +1140,7 @@ function AdminDashboardInner() {
           </DialogContent>
         </Dialog>
       </div>
-    </div>
+    </div >
   )
 }
 
