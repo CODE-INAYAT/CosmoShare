@@ -3,6 +3,7 @@ export const runtime = 'edge'
 
 import { generateGradient } from '@/lib/avatarUtils'
 import { useState, useEffect, useRef, Suspense } from 'react'
+import { motion, AnimatePresence } from 'framer-motion'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -28,6 +29,7 @@ import {
   ArrowDown,
   Eye,
   MessageSquare,
+  Code,
   Folder,
   X,
   Plus,
@@ -117,6 +119,7 @@ function StudentDashboardInner() {
   // Tabs control for programmatic switching (reshare flow)
   const [activeTab, setActiveTab] = useState<'share' | 'history' | 'users'>('share')
   const [shareMode, setShareMode] = useState<'files' | 'links'>('files')
+  const [codeShareMode, setCodeShareMode] = useState(false)
   // Nested File History sub-tab
   const [historySubTab, setHistorySubTab] = useState<'received' | 'sent'>('received')
   // Preflight modal for offline recipients
@@ -192,7 +195,7 @@ function StudentDashboardInner() {
   const [rSearchQuery, setRSearchQuery] = useState('')
   const [rDebouncedQuery, setRDebouncedQuery] = useState('')
   const [rSortOrder, setRSortOrder] = useState<'newest' | 'oldest'>('newest')
-  const [rTypeFilter, setRTypeFilter] = useState<'all' | 'files' | 'links'>('all')
+  const [rTypeFilter, setRTypeFilter] = useState<'all' | 'files' | 'links' | 'code'>('all')
   const [rSortMenuOpen, setRSortMenuOpen] = useState(false)
   const [rIndex, setRIndex] = useState<Map<string, string>>(new Map())
 
@@ -200,7 +203,7 @@ function StudentDashboardInner() {
   const [sSearchQuery, setSSearchQuery] = useState('')
   const [sDebouncedQuery, setSDebouncedQuery] = useState('')
   const [sSortOrder, setSSortOrder] = useState<'newest' | 'oldest'>('newest')
-  const [sTypeFilter, setSTypeFilter] = useState<'all' | 'files' | 'links'>('all')
+  const [sTypeFilter, setSTypeFilter] = useState<'all' | 'files' | 'links' | 'code'>('all')
   const [sSortMenuOpen, setSSortMenuOpen] = useState(false)
   const [sIndex, setSIndex] = useState<Map<string, string>>(new Map())
 
@@ -264,8 +267,9 @@ function StudentDashboardInner() {
 
   const rProcessed = (() => {
     let arr = receivedFiles
-    if (rTypeFilter === 'files') arr = arr.filter(a => !a.isLink)
+    if (rTypeFilter === 'files') arr = arr.filter(a => !a.isLink && a.fileType !== 'code')
     else if (rTypeFilter === 'links') arr = arr.filter(a => a.isLink)
+    else if (rTypeFilter === 'code') arr = arr.filter(a => a.fileType === 'code')
     if (rDebouncedQuery) arr = arr.filter(a => (rIndex.get(a.id) || '').includes(rDebouncedQuery))
     arr = arr.slice().sort((a, b) => rSortOrder === 'newest' ? +new Date(b.timestamp) - +new Date(a.timestamp) : +new Date(a.timestamp) - +new Date(b.timestamp))
     return arr
@@ -273,19 +277,22 @@ function StudentDashboardInner() {
 
   const sProcessed = (() => {
     let arr = sentFiles
-    if (sTypeFilter === 'files') arr = arr.filter(a => !a.isLink)
+    if (sTypeFilter === 'files') arr = arr.filter(a => !a.isLink && a.fileType !== 'code')
     else if (sTypeFilter === 'links') arr = arr.filter(a => a.isLink)
+    else if (sTypeFilter === 'code') arr = arr.filter(a => a.fileType === 'code')
     if (sDebouncedQuery) arr = arr.filter(a => (sIndex.get(a.id) || '').includes(sDebouncedQuery))
     arr = arr.slice().sort((a, b) => sSortOrder === 'newest' ? +new Date(b.timestamp) - +new Date(a.timestamp) : +new Date(a.timestamp) - +new Date(b.timestamp))
     return arr
   })()
 
   // Metrics for processed (visible) lists
-  const rFilesCount = rProcessed.filter(f => !f.isLink).length
+  const rFilesCount = rProcessed.filter(f => !f.isLink && f.fileType !== 'code').length
   const rLinksCount = rProcessed.filter(f => f.isLink).length
+  const rCodeCount = rProcessed.filter(f => f.fileType === 'code').length
   const rTotalSize = formatFileSize(rProcessed.reduce((sum, f) => sum + (f.isLink ? 0 : f.fileSize), 0))
-  const sFilesCount = sProcessed.filter(f => !f.isLink).length
+  const sFilesCount = sProcessed.filter(f => !f.isLink && f.fileType !== 'code').length
   const sLinksCount = sProcessed.filter(f => f.isLink).length
+  const sCodeCount = sProcessed.filter(f => f.fileType === 'code').length
   const sTotalSize = formatFileSize(sProcessed.reduce((sum, f) => sum + (f.isLink ? 0 : f.fileSize), 0))
   // Active filter indicators (ignore search; only sort/type deviations)
   const rHasActiveFilters = rSortOrder !== 'newest' || rTypeFilter !== 'all'
@@ -561,6 +568,61 @@ function StudentDashboardInner() {
       currentFileSentRef.current = 0
       linkCountRef.current = 0
       linksCompletedRef.current = 0
+    },
+    onMessage: (fromId, messageContent, sender) => {
+      noteRecvActivity()
+      // Use sender info from message if available, otherwise fallback to lookup
+      const senderName = sender?.name || (onlineUsers.find(u => u.id === fromId)?.name) || (fromId === adminId ? `Lab Admin (Room ${adminRoom || userData?.roomNumber || ''})` : 'Unknown')
+      const senderUniqueId = sender?.uniqueId || (onlineUsers.find(u => u.id === fromId)?.uniqueId) || (fromId === adminId ? 'ADMIN' : '')
+
+      // Add to received files as a code entry
+      setReceivedFiles(prev => [{
+        id: Date.now().toString() + Math.random(),
+        fileName: messageContent.slice(0, 50) + (messageContent.length > 50 ? '...' : ''),
+        fileSize: messageContent.length,
+        fileType: 'code',
+        isLink: false,
+        message: messageContent,
+        allowReshare: sender?.allowReshare ?? true,
+        senderId: fromId,
+        receiverId: userData?.id || '',
+        senderName,
+        senderUniqueId,
+        fileId: 'C' + Math.floor(10000 + Math.random() * 90000),
+        timestamp: new Date()
+      }, ...prev])
+
+      // Track for batch summary
+      setRecvCounter(prev => {
+        if (prev.total === 0 && prev.received === 0) {
+          receiveBatchItemsRef.current = []
+          receiveBatchSendersRef.current.clear()
+        }
+        receiveBatchItemsRef.current.push({ fileName: 'Message', fileSize: messageContent.length, isLink: false, isMessage: true })
+        if (!receiveBatchSendersRef.current.has(fromId)) {
+          receiveBatchSendersRef.current.set(fromId, { name: senderName, uniqueId: senderUniqueId })
+        }
+        const next = { total: prev.total + 1, received: prev.received + 1 }
+        if (next.received >= next.total && next.total > 0) {
+          const senders = Array.from(receiveBatchSendersRef.current.values())
+          const fromStr = senders.length === 1
+            ? `${senders[0].name} (${senders[0].uniqueId || '—'})`
+            : senders.slice(0, 3).map(s => `${s.name} (${s.uniqueId || '—'})`).join(', ') + (senders.length > 3 ? ` +${senders.length - 3} more` : '')
+          const toStr = `${userData?.name || 'You'} (${userData?.uniqueId || '—'}) (You)`
+          setSuccessInfo({
+            mode: 'received',
+            to: toStr,
+            from: fromStr,
+            totalSize: formatFileSize(messageContent.length),
+            totalFiles: 0,
+            totalLinks: 0,
+            recipients: [{ name: userData?.name || 'You', uniqueId: userData?.uniqueId || '—' }],
+            senders
+          })
+          setReceivedBatchCompletePending(true)
+        }
+        return next
+      })
     }
   })
 
@@ -895,6 +957,60 @@ function StudentDashboardInner() {
         })
       }
 
+      // Handle code share mode
+      if (codeShareMode && selectedFiles.length === 0 && !linkUrl && message.trim()) {
+        // Show progress for code sending
+        setUploadProgress(30)
+
+        for (const targetId of targets) {
+          webrtc.ensureConnection(targetId)
+          await webrtc.sendMessage(targetId, message, { name: userData.name, uniqueId: userData.uniqueId, allowReshare })
+        }
+
+        setUploadProgress(100)
+
+        // Add to sent history as a code entry
+        const codeEntry: FileShare = {
+          id: Date.now().toString() + Math.random(),
+          fileName: message.slice(0, 50) + (message.length > 50 ? '...' : ''),
+          fileSize: message.length,
+          fileType: 'code',
+          isLink: false,
+          message,
+          allowReshare,
+          senderId: userData.id,
+          receiverId: isPrintRequest ? 'admin' : 'multi',
+          recipients: recipientsInfo,
+          fileId: 'C' + Math.floor(10000 + Math.random() * 90000),
+          timestamp: new Date()
+        }
+        setSentFiles(prev => [codeEntry, ...prev])
+        setMessage('')
+        setSelectedRecipients([])
+        setCodeShareMode(false)
+
+        // Show success
+        await ensureProgressComplete()
+        setForceProgress(false)
+        setIsUploading(false)
+        setUiProgress(0)
+        setUploadProgress(0)
+
+        setSuccessInfo({
+          mode: 'sent',
+          to: recipientsInfo.length === 1
+            ? `${recipientsInfo[0].name} (${recipientsInfo[0].uniqueId})`
+            : recipientsInfo.slice(0, 3).map(r => `${r.name} (${r.uniqueId})`).join(', ') + (recipientsInfo.length > 3 ? ` +${recipientsInfo.length - 3} more` : ''),
+          from: `${userData.name} (${userData.uniqueId}) (You)`,
+          totalSize: formatFileSize(message.length),
+          totalFiles: 0,
+          totalLinks: 0,
+          recipients: recipientsInfo.map(r => ({ name: r.name, uniqueId: r.uniqueId }))
+        })
+        setSuccessModalOpen(true)
+        return
+      }
+
       // Send P2P via WebRTC to all targets sequentially (by target then files)
       for (const targetId of targets) {
         webrtc.ensureConnection(targetId)
@@ -970,7 +1086,9 @@ function StudentDashboardInner() {
 
   // Preflight: check recipients are online; show modal if some are offline
   const preflightAndMaybeShare = (isPrintRequest: boolean, bypassGoogleCheck = false) => {
-    if (selectedFiles.length === 0 && !linkUrl) return
+    // Allow proceeding if:
+    // 1. Has files OR has link OR (codeShareMode is enabled AND has code)
+    if (selectedFiles.length === 0 && !linkUrl && !(codeShareMode && message.trim())) return
 
     // Google Link Check
     if (!bypassGoogleCheck && linkUrl) {
@@ -1049,14 +1167,27 @@ function StudentDashboardInner() {
     setSelectedFiles(prev => prev.filter((_, i) => i !== index))
   }
 
-  // Reshare: bring user to Share tab and prefill file/link
-  const handleResharePrefill = async (item: { fileName: string; fileType: string; fileSize: number; fileData?: string; fileUrl?: string; linkUrl?: string }) => {
+  // Reshare: bring user to Share tab and prefill file/link/code
+  const handleResharePrefill = async (item: { fileName: string; fileType: string; fileSize: number; fileData?: string; fileUrl?: string; linkUrl?: string; message?: string }) => {
     setActiveTab('share')
+
+    // Handle code type reshare
+    if (item.fileType === 'code' && item.message) {
+      setCodeShareMode(true)
+      setMessage(item.message)
+      setSelectedRecipients([])
+      return
+    }
+
+    // Handle link reshare
     if (item.linkUrl) {
+      setCodeShareMode(false)
       setShareMode('links')
       setLinkUrl(item.linkUrl)
     } else if (item.fileUrl || item.fileData) {
+      // Handle file reshare
       try {
+        setCodeShareMode(false)
         setShareMode('files')
         let blob: Blob
         if (item.fileUrl) {
@@ -1140,345 +1271,521 @@ function StudentDashboardInner() {
                 </CardTitle>
                 <CardDescription>Upload files or share links with friends or submit for printing</CardDescription>
               </CardHeader>
-              <CardContent>
-                <Tabs value={shareMode} onValueChange={(v) => setShareMode(v as any)} className="w-full">
-                  <TabsList className="grid w-full grid-cols-2 h-9 p-1 bg-muted rounded-lg">
-                    <TabsTrigger value="files">Files</TabsTrigger>
-                    <TabsTrigger value="links">Links</TabsTrigger>
-                  </TabsList>
+              <CardContent className="space-y-4">
+                {/* Code Share Toggle */}
+                <div className="flex items-center justify-between p-3 bg-secondary/30 rounded-xl">
+                  <div className="flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-emerald-500/20 to-cyan-500/20 flex items-center justify-center">
+                      <Code className="w-4 h-4 text-emerald-500" />
+                    </div>
+                    <div>
+                      <label htmlFor="code-share-toggle" className="text-sm font-medium cursor-pointer">
+                        Code Share
+                      </label>
+                      <p className="text-xs text-muted-foreground">Share code snippets directly</p>
+                    </div>
+                  </div>
+                  <Switch
+                    id="code-share-toggle"
+                    checked={codeShareMode}
+                    onCheckedChange={setCodeShareMode}
+                  />
+                </div>
 
-                  <TabsContent value="files" className="space-y-4">
-                    {/* Dropzone */}
-                    <div
-                      {...getRootProps()}
-                      className={`dropzone p-8 text-center cursor-pointer ${isDragActive ? 'dropzone-active border-primary' : ''
-                        }`}
+                <AnimatePresence mode="wait">
+                  {codeShareMode ? (
+                    /* Code Share Mode */
+                    <motion.div
+                      key="code-share"
+                      initial={{ opacity: 0, y: -10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: 10 }}
+                      transition={{ duration: 0.2 }}
+                      className="space-y-4"
                     >
-                      <input {...getInputProps()} />
-                      <Upload className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
-                      {isDragActive ? (
-                        <p className="text-primary">Drop the files here...</p>
-                      ) : (
-                        <div>
-                          <p className="text-muted-foreground mb-2">Drag & drop files here, or click to select</p>
-                          <p className="text-sm text-muted-foreground">Support for multiple files</p>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Selected files below dropzone */}
-                    {selectedFiles.length > 0 && (
                       <div className="space-y-2">
-                        <Label>
-                          {`Selected ${selectedFiles.length === 1 ? 'File' : 'Files'} (${selectedFiles.length} total, ${formatFileSize(selectedFiles.reduce((sum, f) => sum + f.size, 0))})`}
-                        </Label>
-                        <div className="max-h-32 overflow-y-auto space-y-2">
-                          {selectedFiles.map((file, index) => (
-                            <div key={index} className="flex items-center justify-between p-2 bg-muted/50 rounded">
-                              <div className="flex items-center gap-2">
-                                <FileText className="w-4 h-4" />
-                                <span className="text-sm truncate">{file.name}</span>
-                                <span className="text-xs text-muted-foreground">({formatFileSize(file.size)})</span>
-                              </div>
-                              <Button variant="ghost" size="sm" onClick={() => removeFile(index)}>
-                                <X className="w-4 h-4" />
-                              </Button>
-                            </div>
-                          ))}
-                        </div>
+                        <Label htmlFor="code-share-input">Your Code</Label>
+                        <Textarea
+                          id="code-share-input"
+                          placeholder="// Paste your code here...&#10;function example() {&#10;  return 'Hello World';&#10;}"
+                          value={message}
+                          onChange={(e) => setMessage(e.target.value)}
+                          rows={8}
+                          className="resize-none font-mono text-sm bg-gray-900 text-green-400 dark:bg-gray-950 dark:text-green-300 border-gray-700 overflow-auto"
+                          style={{ fontFamily: 'Consolas, Monaco, monospace', maxHeight: '250px' }}
+                        />
+                        <p className="text-xs text-muted-foreground">
+                          Share code snippets that receivers can copy directly
+                        </p>
                       </div>
-                    )}
 
-                    {/* Message below selected files */}
-                    <div className="space-y-2">
-                      <Label htmlFor="message">Message (Optional)</Label>
-                      <Textarea
-                        id="message"
-                        placeholder="Add a message like '2 copies for printout'..."
-                        value={message}
-                        onChange={(e) => setMessage(e.target.value)}
-                        rows={3}
-                      />
-                    </div>
+                      {/* Allow reshare toggle */}
+                      <div className="flex items-center justify-between">
+                        <Label htmlFor="allow-reshare-msg">Allow recipients to reshare</Label>
+                        <Switch id="allow-reshare-msg" checked={allowReshare} onCheckedChange={(v) => setAllowReshare(!!v)} />
+                      </div>
 
-                    {/* Allow reshare toggle */}
-                    <div className="flex items-center justify-between">
-                      <Label htmlFor="allow-reshare">Allow recipients to reshare</Label>
-                      <Switch id="allow-reshare" checked={allowReshare} onCheckedChange={(v) => setAllowReshare(!!v)} />
-                    </div>
+                      {/* Share To selector */}
+                      <div className="space-y-2">
+                        <Label>Share To:</Label>
+                        <Dialog open={selectModalOpen} onOpenChange={setSelectModalOpen}>
+                          <DialogTrigger asChild>
+                            <Button variant="outline" className="justify-between w-full">
+                              <span>{selectedRecipients.length > 0 ? `${selectedRecipients.length} recipient${selectedRecipients.length > 1 ? 's' : ''} selected` : 'Select recipients'}</span>
+                            </Button>
+                          </DialogTrigger>
+                          <DialogContent className="sm:max-w-2xl">
+                            <DialogHeader>
+                              <DialogTitle>Select Recipients</DialogTitle>
+                              <DialogDescription>Choose one or more recipients to share with.</DialogDescription>
+                            </DialogHeader>
+                            <Tabs defaultValue="users" className="w-full mt-2">
+                              <TabsList className="w-full">
+                                <TabsTrigger value="users" className="flex-1">Online Users</TabsTrigger>
+                                {/* No Lab Rooms tab in Code Share mode */}
+                              </TabsList>
+                              <TabsContent value="users" className="space-y-3">
+                                <div className="relative">
+                                  <Input
+                                    placeholder="Search users by name or ID"
+                                    value={searchQuery}
+                                    onChange={(e) => setSearchQuery(e.target.value)}
+                                    className="pl-9"
+                                  />
+                                  <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                                </div>
+                                <div className="max-h-64 overflow-y-auto space-y-2">
+                                  {onlineUsers
+                                    .filter(u => u.uniqueId !== 'ADMIN' && u.id !== adminId)
+                                    .filter(u => (u.name + ' ' + u.uniqueId).toLowerCase().includes(searchQuery.toLowerCase()))
+                                    .map((user) => (
+                                      <div
+                                        key={user.id}
+                                        className={`flex items-center gap-3 p-2 rounded-lg cursor-pointer hover:bg-secondary transition-colors ${selectedRecipients.includes(user.id) ? 'bg-primary/10 ring-1 ring-primary' : 'bg-secondary/50'
+                                          }`}
+                                        onClick={() => {
+                                          setSelectedRecipients(prev =>
+                                            prev.includes(user.id)
+                                              ? prev.filter(id => id !== user.id)
+                                              : [...prev, user.id]
+                                          )
+                                          recipientInfoRef.current[user.id] = { name: user.name, uniqueId: user.uniqueId }
+                                        }}
+                                      >
+                                        <div className="w-8 h-8 rounded-full flex items-center justify-center text-white font-medium text-sm" style={{ backgroundImage: generateGradient(user.name) }}>
+                                          {user.name.charAt(0).toUpperCase()}
+                                        </div>
+                                        <div className="flex-1 min-w-0">
+                                          <p className="text-sm font-medium truncate">{user.name}</p>
+                                          <p className="text-xs text-muted-foreground">{user.uniqueId}</p>
+                                        </div>
+                                        {selectedRecipients.includes(user.id) && <Check className="w-4 h-4 text-primary" />}
+                                      </div>
+                                    ))}
+                                  {onlineUsers.filter(u => u.uniqueId !== 'ADMIN' && u.id !== adminId).length === 0 && (
+                                    <p className="text-center text-muted-foreground py-4">No other users online</p>
+                                  )}
+                                </div>
+                              </TabsContent>
+                              <TabsContent value="labs" className="space-y-3">
+                                {adminId ? (
+                                  <div
+                                    className={`flex items-center gap-3 p-3 rounded-lg cursor-pointer hover:bg-secondary transition-colors ${selectedRecipients.includes('admin') ? 'bg-primary/10 ring-1 ring-primary' : 'bg-secondary/50'
+                                      }`}
+                                    onClick={() => {
+                                      setSelectedRecipients(prev =>
+                                        prev.includes('admin')
+                                          ? prev.filter(id => id !== 'admin')
+                                          : [...prev, 'admin']
+                                      )
+                                      recipientInfoRef.current['admin'] = { name: `Lab Admin (Room ${adminRoom || userData.roomNumber})`, uniqueId: 'ADMIN' }
+                                    }}
+                                  >
+                                    <div className="w-10 h-10 rounded-full bg-gradient-to-br from-emerald-400 to-cyan-500 flex items-center justify-center text-white">
+                                      <Printer className="w-5 h-5" />
+                                    </div>
+                                    <div className="flex-1">
+                                      <p className="font-medium">Lab Admin</p>
+                                      <p className="text-xs text-muted-foreground">Room {adminRoom || userData.roomNumber}</p>
+                                    </div>
+                                    {selectedRecipients.includes('admin') && <Check className="w-5 h-5 text-primary" />}
+                                  </div>
+                                ) : (
+                                  <p className="text-center text-muted-foreground py-4">No lab admin online</p>
+                                )}
+                              </TabsContent>
+                            </Tabs>
+                            <div className="flex justify-end gap-2 mt-4">
+                              <Button variant="outline" onClick={() => setSelectModalOpen(false)}>Cancel</Button>
+                              <Button onClick={() => setSelectModalOpen(false)}>Confirm ({selectedRecipients.length})</Button>
+                            </div>
+                          </DialogContent>
+                        </Dialog>
+                      </div>
 
-                    {/* Share To selector as modal trigger */}
-                    <div className="space-y-2">
-                      <Label>Share To:</Label>
-                      <Dialog open={selectModalOpen} onOpenChange={setSelectModalOpen}>
-                        <DialogTrigger asChild>
-                          <Button variant="outline" className="justify-between w-full">
-                            <span>{selectedRecipients.length > 0 ? `${selectedRecipients.length} recipient${selectedRecipients.length > 1 ? 's' : ''} selected` : 'Select recipients'}</span>
-                          </Button>
-                        </DialogTrigger>
-                        <DialogContent className="sm:max-w-2xl">
-                          <DialogHeader>
-                            <DialogTitle>Select Recipients</DialogTitle>
-                            <DialogDescription>Choose one or more recipients to share with.</DialogDescription>
-                          </DialogHeader>
-                          <Tabs defaultValue="users" className="w-full mt-2">
-                            <TabsList className="grid grid-cols-2 w-full">
-                              <TabsTrigger value="users">Online Users</TabsTrigger>
-                              <TabsTrigger value="labs">Lab Rooms</TabsTrigger>
-                            </TabsList>
-                            {/* Online Users tab with search and multi-select */}
-                            <TabsContent value="users" className="space-y-3">
-                              <div className="relative">
-                                <Input
-                                  placeholder="Search users by name or ID"
-                                  value={searchQuery}
-                                  onChange={(e) => setSearchQuery(e.target.value)}
-                                  className="pl-9"
-                                />
-                                <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                      {/* Actions */}
+                      <div className="flex gap-2">
+                        <Button
+                          onClick={() => preflightAndMaybeShare(false)}
+                          disabled={isUploading || !message.trim() || selectedRecipients.length === 0}
+                          className="flex-1"
+                        >
+                          <Send className="w-4 h-4 mr-2" />
+                          Send Message
+                        </Button>
+                        {/* No Submit For Print button for Code Share - code cannot be sent to Lab Admin */}
+                      </div>
+                    </motion.div>
+                  ) : (
+                    /* Files/Links Mode */
+                    <motion.div
+                      key="files-links"
+                      initial={{ opacity: 0, y: -10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: 10 }}
+                      transition={{ duration: 0.2 }}
+                    >
+                      <Tabs value={shareMode} onValueChange={(v) => setShareMode(v as any)} className="w-full">
+                        <TabsList className="grid w-full grid-cols-2 h-9 p-1 bg-muted rounded-lg">
+                          <TabsTrigger value="files">Files</TabsTrigger>
+                          <TabsTrigger value="links">Links</TabsTrigger>
+                        </TabsList>
+
+                        <TabsContent value="files" className="space-y-4">
+                          {/* Dropzone */}
+                          <div
+                            {...getRootProps()}
+                            className={`dropzone p-8 text-center cursor-pointer ${isDragActive ? 'dropzone-active border-primary' : ''
+                              }`}
+                          >
+                            <input {...getInputProps()} />
+                            <Upload className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
+                            {isDragActive ? (
+                              <p className="text-primary">Drop the files here...</p>
+                            ) : (
+                              <div>
+                                <p className="text-muted-foreground mb-2">Drag & drop files here, or click to select</p>
+                                <p className="text-sm text-muted-foreground">Support for multiple files</p>
                               </div>
-                              <div className="max-h-64 overflow-y-auto space-y-2">
-                                {onlineUsers
-                                  // Hide Lab Admin from Online Users tab in Select Recipients (Files)
-                                  .filter(u => u.uniqueId !== 'ADMIN' && u.id !== adminId)
-                                  .filter(u => (u.name + ' ' + u.uniqueId).toLowerCase().includes(searchQuery.toLowerCase()))
-                                  .map(u => {
-                                    const checked = selectedRecipients.includes(u.id)
-                                    return (
-                                      <label key={u.id} className={`flex items-center gap-3 p-2 rounded border ${checked ? 'border-blue-500 bg-primary/5' : 'border-gray-200 hover:bg-muted/50'}`}>
+                            )}
+                          </div>
+
+                          {/* Selected files below dropzone */}
+                          {selectedFiles.length > 0 && (
+                            <div className="space-y-2">
+                              <Label>
+                                {`Selected ${selectedFiles.length === 1 ? 'File' : 'Files'} (${selectedFiles.length} total, ${formatFileSize(selectedFiles.reduce((sum, f) => sum + f.size, 0))})`}
+                              </Label>
+                              <div className="max-h-32 overflow-y-auto space-y-2">
+                                {selectedFiles.map((file, index) => (
+                                  <div key={index} className="flex items-center justify-between p-2 bg-muted/50 rounded">
+                                    <div className="flex items-center gap-2">
+                                      <FileText className="w-4 h-4" />
+                                      <span className="text-sm truncate">{file.name}</span>
+                                      <span className="text-xs text-muted-foreground">({formatFileSize(file.size)})</span>
+                                    </div>
+                                    <Button variant="ghost" size="sm" onClick={() => removeFile(index)}>
+                                      <X className="w-4 h-4" />
+                                    </Button>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Message below selected files */}
+                          <div className="space-y-2">
+                            <Label htmlFor="message">Message (Optional)</Label>
+                            <Textarea
+                              id="message"
+                              placeholder="Add a message like '2 copies for printout'..."
+                              value={message}
+                              onChange={(e) => setMessage(e.target.value)}
+                              rows={3}
+                            />
+                          </div>
+
+                          {/* Allow reshare toggle */}
+                          <div className="flex items-center justify-between">
+                            <Label htmlFor="allow-reshare">Allow recipients to reshare</Label>
+                            <Switch id="allow-reshare" checked={allowReshare} onCheckedChange={(v) => setAllowReshare(!!v)} />
+                          </div>
+
+                          {/* Share To selector as modal trigger */}
+                          <div className="space-y-2">
+                            <Label>Share To:</Label>
+                            <Dialog open={selectModalOpen} onOpenChange={setSelectModalOpen}>
+                              <DialogTrigger asChild>
+                                <Button variant="outline" className="justify-between w-full">
+                                  <span>{selectedRecipients.length > 0 ? `${selectedRecipients.length} recipient${selectedRecipients.length > 1 ? 's' : ''} selected` : 'Select recipients'}</span>
+                                </Button>
+                              </DialogTrigger>
+                              <DialogContent className="sm:max-w-2xl">
+                                <DialogHeader>
+                                  <DialogTitle>Select Recipients</DialogTitle>
+                                  <DialogDescription>Choose one or more recipients to share with.</DialogDescription>
+                                </DialogHeader>
+                                <Tabs defaultValue="users" className="w-full mt-2">
+                                  <TabsList className="grid grid-cols-2 w-full">
+                                    <TabsTrigger value="users">Online Users</TabsTrigger>
+                                    <TabsTrigger value="labs">Lab Rooms</TabsTrigger>
+                                  </TabsList>
+                                  {/* Online Users tab with search and multi-select */}
+                                  <TabsContent value="users" className="space-y-3">
+                                    <div className="relative">
+                                      <Input
+                                        placeholder="Search users by name or ID"
+                                        value={searchQuery}
+                                        onChange={(e) => setSearchQuery(e.target.value)}
+                                        className="pl-9"
+                                      />
+                                      <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                                    </div>
+                                    <div className="max-h-64 overflow-y-auto space-y-2">
+                                      {onlineUsers
+                                        // Hide Lab Admin from Online Users tab in Select Recipients (Files)
+                                        .filter(u => u.uniqueId !== 'ADMIN' && u.id !== adminId)
+                                        .filter(u => (u.name + ' ' + u.uniqueId).toLowerCase().includes(searchQuery.toLowerCase()))
+                                        .map(u => {
+                                          const checked = selectedRecipients.includes(u.id)
+                                          return (
+                                            <label key={u.id} className={`flex items-center gap-3 p-2 rounded border ${checked ? 'border-blue-500 bg-primary/5' : 'border-gray-200 hover:bg-muted/50'}`}>
+                                              <input
+                                                type="checkbox"
+                                                className="accent-blue-600"
+                                                checked={checked}
+                                                onChange={(e) => {
+                                                  setSelectedRecipients(prev => {
+                                                    const next = e.target.checked ? Array.from(new Set([...prev, u.id])) : prev.filter(id => id !== u.id)
+                                                    // cache info for label if user goes offline before sending
+                                                    recipientInfoRef.current[u.id] = { name: u.name, uniqueId: u.uniqueId }
+                                                    return next
+                                                  })
+                                                }}
+                                              />
+                                              <div className="flex items-center gap-3">
+                                                <div className="w-8 h-8 rounded-full flex items-center justify-center text-white font-semibold text-sm" style={{ backgroundImage: generateGradient(u.name) }}>{u.name.charAt(0).toUpperCase()}</div>
+                                                <div>
+                                                  <p className="text-sm font-medium">{u.name}</p>
+                                                  <p className="text-xs text-muted-foreground">{u.uniqueId}</p>
+                                                </div>
+                                              </div>
+                                            </label>
+                                          )
+                                        })}
+                                      {onlineUsers.length === 0 && (
+                                        <p className="text-sm text-muted-foreground">No users online</p>
+                                      )}
+                                    </div>
+                                  </TabsContent>
+                                  {/* Lab Rooms tab (current room admin) */}
+                                  <TabsContent value="labs" className="space-y-3">
+                                    <div className="max-h-64 overflow-y-auto space-y-2">
+                                      <label className={`flex items-center gap-3 p-2 rounded border ${selectedRecipients.includes('admin') ? 'border-blue-500 bg-primary/5' : 'border-gray-200 hover:bg-muted/50'}`}>
                                         <input
                                           type="checkbox"
                                           className="accent-blue-600"
-                                          checked={checked}
+                                          checked={selectedRecipients.includes('admin')}
                                           onChange={(e) => {
                                             setSelectedRecipients(prev => {
-                                              const next = e.target.checked ? Array.from(new Set([...prev, u.id])) : prev.filter(id => id !== u.id)
-                                              // cache info for label if user goes offline before sending
-                                              recipientInfoRef.current[u.id] = { name: u.name, uniqueId: u.uniqueId }
+                                              const next = e.target.checked ? Array.from(new Set([...prev, 'admin'])) : prev.filter(id => id !== 'admin')
+                                              recipientInfoRef.current['admin'] = { name: `Lab Admin (Room ${adminRoom || userData?.roomNumber || ''})`, uniqueId: 'ADMIN' }
                                               return next
                                             })
                                           }}
                                         />
                                         <div className="flex items-center gap-3">
-                                          <div className="w-8 h-8 rounded-full flex items-center justify-center text-white font-semibold text-sm" style={{ backgroundImage: generateGradient(u.name) }}>{u.name.charAt(0).toUpperCase()}</div>
-                                          <div>
-                                            <p className="text-sm font-medium">{u.name}</p>
-                                            <p className="text-xs text-muted-foreground">{u.uniqueId}</p>
+                                          <div className="w-8 h-8 rounded-full flex items-center justify-center text-white font-semibold text-sm" style={{ backgroundImage: generateGradient(`Lab Admin (Room ${adminRoom || userData.roomNumber})`) }}>
+                                            A
                                           </div>
+                                          <span>Lab Admin (Room {adminRoom || userData.roomNumber})</span>
                                         </div>
                                       </label>
-                                    )
-                                  })}
-                                {onlineUsers.length === 0 && (
-                                  <p className="text-sm text-muted-foreground">No users online</p>
-                                )}
-                              </div>
-                            </TabsContent>
-                            {/* Lab Rooms tab (current room admin) */}
-                            <TabsContent value="labs" className="space-y-3">
-                              <div className="max-h-64 overflow-y-auto space-y-2">
-                                <label className={`flex items-center gap-3 p-2 rounded border ${selectedRecipients.includes('admin') ? 'border-blue-500 bg-primary/5' : 'border-gray-200 hover:bg-muted/50'}`}>
-                                  <input
-                                    type="checkbox"
-                                    className="accent-blue-600"
-                                    checked={selectedRecipients.includes('admin')}
-                                    onChange={(e) => {
-                                      setSelectedRecipients(prev => {
-                                        const next = e.target.checked ? Array.from(new Set([...prev, 'admin'])) : prev.filter(id => id !== 'admin')
-                                        recipientInfoRef.current['admin'] = { name: `Lab Admin (Room ${adminRoom || userData?.roomNumber || ''})`, uniqueId: 'ADMIN' }
-                                        return next
-                                      })
-                                    }}
-                                  />
-                                  <div className="flex items-center gap-3">
-                                    <div className="w-8 h-8 rounded-full flex items-center justify-center text-white font-semibold text-sm" style={{ backgroundImage: generateGradient(`Lab Admin (Room ${adminRoom || userData.roomNumber})`) }}>
-                                      A
+                                      {!adminId && <p className="text-xs text-orange-600">Admin is currently offline.</p>}
                                     </div>
-                                    <span>Lab Admin (Room {adminRoom || userData.roomNumber})</span>
-                                  </div>
-                                </label>
-                                {!adminId && <p className="text-xs text-orange-600">Admin is currently offline.</p>}
-                              </div>
-                            </TabsContent>
-                          </Tabs>
-                          <div className="flex justify-end">
-                            <Button onClick={() => setSelectModalOpen(false)}>Done</Button>
+                                  </TabsContent>
+                                </Tabs>
+                                <div className="flex justify-end">
+                                  <Button onClick={() => setSelectModalOpen(false)}>Done</Button>
+                                </div>
+                              </DialogContent>
+                            </Dialog>
                           </div>
-                        </DialogContent>
-                      </Dialog>
-                    </div>
 
-                    {/* Progress */}
-                    {/* Progress moved to global dialog */}
+                          {/* Progress */}
+                          {/* Progress moved to global dialog */}
 
-                    {/* Actions */}
-                    <div className="flex gap-2">
-                      <Button
-                        onClick={() => preflightAndMaybeShare(false)}
-                        disabled={isUploading || (selectedFiles.length === 0 && !linkUrl) || selectedRecipients.length === 0}
-                        className="flex-1"
-                      >
-                        <Send className="w-4 h-4 mr-2" />
-                        Share Files
-                      </Button>
-                      <Button
-                        onClick={() => preflightAndMaybeShare(true)}
-                        disabled={isUploading || (selectedFiles.length === 0 && !linkUrl) || !adminId}
-                        variant="outline"
-                        className="flex-1"
-                      >
-                        <Printer className="w-4 h-4 mr-2" />
-                        {`Submit For Print (Lab ${userData.roomNumber})`}
-                      </Button>
-                    </div>
-                  </TabsContent>
+                          {/* Actions */}
+                          <div className="flex gap-2">
+                            <Button
+                              onClick={() => preflightAndMaybeShare(false)}
+                              disabled={isUploading || (selectedFiles.length === 0 && !linkUrl) || selectedRecipients.length === 0}
+                              className="flex-1"
+                            >
+                              <Send className="w-4 h-4 mr-2" />
+                              Share Files
+                            </Button>
+                            <Button
+                              onClick={() => preflightAndMaybeShare(true)}
+                              disabled={isUploading || (selectedFiles.length === 0 && !linkUrl) || !adminId}
+                              variant="outline"
+                              className="flex-1"
+                            >
+                              <Printer className="w-4 h-4 mr-2" />
+                              {`Submit For Print (Lab ${userData.roomNumber})`}
+                            </Button>
+                          </div>
+                        </TabsContent>
 
-                  <TabsContent value="links" className="space-y-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="link">Share Link</Label>
-                      <Input
-                        id="link"
-                        type="url"
-                        placeholder="https://docs.google.com/document/d/..."
-                        value={linkUrl}
-                        onChange={(e) => setLinkUrl(e.target.value)}
-                      />
-                      <p className="text-sm text-muted-foreground">Share Google Docs, Drive links, or any other web links</p>
-                    </div>
+                        <TabsContent value="links" className="space-y-4">
+                          <div className="space-y-2">
+                            <Label htmlFor="link">Share Link</Label>
+                            <Input
+                              id="link"
+                              type="url"
+                              placeholder="https://docs.google.com/document/d/..."
+                              value={linkUrl}
+                              onChange={(e) => setLinkUrl(e.target.value)}
+                            />
+                            <p className="text-sm text-muted-foreground">Share Google Docs, Drive links, or any other web links</p>
+                          </div>
 
-                    {/* Message below link input */}
-                    <div className="space-y-2">
-                      <Label htmlFor="message-link">Message (Optional)</Label>
-                      <Textarea
-                        id="message-link"
-                        placeholder="Add a message like '2 copies for printout'..."
-                        value={message}
-                        onChange={(e) => setMessage(e.target.value)}
-                        rows={3}
-                      />
-                    </div>
+                          {/* Message below link input */}
+                          <div className="space-y-2">
+                            <Label htmlFor="message-link">Message (Optional)</Label>
+                            <Textarea
+                              id="message-link"
+                              placeholder="Add a message like '2 copies for printout'..."
+                              value={message}
+                              onChange={(e) => setMessage(e.target.value)}
+                              rows={3}
+                            />
+                          </div>
 
-                    {/* Allow reshare toggle */}
-                    <div className="flex items-center justify-between">
-                      <Label htmlFor="allow-reshare-link">Allow recipients to reshare</Label>
-                      <Switch id="allow-reshare-link" checked={allowReshare} onCheckedChange={(v) => setAllowReshare(!!v)} />
-                    </div>
+                          {/* Allow reshare toggle */}
+                          <div className="flex items-center justify-between">
+                            <Label htmlFor="allow-reshare-link">Allow recipients to reshare</Label>
+                            <Switch id="allow-reshare-link" checked={allowReshare} onCheckedChange={(v) => setAllowReshare(!!v)} />
+                          </div>
 
-                    {/* Share To selector as modal trigger (same as Files tab) */}
-                    <div className="space-y-2">
-                      <Label>Share To:</Label>
-                      <Dialog open={selectModalOpen} onOpenChange={setSelectModalOpen}>
-                        <DialogTrigger asChild>
-                          <Button variant="outline" className="justify-between w-full">
-                            <span>{selectedRecipients.length > 0 ? `${selectedRecipients.length} recipient${selectedRecipients.length > 1 ? 's' : ''} selected` : 'Select recipients'}</span>
-                          </Button>
-                        </DialogTrigger>
-                        <DialogContent className="sm:max-w-2xl">
-                          <DialogHeader>
-                            <DialogTitle>Select Recipients</DialogTitle>
-                            <DialogDescription>Choose one or more recipients to share with.</DialogDescription>
-                          </DialogHeader>
-                          <Tabs defaultValue="users" className="w-full mt-2">
-                            <TabsList className="grid grid-cols-2 w-full">
-                              <TabsTrigger value="users">Online Users</TabsTrigger>
-                              <TabsTrigger value="labs">Lab Rooms</TabsTrigger>
-                            </TabsList>
-                            <TabsContent value="users" className="space-y-3">
-                              <div className="relative">
-                                <Input
-                                  placeholder="Search users by name or ID"
-                                  value={searchQuery}
-                                  onChange={(e) => setSearchQuery(e.target.value)}
-                                  className="pl-9"
-                                />
-                                <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                              </div>
-                              <div className="max-h-64 overflow-y-auto space-y-2">
-                                {onlineUsers
-                                  // Hide Lab Admin from Online Users tab in Select Recipients
-                                  .filter(u => u.uniqueId !== 'ADMIN' && u.id !== adminId)
-                                  .filter(u => (u.name + ' ' + u.uniqueId).toLowerCase().includes(searchQuery.toLowerCase()))
-                                  .map(u => {
-                                    const checked = selectedRecipients.includes(u.id)
-                                    return (
-                                      <label key={u.id} className={`flex items-center gap-3 p-2 rounded border ${checked ? 'border-blue-500 bg-primary/5' : 'border-gray-200 hover:bg-muted/50'}`}>
+                          {/* Share To selector as modal trigger (same as Files tab) */}
+                          <div className="space-y-2">
+                            <Label>Share To:</Label>
+                            <Dialog open={selectModalOpen} onOpenChange={setSelectModalOpen}>
+                              <DialogTrigger asChild>
+                                <Button variant="outline" className="justify-between w-full">
+                                  <span>{selectedRecipients.length > 0 ? `${selectedRecipients.length} recipient${selectedRecipients.length > 1 ? 's' : ''} selected` : 'Select recipients'}</span>
+                                </Button>
+                              </DialogTrigger>
+                              <DialogContent className="sm:max-w-2xl">
+                                <DialogHeader>
+                                  <DialogTitle>Select Recipients</DialogTitle>
+                                  <DialogDescription>Choose one or more recipients to share with.</DialogDescription>
+                                </DialogHeader>
+                                <Tabs defaultValue="users" className="w-full mt-2">
+                                  <TabsList className="grid grid-cols-2 w-full">
+                                    <TabsTrigger value="users">Online Users</TabsTrigger>
+                                    <TabsTrigger value="labs">Lab Rooms</TabsTrigger>
+                                  </TabsList>
+                                  <TabsContent value="users" className="space-y-3">
+                                    <div className="relative">
+                                      <Input
+                                        placeholder="Search users by name or ID"
+                                        value={searchQuery}
+                                        onChange={(e) => setSearchQuery(e.target.value)}
+                                        className="pl-9"
+                                      />
+                                      <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                                    </div>
+                                    <div className="max-h-64 overflow-y-auto space-y-2">
+                                      {onlineUsers
+                                        // Hide Lab Admin from Online Users tab in Select Recipients
+                                        .filter(u => u.uniqueId !== 'ADMIN' && u.id !== adminId)
+                                        .filter(u => (u.name + ' ' + u.uniqueId).toLowerCase().includes(searchQuery.toLowerCase()))
+                                        .map(u => {
+                                          const checked = selectedRecipients.includes(u.id)
+                                          return (
+                                            <label key={u.id} className={`flex items-center gap-3 p-2 rounded border ${checked ? 'border-blue-500 bg-primary/5' : 'border-gray-200 hover:bg-muted/50'}`}>
+                                              <input
+                                                type="checkbox"
+                                                className="accent-blue-600"
+                                                checked={checked}
+                                                onChange={(e) => {
+                                                  setSelectedRecipients(prev => e.target.checked ? Array.from(new Set([...prev, u.id])) : prev.filter(id => id !== u.id))
+                                                }}
+                                              />
+                                              <div className="flex items-center gap-3">
+                                                <div className="w-8 h-8 rounded-full flex items-center justify-center text-white font-semibold text-sm" style={{ backgroundImage: generateGradient(u.name) }}>{u.name.charAt(0).toUpperCase()}</div>
+                                                <div>
+                                                  <p className="text-sm font-medium">{u.name}</p>
+                                                  <p className="text-xs text-muted-foreground">{u.uniqueId}</p>
+                                                </div>
+                                              </div>
+                                            </label>
+                                          )
+                                        })}
+                                      {onlineUsers.length === 0 && (
+                                        <p className="text-sm text-muted-foreground">No users online</p>
+                                      )}
+                                    </div>
+                                  </TabsContent>
+                                  <TabsContent value="labs" className="space-y-3">
+                                    <div className="max-h-64 overflow-y-auto space-y-2">
+                                      <label className={`flex items-center gap-3 p-2 rounded border ${selectedRecipients.includes('admin') ? 'border-blue-500 bg-primary/5' : 'border-gray-200 hover:bg-muted/50'}`}>
                                         <input
                                           type="checkbox"
                                           className="accent-blue-600"
-                                          checked={checked}
+                                          checked={selectedRecipients.includes('admin')}
                                           onChange={(e) => {
-                                            setSelectedRecipients(prev => e.target.checked ? Array.from(new Set([...prev, u.id])) : prev.filter(id => id !== u.id))
+                                            setSelectedRecipients(prev => e.target.checked ? Array.from(new Set([...prev, 'admin'])) : prev.filter(id => id !== 'admin'))
                                           }}
                                         />
                                         <div className="flex items-center gap-3">
-                                          <div className="w-8 h-8 rounded-full flex items-center justify-center text-white font-semibold text-sm" style={{ backgroundImage: generateGradient(u.name) }}>{u.name.charAt(0).toUpperCase()}</div>
-                                          <div>
-                                            <p className="text-sm font-medium">{u.name}</p>
-                                            <p className="text-xs text-muted-foreground">{u.uniqueId}</p>
+                                          <div className="w-8 h-8 rounded-full flex items-center justify-center text-white font-semibold text-sm" style={{ backgroundImage: generateGradient(`Lab Admin (Room ${adminRoom || userData.roomNumber})`) }}>
+                                            A
                                           </div>
+                                          <span>Lab Admin (Room {adminRoom || userData.roomNumber})</span>
                                         </div>
                                       </label>
-                                    )
-                                  })}
-                                {onlineUsers.length === 0 && (
-                                  <p className="text-sm text-muted-foreground">No users online</p>
-                                )}
-                              </div>
-                            </TabsContent>
-                            <TabsContent value="labs" className="space-y-3">
-                              <div className="max-h-64 overflow-y-auto space-y-2">
-                                <label className={`flex items-center gap-3 p-2 rounded border ${selectedRecipients.includes('admin') ? 'border-blue-500 bg-primary/5' : 'border-gray-200 hover:bg-muted/50'}`}>
-                                  <input
-                                    type="checkbox"
-                                    className="accent-blue-600"
-                                    checked={selectedRecipients.includes('admin')}
-                                    onChange={(e) => {
-                                      setSelectedRecipients(prev => e.target.checked ? Array.from(new Set([...prev, 'admin'])) : prev.filter(id => id !== 'admin'))
-                                    }}
-                                  />
-                                  <div className="flex items-center gap-3">
-                                    <div className="w-8 h-8 rounded-full flex items-center justify-center text-white font-semibold text-sm" style={{ backgroundImage: generateGradient(`Lab Admin (Room ${adminRoom || userData.roomNumber})`) }}>
-                                      A
+                                      {!adminId && <p className="text-xs text-orange-600">Admin is currently offline.</p>}
                                     </div>
-                                    <span>Lab Admin (Room {adminRoom || userData.roomNumber})</span>
-                                  </div>
-                                </label>
-                                {!adminId && <p className="text-xs text-orange-600">Admin is currently offline.</p>}
-                              </div>
-                            </TabsContent>
-                          </Tabs>
-                          <div className="flex justify-end">
-                            <Button onClick={() => setSelectModalOpen(false)}>Done</Button>
+                                  </TabsContent>
+                                </Tabs>
+                                <div className="flex justify-end">
+                                  <Button onClick={() => setSelectModalOpen(false)}>Done</Button>
+                                </div>
+                              </DialogContent>
+                            </Dialog>
                           </div>
-                        </DialogContent>
-                      </Dialog>
-                    </div>
 
-                    {/* Progress */}
-                    {/* Progress moved to global dialog */}
+                          {/* Progress */}
+                          {/* Progress moved to global dialog */}
 
-                    {/* Actions */}
-                    <div className="flex gap-2">
-                      <Button
-                        onClick={() => preflightAndMaybeShare(false)}
-                        disabled={isUploading || (selectedFiles.length === 0 && !linkUrl) || selectedRecipients.length === 0}
-                        className="flex-1"
-                      >
-                        <Send className="w-4 h-4 mr-2" />
-                        Share Files
-                      </Button>
-                      <Button
-                        onClick={() => preflightAndMaybeShare(true)}
-                        disabled={isUploading || (selectedFiles.length === 0 && !linkUrl) || !adminId}
-                        variant="outline"
-                        className="flex-1"
-                      >
-                        <Printer className="w-4 h-4 mr-2" />
-                        {`Submit For Print (Lab ${userData.roomNumber})`}
-                      </Button>
-                    </div>
-                  </TabsContent>
-                </Tabs>
+                          {/* Actions */}
+                          <div className="flex gap-2">
+                            <Button
+                              onClick={() => preflightAndMaybeShare(false)}
+                              disabled={isUploading || (selectedFiles.length === 0 && !linkUrl) || selectedRecipients.length === 0}
+                              className="flex-1"
+                            >
+                              <Send className="w-4 h-4 mr-2" />
+                              Share Files
+                            </Button>
+                            <Button
+                              onClick={() => preflightAndMaybeShare(true)}
+                              disabled={isUploading || (selectedFiles.length === 0 && !linkUrl) || !adminId}
+                              variant="outline"
+                              className="flex-1"
+                            >
+                              <Printer className="w-4 h-4 mr-2" />
+                              {`Submit For Print (Lab ${userData.roomNumber})`}
+                            </Button>
+                          </div>
+                        </TabsContent>
+                      </Tabs>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
               </CardContent>
             </Card>
           </TabsContent>
@@ -1548,6 +1855,9 @@ function StudentDashboardInner() {
                                 <Button variant="ghost" size="sm" className="justify-start" onClick={() => setRTypeFilter('links')}>
                                   {rTypeFilter === 'links' && <Check className="w-4 h-4 mr-2" />} Links only
                                 </Button>
+                                <Button variant="ghost" size="sm" className="justify-start" onClick={() => setRTypeFilter('code')}>
+                                  {rTypeFilter === 'code' && <Check className="w-4 h-4 mr-2" />} Code only
+                                </Button>
                               </div>
                             </PopoverContent>
                           </Popover>
@@ -1559,6 +1869,9 @@ function StudentDashboardInner() {
                         </div>
                         <div className="px-2 py-1 rounded-full border bg-muted/40 flex items-center gap-1 text-xs">
                           <Link className="w-3 h-3" /> {rLinksCount} Links
+                        </div>
+                        <div className="px-2 py-1 rounded-full border bg-muted/40 flex items-center gap-1 text-xs">
+                          <Code className="w-3 h-3" /> {rCodeCount} Code
                         </div>
                         <div className="px-2 py-1 rounded-full border bg-muted/40 flex items-center gap-1 text-xs">
                           <Folder className="w-3 h-3" /> {rTotalSize}
@@ -1673,6 +1986,9 @@ function StudentDashboardInner() {
                                 <Button variant="ghost" size="sm" className="justify-start" onClick={() => setSTypeFilter('links')}>
                                   {sTypeFilter === 'links' && <Check className="w-4 h-4 mr-2" />} Links only
                                 </Button>
+                                <Button variant="ghost" size="sm" className="justify-start" onClick={() => setSTypeFilter('code')}>
+                                  {sTypeFilter === 'code' && <Check className="w-4 h-4 mr-2" />} Code only
+                                </Button>
                               </div>
                             </PopoverContent>
                           </Popover>
@@ -1684,6 +2000,9 @@ function StudentDashboardInner() {
                         </div>
                         <div className="px-2 py-1 rounded-full border bg-muted/40 flex items-center gap-1 text-xs">
                           <Link className="w-3 h-3" /> {sLinksCount} Links
+                        </div>
+                        <div className="px-2 py-1 rounded-full border bg-muted/40 flex items-center gap-1 text-xs">
+                          <Code className="w-3 h-3" /> {sCodeCount} Code
                         </div>
                         <div className="px-2 py-1 rounded-full border bg-muted/40 flex items-center gap-1 text-xs">
                           <Folder className="w-3 h-3" /> {sTotalSize}

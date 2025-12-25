@@ -7,7 +7,7 @@ type ReceiveCallbacks = {
   onFileMetadata?: (fromId: string, meta: { fileName: string; fileSize: number; fileType: string; message?: string; senderName?: string; senderUniqueId?: string; allowReshare?: boolean; fileId?: string }) => void
   onFileChunk?: (fromId: string, receivedBytes: number, total: number) => void
   onFileComplete?: (fromId: string, fileBase64: string, meta: { fileName: string; fileSize: number; fileType: string; message?: string; senderName?: string; senderUniqueId?: string; allowReshare?: boolean; fileId?: string }) => void
-  onMessage?: (fromId: string, message: string) => void
+  onMessage?: (fromId: string, message: string, sender?: { name?: string; uniqueId?: string; allowReshare?: boolean }) => void
   onLink?: (
     fromId: string,
     linkUrl: string,
@@ -29,6 +29,8 @@ export const useWebRTC = (socket: any, roomNumber: string, callbacks: ReceiveCal
   const recvState = useRef<Map<string, { meta?: any; buffers: BlobPart[]; received: number }>>(new Map())
   // Sender in-flight state per peer
   const sendState = useRef<Map<string, { fileName: string; total: number; sent: number }>>(new Map())
+  // Message receive state for chunked messages
+  const msgRecvState = useRef<Map<string, { totalSize: number; chunks: string[]; received: number; senderName?: string; senderUniqueId?: string; allowReshare?: boolean }>>(new Map())
   // Cache method per connected peer: PW-RTC | SW-RTC | TW-RTC
   const peerMethodRef = useRef<Map<string, 'PW-RTC' | 'SW-RTC' | 'TW-RTC' | 'PW-RTC-F'>>(new Map())
 
@@ -153,12 +155,12 @@ export const useWebRTC = (socket: any, roomNumber: string, callbacks: ReceiveCal
         const ch: any = (peer as any)?._channel || (peer as any)?.channel || (peer as any)?.dataChannel
         if (ch) {
           // Prefer ArrayBuffer to avoid Blob/TypedArray conversions
-          try { ch.binaryType = 'arraybuffer' } catch {}
+          try { ch.binaryType = 'arraybuffer' } catch { }
           // Set a reasonable low threshold so 'bufferedamountlow' fires earlier
           // Mobile browsers benefit from smaller thresholds
-          try { ch.bufferedAmountLowThreshold = 64 * 1024 } catch {}
+          try { ch.bufferedAmountLowThreshold = 64 * 1024 } catch { }
         }
-      } catch {}
+      } catch { }
     })
 
     peer.on('data', async (data: any) => {
@@ -185,6 +187,28 @@ export const useWebRTC = (socket: any, roomNumber: string, callbacks: ReceiveCal
             case 'message':
               callbacks.onMessage?.(targetId, obj.message)
               return
+            case 'msg-metadata': {
+              // Start receiving chunked message
+              msgRecvState.current.set(targetId, { totalSize: obj.totalSize, chunks: [], received: 0 })
+              return
+            }
+            case 'msg-chunk': {
+              const msgState = msgRecvState.current.get(targetId)
+              if (msgState) {
+                msgState.chunks.push(obj.data)
+                msgState.received += obj.data.length
+              }
+              return
+            }
+            case 'msg-complete': {
+              const msgState = msgRecvState.current.get(targetId)
+              if (msgState) {
+                const fullMessage = msgState.chunks.join('')
+                callbacks.onMessage?.(targetId, fullMessage)
+                msgRecvState.current.delete(targetId)
+              }
+              return
+            }
             case 'link':
               callbacks.onLink?.(targetId, obj.linkUrl, obj.message, { name: obj.senderName, uniqueId: obj.senderUniqueId, allowReshare: obj.allowReshare })
               return
@@ -230,7 +254,28 @@ export const useWebRTC = (socket: any, roomNumber: string, callbacks: ReceiveCal
                 }
                 return
               }
-              if (obj.type === 'message') { callbacks.onMessage?.(targetId, obj.message); return }
+              if (obj.type === 'message') { callbacks.onMessage?.(targetId, obj.message, { name: obj.senderName, uniqueId: obj.senderUniqueId, allowReshare: obj.allowReshare }); return }
+              if (obj.type === 'msg-metadata') {
+                msgRecvState.current.set(targetId, { totalSize: obj.totalSize, chunks: [], received: 0, senderName: obj.senderName, senderUniqueId: obj.senderUniqueId, allowReshare: obj.allowReshare })
+                return
+              }
+              if (obj.type === 'msg-chunk') {
+                const msgState = msgRecvState.current.get(targetId)
+                if (msgState) {
+                  msgState.chunks.push(obj.data)
+                  msgState.received += obj.data.length
+                }
+                return
+              }
+              if (obj.type === 'msg-complete') {
+                const msgState = msgRecvState.current.get(targetId)
+                if (msgState) {
+                  const fullMessage = msgState.chunks.join('')
+                  callbacks.onMessage?.(targetId, fullMessage, { name: msgState.senderName, uniqueId: msgState.senderUniqueId, allowReshare: msgState.allowReshare })
+                  msgRecvState.current.delete(targetId)
+                }
+                return
+              }
               if (obj.type === 'link') { callbacks.onLink?.(targetId, obj.linkUrl, obj.message, { name: obj.senderName, uniqueId: obj.senderUniqueId, allowReshare: obj.allowReshare }); return }
             }
           } catch {
@@ -330,12 +375,12 @@ export const useWebRTC = (socket: any, roomNumber: string, callbacks: ReceiveCal
         }
         peer!.once('connect', onConnect)
         peer!.once('error', onError)
-      }).catch(() => {})
+      }).catch(() => { })
     }
     if (peer.destroyed || !(peer as any).connected) return
 
     // Determine connection method now that we're connected
-  const method = await getPeerMethod(targetId)
+    const method = await getPeerMethod(targetId)
 
     const meta = {
       type: 'file-metadata',
@@ -351,15 +396,15 @@ export const useWebRTC = (socket: any, roomNumber: string, callbacks: ReceiveCal
     }
     try {
       peer.send(JSON.stringify(meta))
-    } catch {}
+    } catch { }
 
-  // Adaptive chunk size per connection type (32 = SW-RTC) 
-  let chunkSize = 32 * 1024
-  if (method === 'PW-RTC') chunkSize = 60 * 1024
-  if (method === 'TW-RTC') chunkSize = 16 * 1024
+    // Adaptive chunk size per connection type (32 = SW-RTC) 
+    let chunkSize = 32 * 1024
+    if (method === 'PW-RTC') chunkSize = 60 * 1024
+    if (method === 'TW-RTC') chunkSize = 16 * 1024
     let offset = 0
     callbacks.onSendStart?.(targetId, file.name, file.size)
-  sendState.current.set(targetId, { fileName: file.name, total: file.size, sent: 0 })
+    sendState.current.set(targetId, { fileName: file.name, total: file.size, sent: 0 })
 
     const readSlice = async (start: number, end: number): Promise<ArrayBuffer> => {
       // Use Blob.arrayBuffer() to avoid FileReader overhead on mobile
@@ -393,20 +438,20 @@ export const useWebRTC = (socket: any, roomNumber: string, callbacks: ReceiveCal
           const MAX_BUFFER = 512 * 1024 // 512KB cap for mobile
           const LOW_WATER = 256 * 1024
           if (ch.bufferedAmount > MAX_BUFFER) {
-            try { if (!ch.bufferedAmountLowThreshold || ch.bufferedAmountLowThreshold > LOW_WATER) ch.bufferedAmountLowThreshold = LOW_WATER } catch {}
+            try { if (!ch.bufferedAmountLowThreshold || ch.bufferedAmountLowThreshold > LOW_WATER) ch.bufferedAmountLowThreshold = LOW_WATER } catch { }
             // Wait using both event and polling with timeout to avoid hangs on browsers not firing the event
             await new Promise<void>((resolve) => {
               let done = false
-              const clearAll = () => { done = true; try { ch.removeEventListener?.('bufferedamountlow', onLow as any) } catch {} ; try { clearInterval(timer) } catch {} ; try { clearTimeout(tmo) } catch {} }
+              const clearAll = () => { done = true; try { ch.removeEventListener?.('bufferedamountlow', onLow as any) } catch { }; try { clearInterval(timer) } catch { }; try { clearTimeout(tmo) } catch { } }
               const onLow = () => { if (done) return; clearAll(); resolve() }
               const poll = () => { if (done) return; if (ch.bufferedAmount <= LOW_WATER) { clearAll(); resolve() } }
               let timer: any = setInterval(poll, 50)
               let tmo: any = setTimeout(() => { if (done) return; clearAll(); resolve() }, 2000)
-              try { ch.addEventListener?.('bufferedamountlow', onLow as any, { once: true }) } catch {}
+              try { ch.addEventListener?.('bufferedamountlow', onLow as any, { once: true }) } catch { }
             })
           }
         }
-      } catch {}
+      } catch { }
       offset = next
       callbacks.onSendProgress?.(targetId, file.name, offset, file.size)
       const s = sendState.current.get(targetId)
@@ -421,26 +466,50 @@ export const useWebRTC = (socket: any, roomNumber: string, callbacks: ReceiveCal
     if (!peer.destroyed && (peer as any).connected) {
       try {
         peer.send(JSON.stringify({ type: 'file-complete', fileName: file.name }))
-      } catch {}
+      } catch { }
     }
     callbacks.onSendComplete?.(targetId, file.name)
     sendState.current.delete(targetId)
     return method
   }
 
-  const sendMessage = async (targetId: string, message: string) => {
+  const sendMessage = async (targetId: string, message: string, sender?: { name?: string; uniqueId?: string; allowReshare?: boolean }) => {
     const peer = peersRef.current.get(targetId)
     if (!peer || peer.destroyed) return
     if (!(peer as any).connected) {
       await new Promise<void>((resolve) => {
         const onConnect = () => resolve()
-        ;(peer as any).once?.('connect', onConnect)
+          ; (peer as any).once?.('connect', onConnect)
       })
     }
     if (!peer.destroyed && (peer as any).connected) {
       try {
-        peer.send(JSON.stringify({ type: 'message', message, timestamp: Date.now() }))
-      } catch {}
+        const CHUNK_SIZE = 6 * 1024 // 6KB chunks - stays under 8KB binary JSON limit with overhead
+
+        if (message.length <= CHUNK_SIZE) {
+          // Small message - send directly with sender info and allowReshare
+          peer.send(JSON.stringify({ type: 'message', message, senderName: sender?.name, senderUniqueId: sender?.uniqueId, allowReshare: sender?.allowReshare, timestamp: Date.now() }))
+        } else {
+          // Large message - send in chunks
+          const totalSize = message.length
+
+          // Send metadata with sender info and allowReshare
+          peer.send(JSON.stringify({ type: 'msg-metadata', totalSize, senderName: sender?.name, senderUniqueId: sender?.uniqueId, allowReshare: sender?.allowReshare, timestamp: Date.now() }))
+
+          // Send chunks
+          let offset = 0
+          while (offset < message.length) {
+            const chunk = message.slice(offset, offset + CHUNK_SIZE)
+            peer.send(JSON.stringify({ type: 'msg-chunk', data: chunk }))
+            offset += CHUNK_SIZE
+            // Small delay to prevent buffer overflow
+            await new Promise(r => setTimeout(r, 5))
+          }
+
+          // Send completion signal
+          peer.send(JSON.stringify({ type: 'msg-complete' }))
+        }
+      } catch { }
     }
   }
 
@@ -457,7 +526,7 @@ export const useWebRTC = (socket: any, roomNumber: string, callbacks: ReceiveCal
     if (!(peer as any).connected) {
       await new Promise<void>((resolve) => {
         const onConnect = () => resolve()
-        ;(peer as any).once?.('connect', onConnect)
+          ; (peer as any).once?.('connect', onConnect)
       })
     }
     if (!peer.destroyed && (peer as any).connected) {
@@ -465,7 +534,7 @@ export const useWebRTC = (socket: any, roomNumber: string, callbacks: ReceiveCal
         const method = await getPeerMethod(targetId)
         peer.send(JSON.stringify({ type: 'link', linkUrl, message, senderName: sender?.name, senderUniqueId: sender?.uniqueId, allowReshare, method, fileId }))
         return method
-      } catch {}
+      } catch { }
     }
   }
 

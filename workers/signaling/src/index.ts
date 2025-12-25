@@ -8,9 +8,13 @@ export default {
     const url = new URL(request.url)
 
     if (url.pathname === '/ws') {
+      // Check if this is a OneShare connection (no room param) or regular room connection
       const room = url.searchParams.get('room') || ''
-      if (!room) return new Response('room is required', { status: 400 })
-      const id = env.ROOMS.idFromName(room)
+
+      // Use a special "oneshare" room for all OneShare connections
+      // This allows them to communicate without joining specific rooms
+      const roomName = room || '__oneshare__'
+      const id = env.ROOMS.idFromName(roomName)
       const stub = env.ROOMS.get(id)
       return stub.fetch(request)
     }
@@ -22,6 +26,13 @@ export default {
 
 type User = { id: string; logicalId?: string; name: string; uniqueId: string; roomNumber: string; isOnline: boolean }
 
+// OneShare session type
+type OneShareSession = {
+  senderId: string
+  createdAt: number
+  files?: any[]
+}
+
 export class RoomDurableObject implements DurableObject {
   state: DurableObjectState
   roomNumber: string | null = null
@@ -32,8 +43,33 @@ export class RoomDurableObject implements DurableObject {
   userDataByKey: Map<string, User> = new Map()
   lastSeen: Map<string, number> = new Map()
 
+  // OneShare sessions: 4-digit code -> session data
+  oneShareSessions: Map<string, OneShareSession> = new Map()
+
   constructor(state: DurableObjectState, _env: Env) {
     this.state = state
+  }
+
+  // Generate unique 4-digit code for OneShare
+  generateOneShareCode(): string {
+    let code: string
+    let attempts = 0
+    do {
+      code = Math.floor(1000 + Math.random() * 9000).toString()
+      attempts++
+    } while (this.oneShareSessions.has(code) && attempts < 100)
+    return code
+  }
+
+  // Clean up expired OneShare sessions (older than 10 minutes)
+  cleanupExpiredOneShareSessions(): void {
+    const now = Date.now()
+    const TEN_MINUTES = 10 * 60 * 1000
+    for (const [code, session] of Array.from(this.oneShareSessions.entries())) {
+      if (now - session.createdAt > TEN_MINUTES) {
+        this.oneShareSessions.delete(code)
+      }
+    }
   }
 
   fetch(request: Request): Response {
@@ -50,12 +86,12 @@ export class RoomDurableObject implements DurableObject {
     const client = (pair as any)[0] as WebSocket
     const server = (pair as any)[1] as WebSocket
     const socketId = crypto.randomUUID()
-    ;(server as any).accept()
+      ; (server as any).accept()
 
     this.sockets.set(socketId, server)
 
     const send = (ws: WebSocket, event: string, data?: any) => {
-      try { ws.send(JSON.stringify({ event, data })) } catch {}
+      try { ws.send(JSON.stringify({ event, data })) } catch { }
     }
     const broadcast = (event: string, data?: any, exceptId?: string) => {
       this.sockets.forEach((ws, id) => { if (id !== exceptId) send(ws, event, data) })
@@ -85,9 +121,15 @@ export class RoomDurableObject implements DurableObject {
             }
             broadcast('user-left', user, sid)
           }
+          // Also cleanup any OneShare sessions owned by this socket
+          for (const [code, session] of Array.from(this.oneShareSessions.entries())) {
+            if (session.senderId === sid) {
+              this.oneShareSessions.delete(code)
+            }
+          }
           this.lastSeen.delete(sid)
           this.sockets.delete(sid)
-          try { (ws as any)?.close?.() } catch {}
+          try { (ws as any)?.close?.() } catch { }
         }
       }
     }
@@ -123,6 +165,20 @@ export class RoomDurableObject implements DurableObject {
         this.adminId = null
         if (this.roomNumber) broadcast('admin-offline', { roomNumber: this.roomNumber })
       }
+
+      // Cleanup any OneShare sessions owned by this socket
+      for (const [code, session] of Array.from(this.oneShareSessions.entries())) {
+        if (session.senderId === socketId) {
+          // Notify any receivers that the session is cancelled
+          this.sockets.forEach((ws, id) => {
+            if (id !== socketId) {
+              send(ws, 'oneshare-cancelled', { code, reason: 'Sender disconnected' })
+            }
+          })
+          this.oneShareSessions.delete(code)
+        }
+      }
+
       this.sockets.delete(socketId)
     }
 
@@ -136,6 +192,9 @@ export class RoomDurableObject implements DurableObject {
       // Update last-seen and sweep stale on every message
       this.lastSeen.set(socketId, Date.now())
       sweepStale()
+
+      // Also cleanup expired OneShare sessions periodically
+      this.cleanupExpiredOneShareSessions()
 
       switch (event) {
         case 'join-room': {
@@ -152,7 +211,7 @@ export class RoomDurableObject implements DurableObject {
               const prevSock = this.sockets.get(prev)
               if (prevSock) {
                 send(prevSock, 'single-session-logout')
-                try { prevSock.close() } catch {}
+                try { prevSock.close() } catch { }
               }
               this.sockets.delete(prev)
               this.users.delete(prev)
@@ -203,6 +262,114 @@ export class RoomDurableObject implements DurableObject {
           if (targetId) sendTo(targetId, 'webrtc-ice-candidate', { candidate, senderId: socketId })
           return
         }
+
+        // ============================================
+        // OneShare Events: Room-less file sharing
+        // ============================================
+
+        case 'oneshare-create': {
+          // Sender creates a OneShare session
+          const code = this.generateOneShareCode()
+          this.oneShareSessions.set(code, {
+            senderId: socketId,
+            createdAt: Date.now(),
+            files: data.files
+          })
+          send(server, 'oneshare-created', { code })
+          console.log(`OneShare session created: ${code} by ${socketId}`)
+          return
+        }
+
+        case 'oneshare-join': {
+          // Receiver joins a OneShare session with code
+          const { code } = data
+          const session = this.oneShareSessions.get(code)
+          if (!session) {
+            send(server, 'oneshare-error', { message: 'Invalid or expired code' })
+            return
+          }
+          // Notify sender that receiver connected
+          sendTo(session.senderId, 'oneshare-receiver-joined', {
+            receiverId: socketId,
+            code
+          })
+          // Send session info to receiver
+          send(server, 'oneshare-joined', {
+            senderId: session.senderId,
+            code,
+            files: session.files
+          })
+          console.log(`Receiver ${socketId} joined OneShare session: ${code}`)
+          return
+        }
+
+        case 'oneshare-offer': {
+          // OneShare WebRTC offer relay
+          const { targetId, offer, code } = data
+          if (targetId) {
+            sendTo(targetId, 'oneshare-offer', {
+              offer,
+              senderId: socketId,
+              code
+            })
+          }
+          return
+        }
+
+        case 'oneshare-answer': {
+          // OneShare WebRTC answer relay
+          const { targetId, answer, code } = data
+          if (targetId) {
+            sendTo(targetId, 'oneshare-answer', {
+              answer,
+              senderId: socketId,
+              code
+            })
+          }
+          return
+        }
+
+        case 'oneshare-ice-candidate': {
+          // OneShare ICE candidate relay
+          const { targetId, candidate, code } = data
+          if (targetId) {
+            sendTo(targetId, 'oneshare-ice-candidate', {
+              candidate,
+              senderId: socketId,
+              code
+            })
+          }
+          return
+        }
+
+        case 'oneshare-complete': {
+          // Sender signals transfer complete
+          const { code } = data
+          // Notify all participants
+          this.sockets.forEach((ws) => {
+            send(ws, 'oneshare-transfer-complete', { code })
+          })
+          // Clean up session
+          this.oneShareSessions.delete(code)
+          console.log(`OneShare session completed: ${code}`)
+          return
+        }
+
+        case 'oneshare-cancel': {
+          // Cancel/leave OneShare session
+          const { code } = data
+          const session = this.oneShareSessions.get(code)
+          if (session) {
+            // Notify all participants
+            this.sockets.forEach((ws) => {
+              send(ws, 'oneshare-cancelled', { code })
+            })
+            this.oneShareSessions.delete(code)
+            console.log(`OneShare session cancelled: ${code}`)
+          }
+          return
+        }
+
         default:
           return
       }
@@ -215,3 +382,4 @@ export class RoomDurableObject implements DurableObject {
     return new Response(null, { status: 101, webSocket: client })
   }
 }
+

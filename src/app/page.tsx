@@ -38,7 +38,8 @@ import {
   Radio,
   Files,
   ShieldCheck,
-  Rocket
+  Rocket,
+  QrCode
 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import gsap from 'gsap'
@@ -1027,6 +1028,37 @@ export default function Home() {
               Join your lab room and start sharing in seconds
             </p>
           </motion.div>
+
+          {/* OneShare Quick Access */}
+          <motion.div
+            initial="hidden"
+            whileInView="visible"
+            viewport={{ once: true }}
+            variants={fadeUp}
+            className="mb-10"
+          >
+            <button
+              onClick={() => router.push('/oneshare')}
+              className="portal-card w-full glass-card rounded-2xl p-4 md:p-6 text-center transition-all duration-300 hover:ring-2 hover:ring-primary hover:shadow-lg hover:shadow-primary/20 group"
+            >
+              <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
+                <div className="w-16 h-16 rounded-2xl gradient-primary flex items-center justify-center glow-sm group-hover:scale-110 transition-transform">
+                  <QrCode className="w-8 h-8 text-white" />
+                </div>
+                <div className="text-center sm:text-left">
+                  <h3 className="text-xl font-bold text-foreground mb-1">OneShare</h3>
+                  <p className="text-sm text-muted-foreground">Quick share without joining a room — just scan or enter a code</p>
+                </div>
+                <ArrowRight className="w-6 h-6 text-primary hidden sm:block group-hover:translate-x-1 transition-transform" />
+              </div>
+            </button>
+          </motion.div>
+
+          <div className="flex items-center gap-4 max-w-2xl mx-auto mb-6">
+            <div className="flex-1 h-px bg-border" />
+            <span className="text-sm text-muted-foreground">or join a lab room</span>
+            <div className="flex-1 h-px bg-border" />
+          </div>
 
           {/* Role Selection */}
           <div className="grid md:grid-cols-2 gap-6 mb-10 max-w-2xl mx-auto">

@@ -53,16 +53,16 @@ export const setupSocket = (io: ServerIO) => {
       const logicalId = data.user?.id
       // Build presence payload (id is current socket id for P2P; keep logicalId separately)
       const user = { ...data.user, id: socket.id, logicalId, roomNumber, isOnline: true }
-      
+
       // Join socket room
       socket.join(roomNumber)
-      
+
       // Add to room tracking
       if (!rooms.has(roomNumber)) {
         rooms.set(roomNumber, new Set())
       }
       rooms.get(roomNumber)!.add(socket.id)
-      
+
       // Store user data
       users.set(socket.id, user)
 
@@ -89,10 +89,10 @@ export const setupSocket = (io: ServerIO) => {
           }
         }
       }
-      
+
       // Notify others in room
       socket.to(roomNumber).emit('user-joined', user)
-      
+
       // Send current room users (dedup by logical user if present, else by uniqueId) to new user
       const seen = new Set<string>()
       const roomUsers = Array.from(users.values())
@@ -110,7 +110,7 @@ export const setupSocket = (io: ServerIO) => {
       if (adminId) {
         socket.emit('admin-online', { adminId, roomNumber })
       }
-      
+
       console.log(`User ${user.name} joined room ${roomNumber}`)
     })
 
@@ -175,7 +175,7 @@ export const setupSocket = (io: ServerIO) => {
             rooms.delete(user.roomNumber)
           }
         }
-        
+
         // Remove user
         users.delete(socket.id)
         // Clear single-session mapping if this was the active session
@@ -188,10 +188,10 @@ export const setupSocket = (io: ServerIO) => {
             userDataByKey.delete(key)
           }
         }
-        
+
         // Notify others
         socket.to(user.roomNumber).emit('user-left', user)
-        
+
         console.log(`User ${user.name} disconnected from room ${user.roomNumber}`)
       }
 
@@ -219,6 +219,137 @@ export const setupSocket = (io: ServerIO) => {
         socket.emit('admin-auth-success', { roomNumber, adminId: socket.id })
       } else {
         socket.emit('admin-auth-failed')
+      }
+    })
+
+    // ============================================
+    // OneShare: Room-less file sharing with 4-digit codes
+    // ============================================
+
+    // OneShare session storage: code -> { senderId, createdAt, files }
+    // Using closure variable to persist across connections
+    const oneShareSessions = (io as any)._oneShareSessions || new Map<string, { senderId: string; createdAt: number; files?: any[] }>()
+      ; (io as any)._oneShareSessions = oneShareSessions
+
+    // Generate unique 4-digit code
+    const generateOneShareCode = (): string => {
+      let code: string
+      let attempts = 0
+      do {
+        code = Math.floor(1000 + Math.random() * 9000).toString()
+        attempts++
+      } while (oneShareSessions.has(code) && attempts < 100)
+      return code
+    }
+
+    // Clean up expired sessions (older than 10 minutes)
+    const cleanupExpiredSessions = () => {
+      const now = Date.now()
+      const TEN_MINUTES = 10 * 60 * 1000
+      for (const [code, session] of oneShareSessions.entries()) {
+        if (now - session.createdAt > TEN_MINUTES) {
+          oneShareSessions.delete(code)
+        }
+      }
+    }
+
+    // Sender creates a OneShare session
+    socket.on('oneshare-create', (data: { files?: any[] }) => {
+      cleanupExpiredSessions()
+      const code = generateOneShareCode()
+      oneShareSessions.set(code, {
+        senderId: socket.id,
+        createdAt: Date.now(),
+        files: data.files
+      })
+      // Join a private room for this session
+      socket.join(`oneshare-${code}`)
+      socket.emit('oneshare-created', { code })
+      console.log(`OneShare session created: ${code} by ${socket.id}`)
+    })
+
+    // Receiver joins a OneShare session with code
+    socket.on('oneshare-join', (data: { code: string }) => {
+      const { code } = data
+      const session = oneShareSessions.get(code)
+      if (!session) {
+        socket.emit('oneshare-error', { message: 'Invalid or expired code' })
+        return
+      }
+      // Join the session room
+      socket.join(`oneshare-${code}`)
+      // Notify sender that receiver connected
+      io.to(session.senderId).emit('oneshare-receiver-joined', {
+        receiverId: socket.id,
+        code
+      })
+      // Send session info to receiver
+      socket.emit('oneshare-joined', {
+        senderId: session.senderId,
+        code,
+        files: session.files
+      })
+      console.log(`Receiver ${socket.id} joined OneShare session: ${code}`)
+    })
+
+    // OneShare WebRTC signaling
+    socket.on('oneshare-offer', (data: { targetId: string; offer: any; code: string }) => {
+      const { targetId, offer, code } = data
+      socket.to(targetId).emit('oneshare-offer', {
+        offer,
+        senderId: socket.id,
+        code
+      })
+    })
+
+    socket.on('oneshare-answer', (data: { targetId: string; answer: any; code: string }) => {
+      const { targetId, answer, code } = data
+      socket.to(targetId).emit('oneshare-answer', {
+        answer,
+        senderId: socket.id,
+        code
+      })
+    })
+
+    socket.on('oneshare-ice-candidate', (data: { targetId: string; candidate: any; code: string }) => {
+      const { targetId, candidate, code } = data
+      socket.to(targetId).emit('oneshare-ice-candidate', {
+        candidate,
+        senderId: socket.id,
+        code
+      })
+    })
+
+    // Sender signals transfer complete
+    socket.on('oneshare-complete', (data: { code: string }) => {
+      const { code } = data
+      io.to(`oneshare-${code}`).emit('oneshare-transfer-complete', { code })
+      // Clean up session
+      oneShareSessions.delete(code)
+      console.log(`OneShare session completed and cleaned up: ${code}`)
+    })
+
+    // Cancel/leave OneShare session
+    socket.on('oneshare-cancel', (data: { code: string }) => {
+      const { code } = data
+      const session = oneShareSessions.get(code)
+      if (session) {
+        io.to(`oneshare-${code}`).emit('oneshare-cancelled', { code })
+        oneShareSessions.delete(code)
+        console.log(`OneShare session cancelled: ${code}`)
+      }
+    })
+
+    // Handle OneShare cleanup on disconnect (in addition to existing disconnect handler)
+    // Note: Socket.IO allows multiple handlers for same event
+    socket.on('disconnect', () => {
+      // Clean up any OneShare sessions owned by this socket
+      for (const [code, session] of oneShareSessions.entries()) {
+        if (session.senderId === socket.id) {
+          io.to(`oneshare-${code}`).emit('oneshare-cancelled', { code, reason: 'Sender disconnected' })
+          oneShareSessions.delete(code)
+          console.log(`OneShare session auto-cancelled on disconnect: ${code}`)
+        }
       }
     })
   })
