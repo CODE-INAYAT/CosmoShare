@@ -25,9 +25,12 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { QRCodeDisplay } from '@/components/QRCodeDisplay'
 import { QRCodeScanner } from '@/components/QRCodeScanner'
 import { CodeInput, CodeInputRef } from '@/components/CodeInput'
+import { ConnectionStatusBadge } from '@/components/ConnectionStatusBadge'
+import { OfflineDialog } from '@/components/OfflineDialog'
 
-// Hook
+// Hooks
 import { useOneShareWebRTC } from '@/hooks/useOneShareWebRTC'
+import { useNetworkStatus } from '@/hooks/useNetworkStatus'
 
 // Icons
 import {
@@ -137,6 +140,9 @@ function OneShareInner() {
     const searchParams = useSearchParams()
     const [mounted, setMounted] = useState(false)
 
+    // Network status
+    const { isOnline } = useNetworkStatus()
+
     // Mode selection
     const [mode, setMode] = useState<'select' | 'send' | 'receive'>('select')
     const [receiveMethod, setReceiveMethod] = useState<'scan' | 'code'>('code')
@@ -156,7 +162,7 @@ function OneShareInner() {
     const [linkUrl, setLinkUrl] = useState('')
     const [message, setMessage] = useState('')
     const [shareMode, setShareMode] = useState<'files' | 'links'>('files')
-    const [messageOnlyMode, setMessageOnlyMode] = useState(false)
+    const [codeShareMode, setCodeShareMode] = useState(false)
     const [isUploading, setIsUploading] = useState(false)
     const [uploadProgress, setUploadProgress] = useState(0)
     const [transferComplete, setTransferComplete] = useState(false)
@@ -507,6 +513,22 @@ function OneShareInner() {
         }
     }, [mounted])
 
+    // Reconnect socket when network comes back online
+    useEffect(() => {
+        if (isOnline && !isConnected && socketRef.current && mounted) {
+            console.log('[OneShare] Network back online, attempting socket reconnect...')
+            const sock = socketRef.current
+            // Check if socket is disconnected and try to reconnect
+            if (sock && typeof sock.connect === 'function') {
+                try {
+                    sock.connect()
+                } catch (e) {
+                    console.error('[OneShare] Socket reconnect failed:', e)
+                }
+            }
+        }
+    }, [isOnline, isConnected, mounted])
+
     // Auto-join when code is entered from URL and socket is ready
     useEffect(() => {
         const codeParam = searchParams?.get('code')
@@ -532,8 +554,8 @@ function OneShareInner() {
             return
         }
 
-        if (selectedFiles.length === 0 && !linkUrl && (!message || !messageOnlyMode)) {
-            setJoinError('Please select files, enter a link, or write a message to share')
+        if (selectedFiles.length === 0 && !linkUrl && (!message || !codeShareMode)) {
+            setJoinError('Please select files, enter a link, or write code to share')
             return
         }
 
@@ -624,8 +646,8 @@ function OneShareInner() {
                 }
             }
 
-            // Send message-only if in message mode with no files/links
-            if (messageOnlyMode && selectedFiles.length === 0 && !linkUrl && message) {
+            // Send code if in code share mode with no files/links
+            if (codeShareMode && selectedFiles.length === 0 && !linkUrl && message) {
                 setUploadProgress(50)
                 await webrtc.sendMessage(message)
                 setUploadProgress(100)
@@ -658,7 +680,7 @@ function OneShareInner() {
         setSelectedFiles([])
         setLinkUrl('')
         setMessage('')
-        setMessageOnlyMode(false)
+        setCodeShareMode(false)
         setIsUploading(false)
         setUploadProgress(0)
         setUiUploadProgress(0)
@@ -757,13 +779,10 @@ function OneShareInner() {
                         </div>
 
                         <div className="flex items-center gap-2 sm:gap-3">
-                            <Badge
-                                variant={isConnected ? 'default' : 'destructive'}
-                                className={`flex items-center gap-1.5 px-2 py-1 text-xs ${isConnected ? 'bg-primary hover:bg-primary' : ''}`}
-                            >
-                                {isConnected ? <Wifi className="w-3 h-3" /> : <WifiOff className="w-3 h-3" />}
-                                <span className="hidden sm:inline">{isConnected ? 'Connected' : 'Offline'}</span>
-                            </Badge>
+                            <ConnectionStatusBadge
+                                isOnline={isOnline}
+                                isSocketConnected={isConnected}
+                            />
                             <ThemeToggle />
                         </div>
                     </div>
@@ -852,31 +871,31 @@ function OneShareInner() {
                                         </div>
                                     </CardHeader>
                                     <CardContent className="space-y-6">
-                                        {/* Message-Only Toggle */}
-                                        <div className="flex items-center justify-between p-3 bg-secondary/30 rounded-xl">
+                                        {/* Code Share Toggle */}
+                                        <div className="flex items-center justify-between p-3 bg-secondary/50 dark:bg-secondary/30 rounded-xl border border-border/50">
                                             <div className="flex items-center gap-3">
-                                                <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-primary/20 to-primary/10 flex items-center justify-center">
-                                                    <MessageCircle className="w-4 h-4 text-primary" />
+                                                <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-primary/30 to-primary/20 dark:from-primary/20 dark:to-primary/10 flex items-center justify-center">
+                                                    <CodeIcon className="w-4 h-4 text-primary" />
                                                 </div>
                                                 <div>
-                                                    <label htmlFor="message-only-toggle" className="text-sm font-medium cursor-pointer">
-                                                        Message-Only
+                                                    <label htmlFor="code-share-toggle" className="text-sm font-medium cursor-pointer">
+                                                        Code Share
                                                     </label>
-                                                    <p className="text-xs text-muted-foreground">Send just a message</p>
+                                                    <p className="text-xs text-muted-foreground">Send code snippet</p>
                                                 </div>
                                             </div>
                                             <Switch
-                                                id="message-only-toggle"
-                                                checked={messageOnlyMode}
-                                                onCheckedChange={setMessageOnlyMode}
+                                                id="code-share-toggle"
+                                                checked={codeShareMode}
+                                                onCheckedChange={setCodeShareMode}
                                             />
                                         </div>
 
                                         <AnimatePresence mode="wait">
-                                            {messageOnlyMode ? (
-                                                /* Message-Only Mode */
+                                            {codeShareMode ? (
+                                                /* Code Share Mode */
                                                 <motion.div
-                                                    key="message-only"
+                                                    key="code-share"
                                                     initial={{ opacity: 0, y: -10 }}
                                                     animate={{ opacity: 1, y: 0 }}
                                                     exit={{ opacity: 0, y: 10 }}
@@ -884,17 +903,18 @@ function OneShareInner() {
                                                     className="space-y-4"
                                                 >
                                                     <div className="space-y-2">
-                                                        <Label htmlFor="message-only-input">Your Message</Label>
+                                                        <Label htmlFor="code-share-input">Your Code</Label>
                                                         <Textarea
-                                                            id="message-only-input"
-                                                            placeholder="Type your message here..."
+                                                            id="code-share-input"
+                                                            placeholder="Paste your code here..."
                                                             value={message}
                                                             onChange={(e) => setMessage(e.target.value)}
-                                                            rows={5}
-                                                            className="max-h-48 overflow-y-auto resize-none"
+                                                            rows={8}
+                                                            className="max-h-64 overflow-y-auto resize-none bg-slate-800 text-slate-200 border-slate-600 placeholder:text-slate-500"
+                                                            style={{ fontFamily: 'Consolas, Monaco, monospace' }}
                                                         />
                                                         <p className="text-xs text-muted-foreground">
-                                                            Send a message without any files or links
+                                                            Share code snippets directly without files
                                                         </p>
                                                     </div>
                                                 </motion.div>
@@ -942,7 +962,7 @@ function OneShareInner() {
                                                             {selectedFiles.length > 0 && (
                                                                 <div className="space-y-2">
                                                                     <Label>
-                                                                        Selected Files ({selectedFiles.length}) • {formatBytes(selectedFiles.reduce((sum, f) => sum + f.size, 0))} total
+                                                                        Selected Files ({selectedFiles.length} total, {formatBytes(selectedFiles.reduce((sum, f) => sum + f.size, 0))})
                                                                     </Label>
                                                                     <div className="max-h-40 overflow-y-auto space-y-2">
                                                                         {selectedFiles.map((file, index) => (
@@ -1012,7 +1032,7 @@ function OneShareInner() {
                                         {/* Generate Code Button */}
                                         <Button
                                             className="w-full gradient-primary text-white glow-button"
-                                            disabled={!isConnected || (selectedFiles.length === 0 && !linkUrl && (!message || !messageOnlyMode))}
+                                            disabled={!isConnected || (selectedFiles.length === 0 && !linkUrl && (!message || !codeShareMode))}
                                             onClick={handleCreateSession}
                                         >
                                             <Sparkles className="w-4 h-4 mr-2" />
@@ -1140,8 +1160,8 @@ function OneShareInner() {
                                                     </div>
                                                     {transferComplete && (
                                                         <p className="text-center text-lg font-semibold text-emerald-600 dark:text-emerald-400">
-                                                            {messageOnlyMode && selectedFiles.length === 0 && !linkUrl
-                                                                ? 'Message Transferred!'
+                                                            {codeShareMode && selectedFiles.length === 0 && !linkUrl
+                                                                ? 'Code Transferred!'
                                                                 : 'Files Transferred!'}
                                                         </p>
                                                     )}
@@ -1149,17 +1169,17 @@ function OneShareInner() {
 
                                                 <div className="space-y-2">
                                                     <Label className="text-xs text-muted-foreground">
-                                                        {messageOnlyMode && selectedFiles.length === 0 && !linkUrl
-                                                            ? (transferComplete ? 'Message Sent:' : 'Sending:')
+                                                        {codeShareMode && selectedFiles.length === 0 && !linkUrl
+                                                            ? (transferComplete ? 'Code Sent:' : 'Sending:')
                                                             : (transferComplete ? 'Files Sent:' : 'Sending:')}
                                                     </Label>
                                                     <div className="space-y-2 max-h-48 overflow-y-auto">
-                                                        {/* Show message for message-only mode */}
-                                                        {messageOnlyMode && selectedFiles.length === 0 && !linkUrl && message && (
-                                                            <div className="flex items-center gap-3 p-3 bg-secondary/50 rounded-xl">
-                                                                <MessageCircle className="w-5 h-5 text-primary flex-shrink-0" />
+                                                        {/* Show code for code share mode */}
+                                                        {codeShareMode && selectedFiles.length === 0 && !linkUrl && message && (
+                                                            <div className="flex items-center gap-3 p-3 bg-slate-800 rounded-xl border border-slate-600">
+                                                                <CodeIcon className="w-5 h-5 text-sky-400 flex-shrink-0" />
                                                                 <div className="min-w-0 flex-1">
-                                                                    <p className="text-sm font-medium line-clamp-2">{message}</p>
+                                                                    <pre className="text-sm font-medium line-clamp-2 text-slate-200" style={{ fontFamily: 'Consolas, Monaco, monospace' }}>{message}</pre>
                                                                 </div>
                                                                 {transferComplete && <CheckCircle2 className="w-4 h-4 text-emerald-500 flex-shrink-0" />}
                                                             </div>
@@ -1327,7 +1347,7 @@ function OneShareInner() {
                                                         : 'Files Received!'}
                                                 </p>
 
-                                                {/* Click to see attached message */}
+                                                {/* Click to see received code */}
                                                 {receivedMessage && (
                                                     <motion.button
                                                         initial={{ opacity: 0, y: 10 }}
@@ -1336,35 +1356,37 @@ function OneShareInner() {
                                                         onClick={() => setMessageDialogOpen(true)}
                                                         className="flex items-center gap-2 px-4 py-2 mt-2 rounded-full bg-primary/10 hover:bg-primary/20 border border-primary/30 transition-all duration-300 group"
                                                     >
-                                                        <MessageCircle className="w-4 h-4 text-primary group-hover:scale-110 transition-transform" />
+                                                        <CodeIcon className="w-4 h-4 text-primary group-hover:scale-110 transition-transform" />
                                                         <span className="text-sm text-primary font-medium">
                                                             {receivedFiles.length === 0
-                                                                ? 'Click here to see the message'
-                                                                : 'Click here to see attached message'}
+                                                                ? 'Click here to see the code'
+                                                                : 'Click here to see attached code'}
                                                         </span>
                                                     </motion.button>
                                                 )}
                                             </div>
                                         )}
 
-                                        {/* Message Dialog */}
+                                        {/* Code Dialog */}
                                         <Dialog open={messageDialogOpen} onOpenChange={setMessageDialogOpen}>
-                                            <DialogContent className="sm:max-w-md">
+                                            <DialogContent className="sm:max-w-2xl">
                                                 <DialogHeader>
                                                     <DialogTitle className="flex items-center gap-2">
                                                         <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary/20 to-primary/10 flex items-center justify-center">
-                                                            <MessageCircle className="w-5 h-5 text-primary" />
+                                                            <CodeIcon className="w-5 h-5 text-primary" />
                                                         </div>
-                                                        Message from Sender
+                                                        Code from Sender
                                                     </DialogTitle>
                                                     <DialogDescription>
-                                                        The sender included this message with the files
+                                                        {receivedFiles.length === 0
+                                                            ? 'The sender shared this code snippet'
+                                                            : 'The sender included this code with the files'}
                                                     </DialogDescription>
                                                 </DialogHeader>
-                                                <div className="mt-4 p-4 bg-secondary/50 rounded-xl border border-border max-h-48 overflow-y-auto">
-                                                    <p className="text-foreground whitespace-pre-wrap leading-relaxed">
+                                                <div className="mt-4 p-4 bg-slate-800 rounded-xl border border-slate-600 max-h-80 overflow-y-auto">
+                                                    <pre className="text-slate-200 whitespace-pre-wrap leading-relaxed text-sm" style={{ fontFamily: 'Consolas, Monaco, monospace' }}>
                                                         {receivedMessage}
-                                                    </p>
+                                                    </pre>
                                                 </div>
                                                 <div className="mt-4 flex justify-center gap-3">
                                                     <Button
@@ -1379,10 +1401,10 @@ function OneShareInner() {
                                                         className="gap-2"
                                                     >
                                                         {messageCopied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
-                                                        {messageCopied ? 'Copied!' : 'Copy'}
+                                                        {messageCopied ? 'Copied!' : 'Copy Code'}
                                                     </Button>
                                                     <Button onClick={() => setMessageDialogOpen(false)}>
-                                                        Got it
+                                                        Done
                                                     </Button>
                                                 </div>
                                             </DialogContent>
@@ -1478,6 +1500,9 @@ function OneShareInner() {
                     </AnimatePresence>
                 </div>
             </main >
+
+            {/* Offline Dialog */}
+            <OfflineDialog isOnline={isOnline} />
         </div >
     )
 }

@@ -49,8 +49,11 @@ import { GoogleDocsIcon, GoogleSheetsIcon, GoogleSlidesIcon, GoogleDriveIcon } f
 import { useDropzone } from 'react-dropzone'
 import FilePreview from '@/components/FilePreview'
 import LoadingSpinner from '@/components/LoadingSpinner'
+import { ConnectionStatusBadge } from '@/components/ConnectionStatusBadge'
+import { OfflineDialog } from '@/components/OfflineDialog'
 import { Virtuoso } from 'react-virtuoso'
 import { toast } from '@/hooks/use-toast'
+import { useNetworkStatus } from '@/hooks/useNetworkStatus'
 import { formatBytes } from '@/lib/utils'
 import { ToastAction } from '@/components/ui/toast'
 
@@ -98,6 +101,9 @@ function StudentDashboardInner() {
   const [searchQuery, setSearchQuery] = useState('')
   const [isConnected, setIsConnected] = useState(false)
   const [receivedFiles, setReceivedFiles] = useState<FileShare[]>([])
+
+  // Network status
+  const { isOnline } = useNetworkStatus()
   const [sentFiles, setSentFiles] = useState<FileShare[]>([])
   const [isUploading, setIsUploading] = useState(false)
   const [uploadProgress, setUploadProgress] = useState(0)
@@ -855,6 +861,21 @@ function StudentDashboardInner() {
     }
   }, [])
 
+  // Reconnect socket when network comes back online
+  useEffect(() => {
+    if (isOnline && !isConnected && socketRef.current && userData) {
+      console.log('[LabRoom] Network back online, attempting socket reconnect...')
+      const sock = socketRef.current
+      if (sock && typeof sock.connect === 'function') {
+        try {
+          sock.connect()
+        } catch (e) {
+          console.error('[LabRoom] Socket reconnect failed:', e)
+        }
+      }
+    }
+  }, [isOnline, isConnected, userData])
+
   // Helper to resolve recipient labels
   const getRecipientInfo = (id: string): { id: string; name: string; uniqueId: string } => {
     if (id === 'admin') {
@@ -1242,10 +1263,10 @@ function StudentDashboardInner() {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <Badge variant={isConnected ? 'default' : 'destructive'} className={`flex items-center gap-1.5 px-2.5 py-1 text-xs ${isConnected ? 'bg-primary hover:bg-primary text-primary-foreground' : ''}`}>
-              {isConnected ? <Wifi className="w-3.5 h-3.5" /> : <WifiOff className="w-3.5 h-3.5" />}
-              {isConnected ? 'Connected' : 'Disconnected'}
-            </Badge>
+            <ConnectionStatusBadge
+              isOnline={isOnline}
+              isSocketConnected={isConnected}
+            />
             <Badge variant="outline" className="flex items-center gap-1.5 px-2.5 py-1 text-xs">
               <Users className="w-3.5 h-3.5" />
               {onlineUsers.length + 1 + (adminId ? 1 : 0)} Online
@@ -1273,9 +1294,9 @@ function StudentDashboardInner() {
               </CardHeader>
               <CardContent className="space-y-4">
                 {/* Code Share Toggle */}
-                <div className="flex items-center justify-between p-3 bg-secondary/30 rounded-xl">
+                <div className="flex items-center justify-between p-3 bg-secondary/50 dark:bg-secondary/30 rounded-xl border border-border/50">
                   <div className="flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-emerald-500/20 to-cyan-500/20 flex items-center justify-center">
+                    <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-emerald-500/30 to-cyan-500/30 dark:from-emerald-500/20 dark:to-cyan-500/20 flex items-center justify-center">
                       <Code className="w-4 h-4 text-emerald-500" />
                     </div>
                     <div>
@@ -1311,7 +1332,7 @@ function StudentDashboardInner() {
                           value={message}
                           onChange={(e) => setMessage(e.target.value)}
                           rows={8}
-                          className="resize-none font-mono text-sm bg-gray-900 text-green-400 dark:bg-gray-950 dark:text-green-300 border-gray-700 overflow-auto"
+                          className="resize-none font-mono text-sm bg-slate-800 text-slate-200 dark:bg-slate-900 dark:text-slate-100 border-slate-600 overflow-auto"
                           style={{ fontFamily: 'Consolas, Monaco, monospace', maxHeight: '250px' }}
                         />
                         <p className="text-xs text-muted-foreground">
@@ -1478,7 +1499,7 @@ function StudentDashboardInner() {
                               </Label>
                               <div className="max-h-32 overflow-y-auto space-y-2">
                                 {selectedFiles.map((file, index) => (
-                                  <div key={index} className="flex items-center justify-between p-2 bg-muted/50 rounded">
+                                  <div key={index} className="flex items-center justify-between p-2 bg-muted/50 rounded-full">
                                     <div className="flex items-center gap-2">
                                       <FileText className="w-4 h-4" />
                                       <span className="text-sm truncate">{file.name}</span>
@@ -2532,6 +2553,9 @@ function StudentDashboardInner() {
         </DialogContent>
       </Dialog>
       {/* Animations moved to global utilities in globals.css */}
+
+      {/* Offline Dialog */}
+      <OfflineDialog isOnline={isOnline} />
     </div >
   )
 }

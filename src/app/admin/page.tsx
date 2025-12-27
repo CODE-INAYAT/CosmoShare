@@ -49,8 +49,11 @@ import { io } from 'socket.io-client'
 import { connectSignaling } from '@/lib/wsClient'
 import { useWebRTC } from '@/hooks/useWebRTC'
 import FilePreview from '@/components/FilePreview'
+import { ConnectionStatusBadge } from '@/components/ConnectionStatusBadge'
+import { OfflineDialog } from '@/components/OfflineDialog'
 import { Virtuoso } from 'react-virtuoso'
 import { useToast } from '@/hooks/use-toast'
+import { useNetworkStatus } from '@/hooks/useNetworkStatus'
 import { formatBytes } from '@/lib/utils'
 
 interface PrintRequest {
@@ -98,6 +101,10 @@ function AdminDashboardInner() {
   const [confirmMarkAllOpen, setConfirmMarkAllOpen] = useState(false)
   const [speedDialOpen, setSpeedDialOpen] = useState(false)
   const { toast } = useToast()
+
+  // Network status
+  const { isOnline } = useNetworkStatus()
+
   const [downloadDialogOpen, setDownloadDialogOpen] = useState(false)
   // Search and sort state
   const [searchQuery, setSearchQuery] = useState('')
@@ -286,6 +293,22 @@ function AdminDashboardInner() {
       cleanupBlobs()
     }
   }, [])
+
+  // Reconnect socket when network comes back online
+  useEffect(() => {
+    if (isOnline && !isConnected && socketRef.current && adminUser) {
+      console.log('[Admin] Network back online, attempting socket reconnect...')
+      const sock = socketRef.current
+      if (sock && typeof sock.connect === 'function') {
+        try {
+          sock.connect()
+        } catch (e) {
+          console.error('[Admin] Socket reconnect failed:', e)
+        }
+      }
+    }
+  }, [isOnline, isConnected, adminUser])
+
 
   useEffect(() => {
     const roomParam = searchParams?.get('room')
@@ -539,7 +562,7 @@ function AdminDashboardInner() {
               </p>
             </div>
 
-            <form onSubmit={handleLogin} className="space-y-5">
+            <form onSubmit={handleLogin} className="space-y-5" suppressHydrationWarning>
               <div className="space-y-2">
                 <Label htmlFor="password" className="text-sm font-medium">Admin Password</Label>
                 <Input
@@ -549,11 +572,13 @@ function AdminDashboardInner() {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   className="w-full h-11"
+                  suppressHydrationWarning
                 />
               </div>
               <Button
                 type="submit"
                 className="w-full h-11 bg-primary hover:bg-primary/90"
+                suppressHydrationWarning
               >
                 <Printer className="w-4 h-4 mr-2" />
                 Access Admin Panel
@@ -582,10 +607,10 @@ function AdminDashboardInner() {
 
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-2">
-              <Badge variant={isConnected ? "default" : "destructive"} className={`flex items-center gap-1.5 px-2.5 py-1 text-xs ${isConnected ? 'bg-primary hover:bg-primary text-primary-foreground' : ''}`}>
-                {isConnected ? <Wifi className="w-3.5 h-3.5" /> : <WifiOff className="w-3.5 h-3.5" />}
-                {isConnected ? 'Connected' : 'Disconnected'}
-              </Badge>
+              <ConnectionStatusBadge
+                isOnline={isOnline}
+                isSocketConnected={isConnected}
+              />
               <Badge variant="outline" className="flex items-center gap-1.5 px-2.5 py-1 text-xs">
                 <Users className="w-3.5 h-3.5" />
                 {onlineUsers.length} Students
@@ -1140,6 +1165,9 @@ function AdminDashboardInner() {
           </DialogContent>
         </Dialog>
       </div>
+
+      {/* Offline Dialog */}
+      <OfflineDialog isOnline={isOnline} />
     </div >
   )
 }

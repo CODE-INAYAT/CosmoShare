@@ -39,6 +39,8 @@ export const useOneShareWebRTC = (
         buffers: [],
         received: 0
     })
+    // Message receive state for chunked messages
+    const msgRecvState = useRef<{ totalSize: number; chunks: string[]; received: number } | null>(null)
 
     // Handle signaling events
     useEffect(() => {
@@ -180,6 +182,22 @@ export const useOneShareWebRTC = (
                         case 'message-only':
                             callbacks.onMessage?.(obj.message)
                             return
+                        case 'msg-metadata':
+                            msgRecvState.current = { totalSize: obj.totalSize, chunks: [], received: 0 }
+                            return
+                        case 'msg-chunk':
+                            if (msgRecvState.current) {
+                                msgRecvState.current.chunks.push(obj.data)
+                                msgRecvState.current.received += obj.data.length
+                            }
+                            return
+                        case 'msg-complete':
+                            if (msgRecvState.current) {
+                                const fullMessage = msgRecvState.current.chunks.join('')
+                                callbacks.onMessage?.(fullMessage)
+                                msgRecvState.current = null
+                            }
+                            return
                     }
                 } catch {
                     // Ignore malformed
@@ -226,6 +244,25 @@ export const useOneShareWebRTC = (
                         }
                         if (obj?.type === 'message-only') {
                             callbacks.onMessage?.(obj.message)
+                            return
+                        }
+                        if (obj?.type === 'msg-metadata') {
+                            msgRecvState.current = { totalSize: obj.totalSize, chunks: [], received: 0 }
+                            return
+                        }
+                        if (obj?.type === 'msg-chunk') {
+                            if (msgRecvState.current) {
+                                msgRecvState.current.chunks.push(obj.data)
+                                msgRecvState.current.received += obj.data.length
+                            }
+                            return
+                        }
+                        if (obj?.type === 'msg-complete') {
+                            if (msgRecvState.current) {
+                                const fullMessage = msgRecvState.current.chunks.join('')
+                                callbacks.onMessage?.(fullMessage)
+                                msgRecvState.current = null
+                            }
                             return
                         }
                     } catch {
@@ -369,7 +406,31 @@ export const useOneShareWebRTC = (
         }
 
         try {
-            p.send(JSON.stringify({ type: 'message-only', message }))
+            const CHUNK_SIZE = 6 * 1024 // 6KB chunks - stays under 8KB binary JSON limit with overhead
+
+            if (message.length <= CHUNK_SIZE) {
+                // Small message - send directly
+                p.send(JSON.stringify({ type: 'message-only', message }))
+            } else {
+                // Large message - send in chunks
+                const totalSize = message.length
+
+                // Send metadata
+                p.send(JSON.stringify({ type: 'msg-metadata', totalSize, timestamp: Date.now() }))
+
+                // Send chunks
+                let offset = 0
+                while (offset < message.length) {
+                    const chunk = message.slice(offset, offset + CHUNK_SIZE)
+                    p.send(JSON.stringify({ type: 'msg-chunk', data: chunk }))
+                    offset += CHUNK_SIZE
+                    // Small delay to prevent buffer overflow
+                    await new Promise(r => setTimeout(r, 5))
+                }
+
+                // Send completion signal
+                p.send(JSON.stringify({ type: 'msg-complete' }))
+            }
             callbacks.onSendComplete?.('message')
         } catch {
             callbacks.onSendFailed?.('message', 'Failed to send message')

@@ -593,13 +593,13 @@ function FilePreviewInner({ file, senderName, senderUniqueId, recipients, timest
           )}
           {/* Code Block Display - Specialized UI for code sharing */}
           {file.fileType === 'code' && file.message && (
-            <div className="rounded-lg overflow-hidden border border-gray-700 bg-gray-950">
+            <div className="rounded-lg overflow-hidden border border-slate-600 bg-slate-900">
               {/* Code Header */}
-              <div className="flex items-center justify-between px-4 py-2 bg-gray-900 border-b border-gray-700">
+              <div className="flex items-center justify-between px-4 py-2 bg-slate-800 border-b border-slate-600">
                 <div className="flex items-center gap-2">
-                  <FileCode className="w-4 h-4 text-emerald-400" />
-                  <span className="text-xs font-medium text-gray-300">Code Snippet</span>
-                  <span className="text-xs text-gray-500">({file.message.length} chars)</span>
+                  <FileCode className="w-4 h-4 text-sky-400" />
+                  <span className="text-xs font-medium text-slate-200">Code Snippet</span>
+                  <span className="text-xs text-slate-500">({file.message.length} chars)</span>
                 </div>
                 {/* Actions row: Copy, Reshare, Delete */}
                 <div className="flex items-center gap-2">
@@ -610,8 +610,8 @@ function FilePreviewInner({ file, senderName, senderUniqueId, recipients, timest
                       setTimeout(() => setCopiedCode(false), 2000)
                     }}
                     className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${copiedCode
-                      ? 'bg-emerald-500/20 text-emerald-400 ring-1 ring-emerald-500/30'
-                      : 'bg-gray-800 text-gray-300 hover:bg-gray-700 hover:text-white'
+                      ? 'bg-sky-500/20 text-sky-400 ring-1 ring-sky-500/30'
+                      : 'bg-slate-700 text-slate-200 hover:bg-slate-600 hover:text-white'
                       }`}
                   >
                     {copiedCode ? (
@@ -626,7 +626,7 @@ function FilePreviewInner({ file, senderName, senderUniqueId, recipients, timest
                         <TooltipTrigger asChild>
                           <button
                             onClick={() => onReshare({ fileName: file.fileName, fileType: file.fileType, fileSize: file.fileSize, fileData: file.fileData, fileUrl: file.fileUrl, linkUrl: file.linkUrl, message: file.message })}
-                            className="flex items-center justify-center h-8 w-8 rounded-md bg-gray-800 text-gray-300 hover:bg-gray-700 hover:text-white transition-all"
+                            className="flex items-center justify-center h-8 w-8 rounded-md bg-slate-700 text-slate-200 hover:bg-slate-600 hover:text-white transition-all"
                           >
                             <Share2 className="w-4 h-4" />
                           </button>
@@ -642,7 +642,7 @@ function FilePreviewInner({ file, senderName, senderUniqueId, recipients, timest
                           <TooltipTrigger asChild>
                             <AlertDialogTrigger asChild>
                               <button
-                                className="flex items-center justify-center h-8 w-8 rounded-md bg-gray-800 text-red-400 hover:bg-red-900/30 hover:text-red-300 transition-all"
+                                className="flex items-center justify-center h-8 w-8 rounded-md bg-slate-700 text-red-400 hover:bg-red-900/30 hover:text-red-300 transition-all"
                               >
                                 <Trash2 className="w-4 h-4" />
                               </button>
@@ -670,8 +670,8 @@ function FilePreviewInner({ file, senderName, senderUniqueId, recipients, timest
                 className="p-4 overflow-auto text-sm leading-relaxed"
                 style={{
                   fontFamily: 'Consolas, Monaco, "Courier New", monospace',
-                  color: '#4ade80',
-                  backgroundColor: '#030712',
+                  color: '#e2e8f0',
+                  backgroundColor: '#1e293b',
                   margin: 0,
                   whiteSpace: 'pre-wrap',
                   wordBreak: 'break-word',

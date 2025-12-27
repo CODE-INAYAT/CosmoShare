@@ -8,6 +8,7 @@ export interface SocketLike {
   off: (event: string, handler?: Handler) => void
   emit: (event: string, data?: any) => void
   disconnect: () => void
+  connect: () => void
   connected: boolean
 }
 
@@ -19,55 +20,130 @@ function toWsUrl(base: string): string {
 }
 
 export function connectSignaling(baseUrl: string): SocketLike {
-  // Ensure we always use a proper ws:// or wss:// scheme even if https:// was supplied
   const url = toWsUrl(baseUrl)
-  const ws = new WebSocket(url)
   const handlers = new Map<string, Set<Handler>>()
   const onceHandlers = new Map<string, Set<Handler>>()
+
+  let ws: WebSocket | null = null
   let isConnected = false
   let heartbeatTimer: any = null
+  let reconnectAttempts = 0
+  let reconnectTimer: any = null
+  let intentionalDisconnect = false
+
+  const MAX_RECONNECT_ATTEMPTS = 5
+  const RECONNECT_BASE_DELAY = 1000 // 1 second base delay
+  const MAX_RECONNECT_DELAY = 30000 // 30 seconds max delay
 
   const dispatch = (event: string, ...args: any[]) => {
     const hs = handlers.get(event)
     if (hs) hs.forEach((h) => {
-      try { h(...args) } catch {}
+      try { h(...args) } catch { }
     })
     const ohs = onceHandlers.get(event)
     if (ohs) {
       ohs.forEach((h) => {
-        try { h(...args) } catch {}
+        try { h(...args) } catch { }
       })
       onceHandlers.delete(event)
     }
   }
 
-  ws.addEventListener('open', () => {
-    isConnected = true
-    dispatch('connect')
-    // Start heartbeat to keep presence fresh and detect dead sockets on server
-    try { if (heartbeatTimer) clearInterval(heartbeatTimer) } catch {}
+  const clearTimers = () => {
+    try { if (heartbeatTimer) clearInterval(heartbeatTimer); heartbeatTimer = null } catch { }
+    try { if (reconnectTimer) clearTimeout(reconnectTimer); reconnectTimer = null } catch { }
+  }
+
+  const startHeartbeat = () => {
+    clearTimers()
     heartbeatTimer = setInterval(() => {
-      try { ws.send(JSON.stringify({ event: 'heartbeat', data: {} })) } catch {}
+      try {
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ event: 'heartbeat', data: {} }))
+        }
+      } catch { }
     }, 15000)
-  })
-  ws.addEventListener('close', () => {
-    isConnected = false
-    dispatch('disconnect')
-    try { if (heartbeatTimer) clearInterval(heartbeatTimer); heartbeatTimer = null } catch {}
-  })
-  ws.addEventListener('error', () => {
-    dispatch('connect_error')
-  })
-  ws.addEventListener('message', (ev) => {
+  }
+
+  const scheduleReconnect = () => {
+    if (intentionalDisconnect || reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+      console.log('[wsClient] Max reconnect attempts reached or intentional disconnect')
+      return
+    }
+
+    // Exponential backoff with jitter
+    const delay = Math.min(
+      RECONNECT_BASE_DELAY * Math.pow(2, reconnectAttempts) + Math.random() * 1000,
+      MAX_RECONNECT_DELAY
+    )
+
+    console.log(`[wsClient] Scheduling reconnect attempt ${reconnectAttempts + 1} in ${delay}ms`)
+
+    reconnectTimer = setTimeout(() => {
+      reconnectAttempts++
+      createConnection()
+    }, delay)
+  }
+
+  const createConnection = () => {
+    // Clean up existing connection if any
+    if (ws) {
+      try { ws.close() } catch { }
+      ws = null
+    }
+
+    console.log(`[wsClient] Creating new WebSocket connection to ${url}`)
+
     try {
-      const msg = JSON.parse(ev.data)
-      if (msg && typeof msg.event === 'string') {
-        // Always deliver the payload as a single argument.
-        // Note: Arrays (e.g., list of users) must remain arrays for handlers expecting one param.
-        dispatch(msg.event, msg.data)
+      ws = new WebSocket(url)
+    } catch (e) {
+      console.error('[wsClient] Failed to create WebSocket:', e)
+      scheduleReconnect()
+      return
+    }
+
+    ws.addEventListener('open', () => {
+      console.log('[wsClient] WebSocket connected')
+      isConnected = true
+      reconnectAttempts = 0 // Reset on successful connection
+      intentionalDisconnect = false
+      dispatch('connect')
+      startHeartbeat()
+    })
+
+    ws.addEventListener('close', (event) => {
+      console.log(`[wsClient] WebSocket closed: code=${event.code}, reason=${event.reason}`)
+      const wasConnected = isConnected
+      isConnected = false
+      clearTimers()
+
+      if (wasConnected) {
+        dispatch('disconnect')
       }
-    } catch {}
-  })
+
+      // Only auto-reconnect if not intentional and was previously connected
+      if (!intentionalDisconnect) {
+        scheduleReconnect()
+      }
+    })
+
+    ws.addEventListener('error', (e) => {
+      console.error('[wsClient] WebSocket error:', e)
+      dispatch('connect_error')
+    })
+
+    ws.addEventListener('message', (ev) => {
+      try {
+        const msg = JSON.parse(ev.data)
+        if (msg && typeof msg.event === 'string') {
+          dispatch(msg.event, msg.data)
+        }
+      } catch { }
+    })
+  }
+
+  // Create initial connection
+  createConnection()
 
   const api: SocketLike = {
     on: (event, handler) => {
@@ -84,14 +160,45 @@ export function connectSignaling(baseUrl: string): SocketLike {
       onceHandlers.get(event)?.delete(handler)
     },
     emit: (event, data) => {
-      try { ws.send(JSON.stringify({ event, data })) } catch {}
+      try {
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ event, data }))
+        } else {
+          console.warn('[wsClient] Cannot emit, WebSocket not open')
+        }
+      } catch { }
     },
     disconnect: () => {
-      try { ws.close() } catch {}
-      try { if (heartbeatTimer) clearInterval(heartbeatTimer); heartbeatTimer = null } catch {}
+      console.log('[wsClient] Intentional disconnect')
+      intentionalDisconnect = true
+      clearTimers()
+      try { ws?.close() } catch { }
+      ws = null
+      isConnected = false
+    },
+    connect: () => {
+      console.log('[wsClient] Manual connect called')
+      intentionalDisconnect = false
+      reconnectAttempts = 0
+      clearTimers()
+
+      // If already connected, do nothing
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        console.log('[wsClient] Already connected')
+        return
+      }
+
+      // If connecting, wait for it
+      if (ws && ws.readyState === WebSocket.CONNECTING) {
+        console.log('[wsClient] Already connecting')
+        return
+      }
+
+      // Create new connection
+      createConnection()
     },
     get connected() {
-      return isConnected && ws.readyState === WebSocket.OPEN
+      return isConnected && ws !== null && ws.readyState === WebSocket.OPEN
     }
   }
 

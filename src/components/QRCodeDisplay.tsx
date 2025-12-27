@@ -1,6 +1,7 @@
 'use client'
 
-import { QRCodeSVG } from 'qrcode.react'
+import { useEffect, useRef } from 'react'
+import QRCodeStyling from 'qr-code-styling'
 import { cn } from '@/lib/utils'
 
 interface QRCodeDisplayProps {
@@ -16,19 +17,98 @@ export function QRCodeDisplay({
     className,
     includeMargin = true
 }: QRCodeDisplayProps) {
+    const ref = useRef<HTMLDivElement>(null)
+    const qrCode = useRef<QRCodeStyling | null>(null)
+
+    useEffect(() => {
+        if (!qrCode.current) {
+            qrCode.current = new QRCodeStyling({
+                width: size,
+                height: size,
+                type: 'svg',
+                data: value,
+                margin: includeMargin ? 10 : 0,
+                qrOptions: {
+                    errorCorrectionLevel: 'H'
+                },
+                dotsOptions: {
+                    type: 'dots',
+                    color: '#000000',
+                    roundSize: true
+                },
+                cornersSquareOptions: {
+                    type: 'extra-rounded',
+                    color: '#000000'
+                },
+                cornersDotOptions: {
+                    type: 'dot',
+                    color: '#000000'
+                },
+                backgroundOptions: {
+                    color: '#FFFFFF'
+                }
+            })
+        }
+
+        if (ref.current) {
+            ref.current.innerHTML = ''
+            qrCode.current.append(ref.current)
+
+            // Scale down dots to create gaps (after SVG is rendered)
+            setTimeout(() => {
+                if (ref.current) {
+                    const svg = ref.current.querySelector('svg')
+                    if (svg) {
+                        // Get all circle elements (dots) but not the corner patterns
+                        const circles = svg.querySelectorAll('circle')
+                        circles.forEach((circle) => {
+                            const r = circle.getAttribute('r')
+                            if (r) {
+                                // Reduce radius by 25% to create gaps
+                                const newRadius = parseFloat(r) * 1.18
+                                circle.setAttribute('r', newRadius.toString())
+                            }
+                        })
+                    }
+                }
+            }, 50)
+        }
+    }, [])
+
+    useEffect(() => {
+        if (qrCode.current) {
+            qrCode.current.update({
+                data: value,
+                width: size,
+                height: size,
+                margin: includeMargin ? 10 : 0
+            })
+
+            // Re-apply dot scaling after update
+            setTimeout(() => {
+                if (ref.current) {
+                    const svg = ref.current.querySelector('svg')
+                    if (svg) {
+                        const circles = svg.querySelectorAll('circle')
+                        circles.forEach((circle) => {
+                            const r = circle.getAttribute('r')
+                            if (r) {
+                                const newRadius = parseFloat(r) * 0.7
+                                circle.setAttribute('r', newRadius.toString())
+                            }
+                        })
+                    }
+                }
+            }, 50)
+        }
+    }, [value, size, includeMargin])
+
     return (
         <div className={cn(
-            "inline-flex items-center justify-center p-4 bg-white rounded-2xl shadow-lg",
+            "inline-flex items-center justify-center p-2 bg-white rounded-2xl shadow-lg",
             className
         )}>
-            <QRCodeSVG
-                value={value}
-                size={size}
-                level="H"
-                includeMargin={includeMargin}
-                bgColor="#FFFFFF"
-                fgColor="#000000"
-            />
+            <div ref={ref} />
         </div>
     )
 }
