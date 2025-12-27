@@ -205,6 +205,11 @@ function StudentDashboardInner() {
   const [rSortMenuOpen, setRSortMenuOpen] = useState(false)
   const [rIndex, setRIndex] = useState<Map<string, string>>(new Map())
 
+  // Auto-download toggle (default: ON)
+  const [autoDownload, setAutoDownload] = useState(true)
+  const autoDownloadRef = useRef(true)
+  useEffect(() => { autoDownloadRef.current = autoDownload }, [autoDownload])
+
   // History: Sent controls
   const [sSearchQuery, setSSearchQuery] = useState('')
   const [sDebouncedQuery, setSDebouncedQuery] = useState('')
@@ -444,6 +449,37 @@ function StudentDashboardInner() {
         method: (meta as any)?.method,
         timestamp: new Date()
       }, ...prev])
+
+      // Auto-download if enabled
+      if (autoDownloadRef.current && fileUrl) {
+        try {
+          const a = document.createElement('a')
+          a.href = fileUrl as string
+          a.download = meta.fileName || 'download'
+          document.body.appendChild(a)
+          a.click()
+          document.body.removeChild(a)
+          // Show toast notification
+          toast({
+            title: (
+              <div className="flex items-center gap-2">
+                <Download className="w-4 h-4 text-emerald-500" />
+                <span>Auto-Downloaded</span>
+              </div>
+            ) as any,
+            description: (
+              <div className="flex flex-col gap-0.5">
+                <span className="font-medium truncate max-w-[200px]">{meta.fileName || 'File'}</span>
+                <span className="text-xs text-muted-foreground">{formatBytes(meta.fileSize)}</span>
+              </div>
+            ) as any,
+            variant: 'default',
+            duration: 3000,
+          })
+        } catch (e) {
+          console.error('[AutoDownload] Failed to auto-download:', e)
+        }
+      }
     },
     onLink: (fromId, linkUrl, message, senderInfo) => {
       noteRecvActivity()
@@ -1897,6 +1933,31 @@ function StudentDashboardInner() {
                         <div className="px-2 py-1 rounded-full border bg-muted/40 flex items-center gap-1 text-xs">
                           <Folder className="w-3 h-3" /> {rTotalSize}
                         </div>
+                        {/* Auto-Download Toggle with Tooltip */}
+                        <TooltipProvider>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <div className={`flex items-center gap-2 px-2.5 py-1 rounded-lg border shadow-sm transition-colors ${autoDownload
+                                ? 'bg-emerald-50 border-emerald-200 dark:bg-emerald-950/30 dark:border-emerald-800'
+                                : 'bg-card'
+                                }`}>
+                                <Download className={`w-3.5 h-3.5 transition-colors ${autoDownload ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground'
+                                  }`} />
+                                <span className={`text-xs font-medium transition-colors ${autoDownload ? 'text-emerald-700 dark:text-emerald-300' : ''
+                                  }`}>Auto-Download</span>
+                                <Switch
+                                  id="auto-download-student"
+                                  checked={autoDownload}
+                                  onCheckedChange={setAutoDownload}
+                                  className="scale-75"
+                                />
+                              </div>
+                            </TooltipTrigger>
+                            <TooltipContent side="bottom" className="max-w-[200px] text-center">
+                              <p className="text-xs">When enabled, received files are automatically downloaded to your device</p>
+                            </TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
                       </div>
                     </div>
                     {/* Inline receiving progress removed in favor of floating dial */}

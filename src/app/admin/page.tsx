@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Switch } from '@/components/ui/switch'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
@@ -115,6 +116,11 @@ function AdminDashboardInner() {
   const [sortMenuOpen, setSortMenuOpen] = useState(false)
   // Receiving speed dial
   const [receiveDialogOpen, setReceiveDialogOpen] = useState(false)
+
+  // Auto-download toggle (default: ON)
+  const [autoDownload, setAutoDownload] = useState(true)
+  const autoDownloadRef = useRef(true)
+  useEffect(() => { autoDownloadRef.current = autoDownload }, [autoDownload])
 
   // Debounce search input
   useEffect(() => {
@@ -224,6 +230,37 @@ function AdminDashboardInner() {
       }
       try { if (typeof fileUrl === 'string' && fileUrl.startsWith('blob:')) blobUrlsRef.current.add(fileUrl) } catch { }
       setPrintRequests(prev => [req, ...prev])
+
+      // Auto-download if enabled
+      if (autoDownloadRef.current && fileUrl) {
+        try {
+          const a = document.createElement('a')
+          a.href = fileUrl as string
+          a.download = meta.fileName || 'download'
+          document.body.appendChild(a)
+          a.click()
+          document.body.removeChild(a)
+          // Show toast notification
+          toast({
+            title: (
+              <div className="flex items-center gap-2">
+                <Download className="w-4 h-4 text-emerald-500" />
+                <span>Auto-Downloaded</span>
+              </div>
+            ) as any,
+            description: (
+              <div className="flex flex-col gap-0.5">
+                <span className="font-medium truncate max-w-[200px]">{meta.fileName || 'File'}</span>
+                <span className="text-xs text-muted-foreground">{formatBytes(meta.fileSize)}</span>
+              </div>
+            ) as any,
+            variant: 'default',
+            duration: 3000,
+          })
+        } catch (e) {
+          console.error('[AutoDownload] Failed to auto-download:', e)
+        }
+      }
     },
     onLink: (fromId, linkUrl, message, senderInfo?: { name?: string; uniqueId?: string; fileId?: string }) => {
       const sender = onlineUsers.find(u => u.id === fromId)
@@ -647,14 +684,16 @@ function AdminDashboardInner() {
                 <Card>
                   <CardHeader className="pb-4 sticky top-0 z-20 bg-card border-b">
                     <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-                      <div>
-                        <CardTitle className="flex items-center gap-2 text-lg font-semibold">
-                          <Printer className="w-5 h-5 text-primary" />
-                          Print Requests
-                        </CardTitle>
-                        <p className="text-sm text-muted-foreground">
-                          Manage student print requests and file sharing
-                        </p>
+                      <div className="flex items-center gap-4">
+                        <div>
+                          <CardTitle className="flex items-center gap-2 text-lg font-semibold">
+                            <Printer className="w-5 h-5 text-primary" />
+                            Print Requests
+                          </CardTitle>
+                          <p className="text-sm text-muted-foreground">
+                            Manage student print requests and file sharing
+                          </p>
+                        </div>
                       </div>
                       <div className="flex items-center gap-2 w-full md:w-auto">
                         <div className="flex-1 md:flex-initial relative">
@@ -772,6 +811,31 @@ function AdminDashboardInner() {
                             Printed
                           </button>
                         </div>
+                        {/* Auto-Download Toggle with Tooltip */}
+                        <TooltipProvider>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <div className={`flex items-center gap-2 px-2.5 py-1.5 rounded-lg border shadow-sm transition-colors ${autoDownload
+                                ? 'bg-emerald-50 border-emerald-200 dark:bg-emerald-950/30 dark:border-emerald-800'
+                                : 'bg-card'
+                                }`}>
+                                <Download className={`w-3.5 h-3.5 transition-colors ${autoDownload ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground'
+                                  }`} />
+                                <span className={`text-xs font-medium transition-colors ${autoDownload ? 'text-emerald-700 dark:text-emerald-300' : ''
+                                  }`}>Auto-Download</span>
+                                <Switch
+                                  id="auto-download-admin"
+                                  checked={autoDownload}
+                                  onCheckedChange={setAutoDownload}
+                                  className="scale-75"
+                                />
+                              </div>
+                            </TooltipTrigger>
+                            <TooltipContent side="bottom" className="max-w-[200px] text-center">
+                              <p className="text-xs">When enabled, received files are automatically downloaded to your device</p>
+                            </TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
                       </div>
                     </div>
                   </CardHeader>
