@@ -27,7 +27,7 @@ export function QRCodeDisplay({
                 height: size,
                 type: 'svg',
                 data: value,
-                margin: includeMargin ? 4 : 0,
+                margin: includeMargin ? 0 : 0,
                 qrOptions: {
                     errorCorrectionLevel: 'H'
                 },
@@ -81,7 +81,7 @@ export function QRCodeDisplay({
                 data: value,
                 width: size,
                 height: size,
-                margin: includeMargin ? 4 : 0
+                margin: includeMargin ? 0 : 0
             })
 
             // Re-apply dot scaling after update
@@ -105,7 +105,7 @@ export function QRCodeDisplay({
 
     return (
         <div className={cn(
-            "inline-flex items-center justify-center bg-white rounded-xl shadow-lg overflow-hidden",
+            "inline-flex items-center justify-center p-1 rounded-sm overflow-hidden bg-white shadow-lg",
             className
         )}>
             <div ref={ref} />
