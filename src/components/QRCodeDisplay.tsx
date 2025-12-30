@@ -13,9 +13,9 @@ interface QRCodeDisplayProps {
 
 export function QRCodeDisplay({
     value,
-    size = 200,
+    size = 256,
     className,
-    includeMargin = true
+    includeMargin = false
 }: QRCodeDisplayProps) {
     const ref = useRef<HTMLDivElement>(null)
     const qrCode = useRef<QRCodeStyling | null>(null)
@@ -27,7 +27,7 @@ export function QRCodeDisplay({
                 height: size,
                 type: 'svg',
                 data: value,
-                margin: includeMargin ? 10 : 0,
+                margin: includeMargin ? 4 : 0,
                 qrOptions: {
                     errorCorrectionLevel: 'H'
                 },
@@ -81,7 +81,7 @@ export function QRCodeDisplay({
                 data: value,
                 width: size,
                 height: size,
-                margin: includeMargin ? 10 : 0
+                margin: includeMargin ? 4 : 0
             })
 
             // Re-apply dot scaling after update
@@ -105,10 +105,11 @@ export function QRCodeDisplay({
 
     return (
         <div className={cn(
-            "inline-flex items-center justify-center p-2 bg-white rounded-2xl shadow-lg",
+            "inline-flex items-center justify-center bg-white rounded-xl shadow-lg overflow-hidden",
             className
         )}>
             <div ref={ref} />
         </div>
     )
 }
+
