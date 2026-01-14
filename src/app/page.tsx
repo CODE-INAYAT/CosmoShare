@@ -8,7 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Command, CommandDialog, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command'
 import { Badge } from '@/components/ui/badge'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import {
@@ -16,6 +16,7 @@ import {
   Users,
   Printer,
   Wifi,
+  Monitor,
   FileText,
   Share2,
   Zap,
@@ -44,6 +45,7 @@ import {
 import { useRouter } from 'next/navigation'
 import gsap from 'gsap'
 import { ScrollTrigger } from 'gsap/ScrollTrigger'
+import { roomNumbers } from '@/config/rooms'
 
 // Register GSAP plugins
 if (typeof window !== 'undefined') {
@@ -184,6 +186,7 @@ export default function Home() {
   const [error, setError] = useState('')
   const [suggestedNames, setSuggestedNames] = useState<string[]>([])
   const [mounted, setMounted] = useState(false)
+  const [roomOpen, setRoomOpen] = useState(false)
   const router = useRouter()
 
   // Refs for GSAP animations
@@ -650,11 +653,9 @@ export default function Home() {
     return () => ctx.revert()
   }, [mounted])
 
-  const roomNumbers = Array.from({ length: 11 }, (_, i) => (300 + i).toString())
-
   const generateUniqueId = (name: string) => {
     const firstChar = name.charAt(0).toUpperCase()
-    const randomNum = Math.floor(Math.random() * 1000)
+    const randomNum = Math.floor(1000 + Math.random() * 9000)
     return `${firstChar}${randomNum}`
   }
 
@@ -674,6 +675,11 @@ export default function Home() {
     e.preventDefault()
     if (!roomNumber || !name) {
       setError('Please fill in all fields')
+      return
+    }
+
+    if (name.length < 3 || name.length > 30) {
+      setError('Name must be between 3 and 30 characters')
       return
     }
 
@@ -1150,28 +1156,63 @@ export default function Home() {
 
               <CardContent className="p-5 md:p-8 pt-4">
                 <form onSubmit={userType === 'student' ? handleStudentSubmit : handleAdminSubmit} className="space-y-5">
-                  {/* Room Selection */}
+                  {/* Room Selection - Searchable Modal */}
                   <div className="space-y-2">
                     <Label htmlFor="room" className="text-muted-foreground text-sm">Lab Room Number</Label>
-                    <Select value={roomNumber} onValueChange={setRoomNumber}>
-                      <SelectTrigger className="bg-secondary/50 border-border text-foreground rounded-xl h-12 focus:ring-primary focus:ring-offset-0">
-                        <SelectValue placeholder="Select your lab room" />
-                      </SelectTrigger>
-                      <SelectContent className="bg-card border-border rounded-xl">
-                        {roomNumbers.map((room) => (
-                          <SelectItem
-                            key={room}
-                            value={room}
-                            className="text-foreground hover:bg-secondary focus:bg-secondary rounded-lg"
-                          >
-                            <div className="flex items-center gap-2">
-                              <Wifi className="w-4 h-4 text-primary" />
-                              Room {room}
-                            </div>
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => setRoomOpen(true)}
+                      className="w-full justify-between bg-secondary/50 border-border text-foreground rounded-xl h-12 focus:ring-primary focus:ring-offset-0 hover:bg-secondary/70 transition-colors"
+                    >
+                      {roomNumber ? (
+                        <span className="flex items-center gap-2">
+                          <Monitor className="w-4 h-4 text-primary" />
+                          Room {roomNumber}
+                        </span>
+                      ) : (
+                        <span className="text-muted-foreground">Select room...</span>
+                      )}
+                      <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                    </Button>
+
+                    <CommandDialog
+                      open={roomOpen}
+                      onOpenChange={setRoomOpen}
+                      title="Select Room"
+                      description="Choose your lab room"
+                    >
+                      <CommandInput placeholder="Search room..." />
+                      <CommandList className="max-h-[50vh] py-2">
+                        <CommandEmpty>
+                          <p className="py-4 text-sm text-muted-foreground text-center">No room found</p>
+                        </CommandEmpty>
+                        <CommandGroup>
+                          {roomNumbers.map((room) => (
+                            <CommandItem
+                              key={room}
+                              value={room}
+                              onSelect={(currentValue) => {
+                                setRoomNumber(currentValue)
+                                setRoomOpen(false)
+                              }}
+                              className={`flex items-center justify-between mx-2 px-3 py-2.5 rounded-lg cursor-pointer ${roomNumber === room ? 'bg-primary/10' : ''
+                                }`}
+                            >
+                              <span className="flex items-center gap-3">
+                                <Monitor className="w-4 h-4" />
+                                <span className={roomNumber === room ? 'font-medium' : ''}>
+                                  Room {room}
+                                </span>
+                              </span>
+                              {roomNumber === room && (
+                                <CheckCircle2 className="h-4 w-4" />
+                              )}
+                            </CommandItem>
+                          ))}
+                        </CommandGroup>
+                      </CommandList>
+                    </CommandDialog>
                   </div>
 
                   {/* Name Input (Student only) */}
@@ -1189,9 +1230,32 @@ export default function Home() {
                           type="text"
                           placeholder="Enter your name"
                           value={name}
-                          onChange={(e) => setName(e.target.value)}
-                          className="bg-secondary/50 border-border text-foreground rounded-xl h-12 placeholder:text-muted-foreground focus-visible:ring-primary focus-visible:ring-offset-0"
+                          onChange={(e) => setName(e.target.value.toUpperCase())}
+                          minLength={3}
+                          maxLength={30}
+                          autoComplete="name"
+                          autoCapitalize="characters"
+                          className="bg-secondary/50 border-border text-foreground rounded-xl h-12 placeholder:text-muted-foreground focus-visible:ring-primary focus-visible:ring-offset-0 uppercase"
                         />
+                        <div className="flex items-center justify-between mt-1.5">
+                          <span className={`text-xs transition-colors duration-200 ${name.length === 0
+                            ? 'text-muted-foreground'
+                            : name.length < 3
+                              ? 'text-red-500'
+                              : name.length >= 25
+                                ? 'text-amber-500'
+                                : 'text-muted-foreground'
+                            }`}>
+                            {name.length === 0
+                              ? 'Min 3 characters'
+                              : name.length < 3
+                                ? `${3 - name.length} more needed`
+                                : `${name.length}/30 characters`}
+                          </span>
+                          {name.length >= 3 && (
+                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
+                          )}
+                        </div>
                       </motion.div>
                     )}
                   </AnimatePresence>

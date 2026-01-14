@@ -47,12 +47,12 @@ export class RoomDurableObject implements DurableObject {
     const client = (pair as any)[0] as WebSocket
     const server = (pair as any)[1] as WebSocket
     const socketId = crypto.randomUUID()
-    ;(server as any).accept()
+      ; (server as any).accept()
 
     this.sockets.set(socketId, server)
 
     const send = (ws: WebSocket, event: string, data?: any) => {
-      try { ws.send(JSON.stringify({ event, data })) } catch {}
+      try { ws.send(JSON.stringify({ event, data })) } catch { }
     }
     const broadcast = (event: string, data?: any, exceptId?: string) => {
       this.sockets.forEach((ws, id) => { if (id !== exceptId) send(ws, event, data) })
@@ -119,7 +119,7 @@ export class RoomDurableObject implements DurableObject {
               const prevSock = this.sockets.get(prev)
               if (prevSock) {
                 send(prevSock, 'single-session-logout')
-                try { prevSock.close() } catch {}
+                try { prevSock.close() } catch { }
               }
               this.sockets.delete(prev)
               this.users.delete(prev)

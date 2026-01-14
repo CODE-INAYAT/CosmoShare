@@ -19,12 +19,12 @@ export default function SocketHandler(req: NextApiRequest, res: NextApiResponseS
       }
     })
 
-  // Store room data
-  const rooms = new Map<string, Set<string>>() // roomNumber -> Set<socketId>
-  const users = new Map<string, any>() // socketId -> user
-  // Track logical user sessions to prevent duplicates in the same room
-  const userSessions = new Map<string, Set<string>>() // `${roomNumber}:${userId}` -> Set<socketId>
-  const userDataByKey = new Map<string, any>() // `${roomNumber}:${userId}` -> latest user object
+    // Store room data
+    const rooms = new Map<string, Set<string>>() // roomNumber -> Set<socketId>
+    const users = new Map<string, any>() // socketId -> user
+    // Track logical user sessions to prevent duplicates in the same room
+    const userSessions = new Map<string, Set<string>>() // `${roomNumber}:${userId}` -> Set<socketId>
+    const userDataByKey = new Map<string, any>() // `${roomNumber}:${userId}` -> latest user object
 
     io.on('connection', (socket: any) => {
       console.log('User connected:', socket.id)
@@ -32,16 +32,16 @@ export default function SocketHandler(req: NextApiRequest, res: NextApiResponseS
       // Join room (dedupe by logical user id per room)
       socket.on('join-room', (data: { roomNumber: string; user: any }) => {
         const { roomNumber, user } = data
-        
+
         // Join socket room
         socket.join(roomNumber)
-        
+
         // Add to room tracking
         if (!rooms.has(roomNumber)) {
           rooms.set(roomNumber, new Set())
         }
         rooms.get(roomNumber)!.add(socket.id)
-        
+
         // Store user data
         users.set(socket.id, user)
 
@@ -84,7 +84,7 @@ export default function SocketHandler(req: NextApiRequest, res: NextApiResponseS
           .map(k => userDataByKey.get(k))
           .filter((u: any) => u && u.id !== user.id)
         socket.emit('room-users', uniqueUsers)
-        
+
         console.log(`User ${user.name} joined room ${roomNumber}`)
       })
 
