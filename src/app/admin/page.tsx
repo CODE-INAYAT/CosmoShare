@@ -43,7 +43,9 @@ import {
   Filter,
   Search,
   Plus,
-  ArrowDown
+  ArrowDown,
+  LogOut,
+  AlertTriangle
 } from 'lucide-react'
 import { useSearchParams } from 'next/navigation'
 import { io } from 'socket.io-client'
@@ -101,6 +103,7 @@ function AdminDashboardInner() {
   const [adminUser, setAdminUser] = useState<any>(null)
   const [confirmMarkAllOpen, setConfirmMarkAllOpen] = useState(false)
   const [speedDialOpen, setSpeedDialOpen] = useState(false)
+  const [leaveRoomDialogOpen, setLeaveRoomDialogOpen] = useState(false)
   const { toast } = useToast()
 
   // Network status
@@ -580,6 +583,15 @@ function AdminDashboardInner() {
     toast({ title: 'Marked as printed', description: before > 0 ? `Marked ${before} request(s) as printed.` : 'No pending requests.', variant: before > 0 ? 'success' as any : 'warning' as any })
   }
 
+  const handleLeaveRoom = () => {
+    try { socketRef.current?.disconnect() } catch { }
+    try {
+      blobUrlsRef.current.forEach((u) => { try { URL.revokeObjectURL(u as any) } catch { } })
+      blobUrlsRef.current.clear()
+    } catch { }
+    window.location.href = '/'
+  }
+
   // No persistence: admin print requests are session-only
 
   if (!isAuthenticated) {
@@ -657,6 +669,41 @@ function AdminDashboardInner() {
               <RefreshCw className="w-4 h-4 mr-2" />
               Refresh
             </Button>
+            <AlertDialog open={leaveRoomDialogOpen} onOpenChange={setLeaveRoomDialogOpen}>
+              <AlertDialogTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="border-red-400/50 text-red-700 dark:border-red-500/40 dark:text-red-400 hover:border-red-500 hover:text-red-600 hover:bg-red-50/50 dark:hover:bg-red-950/20 dark:hover:text-red-400 transition-all duration-200"
+                >
+                  <LogOut className="w-4 h-4 md:mr-2" />
+                  <span className="hidden md:inline">Leave Room</span>
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent className="max-w-md">
+                <AlertDialogHeader>
+                  <div className="flex items-center gap-3 mb-2">
+                    <div className="w-12 h-12 rounded-full bg-red-100 dark:bg-red-950/50 flex items-center justify-center shrink-0">
+                      <AlertTriangle className="w-6 h-6 text-red-600 dark:text-red-400" />
+                    </div>
+                    <AlertDialogTitle className="text-lg">Leave Room?</AlertDialogTitle>
+                  </div>
+                  <AlertDialogDescription className="text-sm leading-relaxed">
+                    You are about to leave <span className="font-medium text-foreground">Room {roomNumber}</span>. All received files, links, and session data will be permanently lost and cannot be recovered.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter className="mt-4 gap-2 sm:gap-0">
+                  <AlertDialogCancel className="sm:mr-2">Stay in Room</AlertDialogCancel>
+                  <AlertDialogAction
+                    onClick={handleLeaveRoom}
+                    className="bg-red-600 hover:bg-red-700 text-white"
+                  >
+                    <LogOut className="w-4 h-4 mr-2" />
+                    Leave Room
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
           </div>
         </div>
 
@@ -1019,7 +1066,7 @@ function AdminDashboardInner() {
                       <p className="text-muted-foreground">No students online</p>
                     </div>
                   ) : (
-                    <div className="max-h-96">
+                    <div className="max-h-96 overflow-y-auto scrollbar-thin scrollbar-thumb-muted-foreground/20 scrollbar-track-transparent">
                       <Virtuoso
                         style={{ height: '24rem' }}
                         totalCount={onlineUsers.length}

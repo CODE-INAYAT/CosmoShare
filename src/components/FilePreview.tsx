@@ -722,7 +722,7 @@ function FilePreviewInner({ file, senderName, senderUniqueId, recipients, timest
           <DialogHeader><DialogTitle>Recipients</DialogTitle></DialogHeader>
           <div className="space-y-2 max-h-80 overflow-y-auto">
             {recipients && recipients.length > 0 ? recipients.map(r => (
-              <div key={r.id} className="flex items-center justify-between p-2 rounded border border-border">
+              <div key={r.id} className="flex items-center justify-between p-2 rounded-xl border border-border">
                 <span className="text-sm font-medium">{r.name}</span>
                 <span className="text-xs text-muted-foreground">{r.uniqueId}</span>
               </div>

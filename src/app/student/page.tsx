@@ -38,7 +38,9 @@ import {
   Filter,
   Check,
   CheckCircle2,
-  Copy
+  Copy,
+  LogOut,
+  AlertTriangle
 } from 'lucide-react'
 import { useSearchParams } from 'next/navigation'
 import { io } from 'socket.io-client'
@@ -56,6 +58,17 @@ import { toast } from '@/hooks/use-toast'
 import { useNetworkStatus } from '@/hooks/useNetworkStatus'
 import { formatBytes } from '@/lib/utils'
 import { ToastAction } from '@/components/ui/toast'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog'
 
 interface User {
   id: string
@@ -138,6 +151,8 @@ function StudentDashboardInner() {
   const [errorModalMessage, setErrorModalMessage] = useState('')
   // Track current send target count to tailor error messages
   const sendingTargetsCountRef = useRef(0)
+  // Track per-recipient transfer status for multi-recipient transfers
+  const [transferRecipients, setTransferRecipients] = useState<{ id: string; name: string; uniqueId: string; status: 'pending' | 'sending' | 'completed' }[]>([])
   // Cache recipient info at selection time for better labels even if they go offline
   const recipientInfoRef = useRef<Record<string, { name: string; uniqueId: string }>>({})
   // Success + progress dialogs
@@ -160,6 +175,7 @@ function StudentDashboardInner() {
   const [forceProgress, setForceProgress] = useState(false)
   // Receiving speed dial state
   const [receiveDialogOpen, setReceiveDialogOpen] = useState(false)
+  const [leaveRoomDialogOpen, setLeaveRoomDialogOpen] = useState(false)
   // Receiving counters for badge (received/total)
   const [recvCounter, setRecvCounter] = useState<{ total: number; received: number }>({ total: 0, received: 0 })
   // Track current receive batch items & senders
@@ -934,6 +950,7 @@ function StudentDashboardInner() {
     currentFileSentRef.current = 0
     linkCountRef.current = 0
     linksCompletedRef.current = 0
+    setTransferRecipients([])
   }
 
   const performShare = async (targets: string[], isPrintRequest: boolean) => {
@@ -973,6 +990,9 @@ function StudentDashboardInner() {
         if (cached) return { id: tid, name: cached.name, uniqueId: cached.uniqueId }
         return { id: tid, name: 'User', uniqueId: tid.slice(-6) }
       })
+
+      // Initialize recipient transfer status tracking (all pending initially)
+      setTransferRecipients(recipientsInfo.map(r => ({ ...r, status: 'pending' as const })))
 
       // Handle file uploads
       for (const file of selectedFiles) {
@@ -1070,6 +1090,9 @@ function StudentDashboardInner() {
 
       // Send P2P via WebRTC to all targets sequentially (by target then files)
       for (const targetId of targets) {
+        // Mark this recipient as 'sending'
+        setTransferRecipients(prev => prev.map(r => r.id === targetId ? { ...r, status: 'sending' as const } : r))
+
         webrtc.ensureConnection(targetId)
         for (const entry of filesToShare) {
           if (!entry.isLink) {
@@ -1094,6 +1117,9 @@ function StudentDashboardInner() {
             }
           }
         }
+
+        // Mark this recipient as 'completed'
+        setTransferRecipients(prev => prev.map(r => r.id === targetId ? { ...r, status: 'completed' as const } : r))
       }
 
       // Update local history
@@ -1273,6 +1299,15 @@ function StudentDashboardInner() {
     setMessage('')
   }
 
+  const handleLeaveRoom = () => {
+    try { socketRef.current?.disconnect() } catch { }
+    try {
+      blobUrlsRef.current.forEach((u) => { try { URL.revokeObjectURL(u) } catch { } })
+      blobUrlsRef.current.clear()
+    } catch { }
+    window.location.href = '/'
+  }
+
   if (!userData) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -1307,6 +1342,41 @@ function StudentDashboardInner() {
               <Users className="w-3.5 h-3.5" />
               {onlineUsers.length + 1 + (adminId ? 1 : 0)} Online
             </Badge>
+            <AlertDialog open={leaveRoomDialogOpen} onOpenChange={setLeaveRoomDialogOpen}>
+              <AlertDialogTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="border-red-400/50 text-red-700 dark:border-red-500/40 dark:text-red-400 hover:border-red-500 hover:text-red-600 hover:bg-red-50/50 dark:hover:bg-red-950/20 dark:hover:text-red-400 transition-all duration-200"
+                >
+                  <LogOut className="w-4 h-4 md:mr-2" />
+                  <span className="hidden md:inline">Leave Room</span>
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent className="max-w-md">
+                <AlertDialogHeader>
+                  <div className="flex items-center gap-3 mb-2">
+                    <div className="w-12 h-12 rounded-full bg-red-100 dark:bg-red-950/50 flex items-center justify-center shrink-0">
+                      <AlertTriangle className="w-6 h-6 text-red-600 dark:text-red-400" />
+                    </div>
+                    <AlertDialogTitle className="text-lg">Leave Room?</AlertDialogTitle>
+                  </div>
+                  <AlertDialogDescription className="text-sm leading-relaxed">
+                    You are about to leave <span className="font-medium text-foreground">Room {userData.roomNumber}</span> as <span className="font-medium text-foreground">{userData.name}</span>. All your files, shared links, and session data will be permanently lost.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter className="mt-4 gap-2 sm:gap-0">
+                  <AlertDialogCancel className="sm:mr-2">Stay in Room</AlertDialogCancel>
+                  <AlertDialogAction
+                    onClick={handleLeaveRoom}
+                    className="bg-red-600 hover:bg-red-700 text-white"
+                  >
+                    <LogOut className="w-4 h-4 mr-2" />
+                    Leave Room
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
           </div>
         </div>
 
@@ -1391,90 +1461,113 @@ function StudentDashboardInner() {
                               <span>{selectedRecipients.length > 0 ? `${selectedRecipients.length} recipient${selectedRecipients.length > 1 ? 's' : ''} selected` : 'Select recipients'}</span>
                             </Button>
                           </DialogTrigger>
-                          <DialogContent className="sm:max-w-2xl">
-                            <DialogHeader>
-                              <DialogTitle>Select Recipients</DialogTitle>
-                              <DialogDescription>Choose one or more recipients to share with.</DialogDescription>
-                            </DialogHeader>
-                            <Tabs defaultValue="users" className="w-full mt-2">
-                              <TabsList className="w-full">
-                                <TabsTrigger value="users" className="flex-1">Online Users</TabsTrigger>
-                                {/* No Lab Rooms tab in Code Share mode */}
-                              </TabsList>
-                              <TabsContent value="users" className="space-y-3">
-                                <div className="relative">
-                                  <Input
-                                    placeholder="Search users by name or ID"
-                                    value={searchQuery}
-                                    onChange={(e) => setSearchQuery(e.target.value)}
-                                    className="pl-9"
-                                  />
-                                  <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                                </div>
-                                <div className="max-h-64 overflow-y-auto space-y-2">
-                                  {onlineUsers
-                                    .filter(u => u.uniqueId !== 'ADMIN' && u.id !== adminId)
-                                    .filter(u => (u.name + ' ' + u.uniqueId).toLowerCase().includes(searchQuery.toLowerCase()))
-                                    .map((user) => (
+                          <DialogContent className="sm:max-w-2xl p-0 gap-0 overflow-hidden flex flex-col max-h-[85vh]">
+                            {/* Fixed Header */}
+                            <div className="p-6 pb-4 shrink-0">
+                              <DialogHeader>
+                                <DialogTitle>Select Recipients</DialogTitle>
+                                <DialogDescription>Choose one or more recipients to share with.</DialogDescription>
+                              </DialogHeader>
+                            </div>
+
+                            {/* Scrollable Content Area */}
+                            <div className="flex-1 overflow-y-auto px-6 min-h-0">
+                              <Tabs defaultValue="users" className="w-full">
+                                <TabsList className="w-full sticky top-0 bg-background z-10">
+                                  <TabsTrigger value="users" className="flex-1">Online Users</TabsTrigger>
+                                </TabsList>
+                                <TabsContent value="users" className="space-y-3 mt-3">
+                                  <div className="relative">
+                                    <Input
+                                      placeholder="Search users by name or ID"
+                                      value={searchQuery}
+                                      onChange={(e) => setSearchQuery(e.target.value)}
+                                      className="pl-9"
+                                    />
+                                    <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                                  </div>
+                                  {/* Select All Row */}
+                                  {(() => {
+                                    const filteredUsers = onlineUsers
+                                      .filter(u => u.uniqueId !== 'ADMIN' && u.id !== adminId)
+                                      .filter(u => (u.name + ' ' + u.uniqueId).toLowerCase().includes(searchQuery.toLowerCase()))
+                                    const allFilteredIds = filteredUsers.map(u => u.id)
+                                    const allSelected = filteredUsers.length > 0 && allFilteredIds.every(id => selectedRecipients.includes(id))
+
+                                    if (filteredUsers.length === 0) return null
+
+                                    return (
                                       <div
-                                        key={user.id}
-                                        className={`flex items-center gap-3 p-2 rounded-lg cursor-pointer hover:bg-secondary transition-colors ${selectedRecipients.includes(user.id) ? 'bg-primary/10 ring-1 ring-primary' : 'bg-secondary/50'
-                                          }`}
+                                        className={`flex items-center justify-between py-2 px-3 rounded-lg cursor-pointer transition-colors ${allSelected ? 'bg-primary/8' : 'hover:bg-muted/50'}`}
                                         onClick={() => {
-                                          setSelectedRecipients(prev =>
-                                            prev.includes(user.id)
-                                              ? prev.filter(id => id !== user.id)
-                                              : [...prev, user.id]
-                                          )
-                                          recipientInfoRef.current[user.id] = { name: user.name, uniqueId: user.uniqueId }
+                                          if (allSelected) {
+                                            setSelectedRecipients(prev => prev.filter(id => !allFilteredIds.includes(id)))
+                                          } else {
+                                            setSelectedRecipients(prev => {
+                                              const newSet = new Set([...prev, ...allFilteredIds])
+                                              allFilteredIds.forEach(id => {
+                                                const user = filteredUsers.find(u => u.id === id)
+                                                if (user) recipientInfoRef.current[id] = { name: user.name, uniqueId: user.uniqueId }
+                                              })
+                                              return Array.from(newSet)
+                                            })
+                                          }
                                         }}
                                       >
-                                        <div className="w-8 h-8 rounded-full flex items-center justify-center text-white font-medium text-sm" style={{ backgroundImage: generateGradient(user.name) }}>
-                                          {user.name.charAt(0).toUpperCase()}
+                                        <div className="flex items-center gap-2">
+                                          <span className="text-sm font-medium">{allSelected ? 'Deselect All' : 'Select All'}</span>
+                                          <span className="text-xs text-muted-foreground">({filteredUsers.length} users)</span>
                                         </div>
-                                        <div className="flex-1 min-w-0">
-                                          <p className="text-sm font-medium truncate">{user.name}</p>
-                                          <p className="text-xs text-muted-foreground">{user.uniqueId}</p>
+                                        <div className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 transition-colors ${allSelected ? 'bg-primary' : 'border-2 border-muted-foreground/30'}`}>
+                                          {allSelected && <Check className="w-3 h-3 text-primary-foreground" />}
                                         </div>
-                                        {selectedRecipients.includes(user.id) && <Check className="w-4 h-4 text-primary" />}
                                       </div>
-                                    ))}
-                                  {onlineUsers.filter(u => u.uniqueId !== 'ADMIN' && u.id !== adminId).length === 0 && (
-                                    <p className="text-center text-muted-foreground py-4">No other users online</p>
-                                  )}
-                                </div>
-                              </TabsContent>
-                              <TabsContent value="labs" className="space-y-3">
-                                {adminId ? (
-                                  <div
-                                    className={`flex items-center gap-3 p-3 rounded-lg cursor-pointer hover:bg-secondary transition-colors ${selectedRecipients.includes('admin') ? 'bg-primary/10 ring-1 ring-primary' : 'bg-secondary/50'
-                                      }`}
-                                    onClick={() => {
-                                      setSelectedRecipients(prev =>
-                                        prev.includes('admin')
-                                          ? prev.filter(id => id !== 'admin')
-                                          : [...prev, 'admin']
-                                      )
-                                      recipientInfoRef.current['admin'] = { name: `Lab Admin (Room ${adminRoom || userData.roomNumber})`, uniqueId: 'ADMIN' }
-                                    }}
-                                  >
-                                    <div className="w-10 h-10 rounded-full bg-gradient-to-br from-emerald-400 to-cyan-500 flex items-center justify-center text-white">
-                                      <Printer className="w-5 h-5" />
-                                    </div>
-                                    <div className="flex-1">
-                                      <p className="font-medium">Lab Admin</p>
-                                      <p className="text-xs text-muted-foreground">Room {adminRoom || userData.roomNumber}</p>
-                                    </div>
-                                    {selectedRecipients.includes('admin') && <Check className="w-5 h-5 text-primary" />}
+                                    )
+                                  })()}
+                                  {/* User List */}
+                                  <div className="space-y-1 pb-2">
+                                    {onlineUsers
+                                      .filter(u => u.uniqueId !== 'ADMIN' && u.id !== adminId)
+                                      .filter(u => (u.name + ' ' + u.uniqueId).toLowerCase().includes(searchQuery.toLowerCase()))
+                                      .map((user) => (
+                                        <div
+                                          key={user.id}
+                                          className={`flex items-center gap-3 py-2.5 px-3 rounded-lg cursor-pointer transition-colors ${selectedRecipients.includes(user.id) ? 'bg-primary/8' : 'hover:bg-muted/50'}`}
+                                          onClick={() => {
+                                            setSelectedRecipients(prev =>
+                                              prev.includes(user.id)
+                                                ? prev.filter(id => id !== user.id)
+                                                : [...prev, user.id]
+                                            )
+                                            recipientInfoRef.current[user.id] = { name: user.name, uniqueId: user.uniqueId }
+                                          }}
+                                        >
+                                          <div className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-medium" style={{ backgroundImage: generateGradient(user.name) }}>
+                                            {user.name.charAt(0).toUpperCase()}
+                                          </div>
+                                          <div className="flex-1 min-w-0">
+                                            <p className="text-sm font-medium truncate">{user.name}</p>
+                                            <p className="text-[11px] text-muted-foreground">{user.uniqueId}</p>
+                                          </div>
+                                          <div className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 transition-colors ${selectedRecipients.includes(user.id) ? 'bg-primary' : 'border-2 border-muted-foreground/30'}`}>
+                                            {selectedRecipients.includes(user.id) && <Check className="w-3 h-3 text-primary-foreground" />}
+                                          </div>
+                                        </div>
+                                      ))}
+                                    {onlineUsers.filter(u => u.uniqueId !== 'ADMIN' && u.id !== adminId).length === 0 && (
+                                      <p className="text-center text-muted-foreground py-4">No other users online</p>
+                                    )}
                                   </div>
-                                ) : (
-                                  <p className="text-center text-muted-foreground py-4">No lab admin online</p>
-                                )}
-                              </TabsContent>
-                            </Tabs>
-                            <div className="flex justify-end gap-2 mt-4">
-                              <Button variant="outline" onClick={() => setSelectModalOpen(false)}>Cancel</Button>
-                              <Button onClick={() => setSelectModalOpen(false)}>Confirm ({selectedRecipients.length})</Button>
+                                </TabsContent>
+                              </Tabs>
+                            </div>
+
+                            {/* Fixed Footer */}
+                            <div className="p-6 pt-4 border-t shrink-0 bg-background">
+                              <div className="flex justify-end gap-2">
+                                <Button variant="outline" onClick={() => setSelectModalOpen(false)}>Cancel</Button>
+                                <Button onClick={() => setSelectModalOpen(false)}>Confirm ({selectedRecipients.length})</Button>
+                              </div>
                             </div>
                           </DialogContent>
                         </Dialog>
@@ -1551,15 +1644,20 @@ function StudentDashboardInner() {
                           )}
 
                           {/* Message below selected files */}
-                          <div className="space-y-2">
+                          <div className="space-y-1">
                             <Label htmlFor="message">Message (Optional)</Label>
                             <Textarea
                               id="message"
                               placeholder="Add a message like '2 copies for printout'..."
                               value={message}
-                              onChange={(e) => setMessage(e.target.value)}
+                              onChange={(e) => setMessage(e.target.value.slice(0, 200))}
+                              maxLength={200}
                               rows={3}
+                              className={`resize-none overflow-y-auto max-h-24 ${message.length >= 200 ? 'border-red-400 focus-visible:ring-red-400' : ''}`}
                             />
+                            <span className={`text-xs text-right block ${message.length > 180 ? 'text-red-500' : 'text-muted-foreground'}`}>
+                              {message.length}/200
+                            </span>
                           </div>
 
                           {/* Allow reshare toggle */}
@@ -1577,93 +1675,148 @@ function StudentDashboardInner() {
                                   <span>{selectedRecipients.length > 0 ? `${selectedRecipients.length} recipient${selectedRecipients.length > 1 ? 's' : ''} selected` : 'Select recipients'}</span>
                                 </Button>
                               </DialogTrigger>
-                              <DialogContent className="sm:max-w-2xl">
-                                <DialogHeader>
-                                  <DialogTitle>Select Recipients</DialogTitle>
-                                  <DialogDescription>Choose one or more recipients to share with.</DialogDescription>
-                                </DialogHeader>
-                                <Tabs defaultValue="users" className="w-full mt-2">
-                                  <TabsList className="grid grid-cols-2 w-full">
-                                    <TabsTrigger value="users">Online Users</TabsTrigger>
-                                    <TabsTrigger value="labs">Lab Rooms</TabsTrigger>
-                                  </TabsList>
-                                  {/* Online Users tab with search and multi-select */}
-                                  <TabsContent value="users" className="space-y-3">
-                                    <div className="relative">
-                                      <Input
-                                        placeholder="Search users by name or ID"
-                                        value={searchQuery}
-                                        onChange={(e) => setSearchQuery(e.target.value)}
-                                        className="pl-9"
-                                      />
-                                      <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                                    </div>
-                                    <div className="max-h-64 overflow-y-auto space-y-2">
-                                      {onlineUsers
-                                        // Hide Lab Admin from Online Users tab in Select Recipients (Files)
-                                        .filter(u => u.uniqueId !== 'ADMIN' && u.id !== adminId)
-                                        .filter(u => (u.name + ' ' + u.uniqueId).toLowerCase().includes(searchQuery.toLowerCase()))
-                                        .map(u => {
-                                          const checked = selectedRecipients.includes(u.id)
-                                          return (
-                                            <label key={u.id} className={`flex items-center gap-3 p-2 rounded border ${checked ? 'border-blue-500 bg-primary/5' : 'border-gray-200 hover:bg-muted/50'}`}>
-                                              <input
-                                                type="checkbox"
-                                                className="accent-blue-600"
-                                                checked={checked}
-                                                onChange={(e) => {
+                              <DialogContent className="sm:max-w-2xl p-0 gap-0 overflow-hidden flex flex-col max-h-[85vh]">
+                                {/* Fixed Header */}
+                                <div className="p-6 pb-4 shrink-0">
+                                  <DialogHeader>
+                                    <DialogTitle>Select Recipients</DialogTitle>
+                                    <DialogDescription>Choose one or more recipients to share with.</DialogDescription>
+                                  </DialogHeader>
+                                </div>
+
+                                {/* Scrollable Content Area */}
+                                <div className="flex-1 overflow-y-auto px-6 min-h-0">
+                                  <Tabs defaultValue="users" className="w-full">
+                                    <TabsList className="grid grid-cols-2 w-full sticky top-0 bg-background z-10">
+                                      <TabsTrigger value="users">Online Users</TabsTrigger>
+                                      <TabsTrigger value="labs">Lab Rooms</TabsTrigger>
+                                    </TabsList>
+                                    {/* Online Users tab with search and multi-select */}
+                                    <TabsContent value="users" className="space-y-3 mt-3">
+                                      <div className="relative">
+                                        <Input
+                                          placeholder="Search users by name or ID"
+                                          value={searchQuery}
+                                          onChange={(e) => setSearchQuery(e.target.value)}
+                                          className="pl-9"
+                                        />
+                                        <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                                      </div>
+                                      {/* Select All Row */}
+                                      {(() => {
+                                        const filteredUsers = onlineUsers
+                                          .filter(u => u.uniqueId !== 'ADMIN' && u.id !== adminId)
+                                          .filter(u => (u.name + ' ' + u.uniqueId).toLowerCase().includes(searchQuery.toLowerCase()))
+                                        const allFilteredIds = filteredUsers.map(u => u.id)
+                                        const allSelected = filteredUsers.length > 0 && allFilteredIds.every(id => selectedRecipients.includes(id))
+
+                                        if (filteredUsers.length === 0) return null
+
+                                        return (
+                                          <div
+                                            className={`flex items-center justify-between py-2 px-3 rounded-lg cursor-pointer transition-colors ${allSelected ? 'bg-primary/8' : 'hover:bg-muted/50'}`}
+                                            onClick={() => {
+                                              if (allSelected) {
+                                                setSelectedRecipients(prev => prev.filter(id => !allFilteredIds.includes(id)))
+                                              } else {
+                                                setSelectedRecipients(prev => {
+                                                  const newSet = new Set([...prev, ...allFilteredIds])
+                                                  allFilteredIds.forEach(id => {
+                                                    const user = filteredUsers.find(u => u.id === id)
+                                                    if (user) recipientInfoRef.current[id] = { name: user.name, uniqueId: user.uniqueId }
+                                                  })
+                                                  return Array.from(newSet)
+                                                })
+                                              }
+                                            }}
+                                          >
+                                            <div className="flex items-center gap-2">
+                                              <span className="text-sm font-medium">{allSelected ? 'Deselect All' : 'Select All'}</span>
+                                              <span className="text-xs text-muted-foreground">({filteredUsers.length} users)</span>
+                                            </div>
+                                            <div className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 transition-colors ${allSelected ? 'bg-primary' : 'border-2 border-muted-foreground/30'}`}>
+                                              {allSelected && <Check className="w-3 h-3 text-primary-foreground" />}
+                                            </div>
+                                          </div>
+                                        )
+                                      })()}
+                                      {/* User List */}
+                                      <div className="space-y-1">
+                                        {onlineUsers
+                                          .filter(u => u.uniqueId !== 'ADMIN' && u.id !== adminId)
+                                          .filter(u => (u.name + ' ' + u.uniqueId).toLowerCase().includes(searchQuery.toLowerCase()))
+                                          .map(user => {
+                                            const checked = selectedRecipients.includes(user.id)
+                                            return (
+                                              <div
+                                                key={user.id}
+                                                className={`flex items-center gap-3 py-2.5 px-3 rounded-lg cursor-pointer transition-colors ${checked ? 'bg-primary/8' : 'hover:bg-muted/50'}`}
+                                                onClick={() => {
                                                   setSelectedRecipients(prev => {
-                                                    const next = e.target.checked ? Array.from(new Set([...prev, u.id])) : prev.filter(id => id !== u.id)
-                                                    // cache info for label if user goes offline before sending
-                                                    recipientInfoRef.current[u.id] = { name: u.name, uniqueId: u.uniqueId }
+                                                    const isSelected = prev.includes(user.id)
+                                                    const next = isSelected ? prev.filter(id => id !== user.id) : [...prev, user.id]
+                                                    recipientInfoRef.current[user.id] = { name: user.name, uniqueId: user.uniqueId }
                                                     return next
                                                   })
                                                 }}
-                                              />
-                                              <div className="flex items-center gap-3">
-                                                <div className="w-8 h-8 rounded-full flex items-center justify-center text-white font-semibold text-sm" style={{ backgroundImage: generateGradient(u.name) }}>{u.name.charAt(0).toUpperCase()}</div>
-                                                <div>
-                                                  <p className="text-sm font-medium">{u.name}</p>
-                                                  <p className="text-xs text-muted-foreground">{u.uniqueId}</p>
+                                              >
+                                                <div className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-medium shrink-0" style={{ backgroundImage: generateGradient(user.name) }}>
+                                                  {user.name.charAt(0).toUpperCase()}
+                                                </div>
+                                                <div className="flex-1 min-w-0">
+                                                  <p className="text-sm font-medium truncate">{user.name}</p>
+                                                  <p className="text-[11px] text-muted-foreground">{user.uniqueId}</p>
+                                                </div>
+                                                <div className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 transition-colors ${checked ? 'bg-primary' : 'border-2 border-muted-foreground/30'}`}>
+                                                  {checked && <Check className="w-3 h-3 text-primary-foreground" />}
                                                 </div>
                                               </div>
-                                            </label>
-                                          )
-                                        })}
-                                      {onlineUsers.length === 0 && (
-                                        <p className="text-sm text-muted-foreground">No users online</p>
-                                      )}
-                                    </div>
-                                  </TabsContent>
-                                  {/* Lab Rooms tab (current room admin) */}
-                                  <TabsContent value="labs" className="space-y-3">
-                                    <div className="max-h-64 overflow-y-auto space-y-2">
-                                      <label className={`flex items-center gap-3 p-2 rounded border ${selectedRecipients.includes('admin') ? 'border-blue-500 bg-primary/5' : 'border-gray-200 hover:bg-muted/50'}`}>
-                                        <input
-                                          type="checkbox"
-                                          className="accent-blue-600"
-                                          checked={selectedRecipients.includes('admin')}
-                                          onChange={(e) => {
-                                            setSelectedRecipients(prev => {
-                                              const next = e.target.checked ? Array.from(new Set([...prev, 'admin'])) : prev.filter(id => id !== 'admin')
-                                              recipientInfoRef.current['admin'] = { name: `Lab Admin (Room ${adminRoom || userData?.roomNumber || ''})`, uniqueId: 'ADMIN' }
-                                              return next
-                                            })
-                                          }}
-                                        />
-                                        <div className="flex items-center gap-3">
-                                          <div className="w-8 h-8 rounded-full flex items-center justify-center text-white font-semibold text-sm" style={{ backgroundImage: generateGradient(`Lab Admin (Room ${adminRoom || userData.roomNumber})`) }}>
-                                            A
+                                            )
+                                          })}
+                                        {onlineUsers.filter(u => u.uniqueId !== 'ADMIN' && u.id !== adminId).length === 0 && (
+                                          <p className="text-center text-muted-foreground py-4">No users online</p>
+                                        )}
+                                      </div>
+                                    </TabsContent>
+                                    {/* Lab Rooms tab */}
+                                    <TabsContent value="labs" className="space-y-3 mt-3">
+                                      <div className="space-y-1">
+                                        {adminId ? (
+                                          <div
+                                            className={`flex items-center gap-3 py-2.5 px-3 rounded-lg cursor-pointer transition-colors ${selectedRecipients.includes('admin') ? 'bg-primary/8' : 'hover:bg-muted/50'}`}
+                                            onClick={() => {
+                                              setSelectedRecipients(prev => {
+                                                const next = prev.includes('admin') ? prev.filter(id => id !== 'admin') : [...prev, 'admin']
+                                                recipientInfoRef.current['admin'] = { name: `Lab Admin (Room ${adminRoom || userData?.roomNumber || ''})`, uniqueId: 'ADMIN' }
+                                                return next
+                                              })
+                                            }}
+                                          >
+                                            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-emerald-400 to-cyan-500 flex items-center justify-center text-white shrink-0">
+                                              <Printer className="w-3.5 h-3.5" />
+                                            </div>
+                                            <div className="flex-1">
+                                              <p className="text-sm font-medium">Lab Admin</p>
+                                              <p className="text-[11px] text-muted-foreground">Room {adminRoom || userData.roomNumber}</p>
+                                            </div>
+                                            <div className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 transition-colors ${selectedRecipients.includes('admin') ? 'bg-primary' : 'border-2 border-muted-foreground/30'}`}>
+                                              {selectedRecipients.includes('admin') && <Check className="w-3 h-3 text-primary-foreground" />}
+                                            </div>
                                           </div>
-                                          <span>Lab Admin (Room {adminRoom || userData.roomNumber})</span>
-                                        </div>
-                                      </label>
-                                      {!adminId && <p className="text-xs text-orange-600">Admin is currently offline.</p>}
-                                    </div>
-                                  </TabsContent>
-                                </Tabs>
-                                <div className="flex justify-end">
-                                  <Button onClick={() => setSelectModalOpen(false)}>Done</Button>
+                                        ) : (
+                                          <p className="text-center text-muted-foreground py-4">No lab admin online</p>
+                                        )}
+                                      </div>
+                                    </TabsContent>
+                                  </Tabs>
+                                </div>
+
+                                {/* Fixed Footer */}
+                                <div className="p-6 pt-4 border-t shrink-0 bg-background">
+                                  <div className="flex justify-end gap-2">
+                                    <Button variant="outline" onClick={() => setSelectModalOpen(false)}>Cancel</Button>
+                                    <Button onClick={() => setSelectModalOpen(false)}>Confirm ({selectedRecipients.length})</Button>
+                                  </div>
                                 </div>
                               </DialogContent>
                             </Dialog>
@@ -1708,15 +1861,20 @@ function StudentDashboardInner() {
                           </div>
 
                           {/* Message below link input */}
-                          <div className="space-y-2">
+                          <div className="space-y-1">
                             <Label htmlFor="message-link">Message (Optional)</Label>
                             <Textarea
                               id="message-link"
                               placeholder="Add a message like '2 copies for printout'..."
                               value={message}
-                              onChange={(e) => setMessage(e.target.value)}
+                              onChange={(e) => setMessage(e.target.value.slice(0, 200))}
+                              maxLength={200}
                               rows={3}
+                              className={`resize-none overflow-y-auto max-h-24 ${message.length >= 200 ? 'border-red-400 focus-visible:ring-red-400' : ''}`}
                             />
+                            <span className={`text-xs text-right block ${message.length > 180 ? 'text-red-500' : 'text-muted-foreground'}`}>
+                              {message.length}/200
+                            </span>
                           </div>
 
                           {/* Allow reshare toggle */}
@@ -2176,8 +2334,8 @@ function StudentDashboardInner() {
                   {/* Lab Admin shown at top if online */}
                   {adminId && (
                     <div className="flex items-center gap-3 p-3 hover:bg-muted/50 rounded-lg transition-colors">
-                      <div className="w-8 h-8 rounded-full flex items-center justify-center text-white font-semibold text-sm" style={{ backgroundImage: generateGradient(`Lab Admin (Room ${adminRoom || userData.roomNumber})`) }}>
-                        A
+                      <div className="w-8 h-8 rounded-full bg-gradient-to-br from-emerald-400 to-cyan-500 flex items-center justify-center text-white shadow-sm">
+                        <Printer className="w-4 h-4" />
                       </div>
                       <div className="flex-1">
                         <p className="font-medium text-sm">Lab Admin (Room {adminRoom || userData.roomNumber})</p>
@@ -2187,7 +2345,7 @@ function StudentDashboardInner() {
                     </div>
                   )}
 
-                  <div className="max-h-96">
+                  <div className="max-h-96 overflow-y-auto scrollbar-thin scrollbar-thumb-muted-foreground/20 scrollbar-track-transparent">
                     <Virtuoso
                       style={{ height: '24rem' }}
                       totalCount={onlineUsers.length}
@@ -2359,9 +2517,9 @@ function StudentDashboardInner() {
                 Keep this tab open until your files finish sending.
               </DialogDescription>
             </DialogHeader>
-            <div className="flex flex-col items-center gap-8 py-4">
+            <div className="flex flex-col items-center gap-6 py-4">
               <div className="relative">
-                <svg className="w-44 h-44 -rotate-90" viewBox="0 0 100 100">
+                <svg className="w-36 h-36 -rotate-90" viewBox="0 0 100 100">
                   <circle cx="50" cy="50" r="46" className="stroke-primary/20" strokeWidth="8" fill="none" />
                   <circle
                     cx="50"
@@ -2376,11 +2534,67 @@ function StudentDashboardInner() {
                   />
                 </svg>
                 <div className="absolute inset-0 flex flex-col items-center justify-center">
-                  <div className="text-3xl font-bold text-primary">{Math.round(uiProgress)}%</div>
+                  <div className="text-2xl font-bold text-primary">{Math.round(uiProgress)}%</div>
                   <div className="text-xs tracking-wide text-muted-foreground mt-1">SENDING</div>
                 </div>
               </div>
-              <p className="text-sm text-center text-muted-foreground max-w-sm">
+
+              {/* Recipients Status List */}
+              {transferRecipients.length > 0 && (
+                <div className="w-full space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Recipients</span>
+                    <span className="text-xs text-muted-foreground">
+                      {transferRecipients.filter(r => r.status === 'completed').length}/{transferRecipients.length}
+                    </span>
+                  </div>
+                  <div className="max-h-36 overflow-y-auto space-y-1.5">
+                    {transferRecipients.map((recipient) => (
+                      <div
+                        key={recipient.id}
+                        className={`flex items-center justify-between py-2 px-3 rounded-lg transition-colors ${recipient.status === 'sending'
+                          ? 'bg-primary/8 border border-primary/30'
+                          : recipient.status === 'completed'
+                            ? 'bg-muted/40'
+                            : 'bg-muted/20'
+                          }`}
+                      >
+                        <div className="flex items-center gap-2.5">
+                          <div
+                            className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-medium shrink-0"
+                            style={{ backgroundImage: recipient.uniqueId === 'ADMIN' ? 'linear-gradient(135deg, #34d399, #06b6d4)' : generateGradient(recipient.name) }}
+                          >
+                            {recipient.uniqueId === 'ADMIN' ? <Printer className="w-3.5 h-3.5" /> : recipient.name.charAt(0).toUpperCase()}
+                          </div>
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium truncate">{recipient.name}</p>
+                            <p className="text-[11px] text-muted-foreground">{recipient.uniqueId}</p>
+                          </div>
+                        </div>
+                        <div className="shrink-0 ml-2">
+                          {recipient.status === 'pending' && (
+                            <span className="text-[11px] text-muted-foreground">Queued</span>
+                          )}
+                          {recipient.status === 'sending' && (
+                            <div className="flex items-center gap-1.5">
+                              <div className="w-3.5 h-3.5 rounded-full border-2 border-primary border-t-transparent animate-spin" />
+                              <span className="text-[11px] font-medium text-primary">Sending</span>
+                            </div>
+                          )}
+                          {recipient.status === 'completed' && (
+                            <div className="flex items-center gap-1">
+                              <Check className="w-3.5 h-3.5 text-emerald-600" />
+                              <span className="text-[11px] font-medium text-emerald-600">Done</span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <p className="text-xs text-center text-muted-foreground max-w-sm">
                 Do not close this window.
               </p>
             </div>

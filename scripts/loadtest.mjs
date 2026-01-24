@@ -63,8 +63,7 @@ async function main() {
 
   const statsTimer = setInterval(() => {
     console.log(
-      `[STATS] opened=${opened} failed=${failed} closed=${closed} inflight=${
-        opened - closed
+      `[STATS] opened=${opened} failed=${failed} closed=${closed} inflight=${opened - closed
       } messages=${messages}`
     );
   }, 2000);
@@ -97,7 +96,7 @@ async function main() {
         };
         try {
           ws.send(JSON.stringify(payload));
-        } catch {}
+        } catch { }
         finish();
       });
       ws.on("message", () => {
@@ -119,7 +118,7 @@ async function main() {
           failed++;
           try {
             ws.close();
-          } catch {}
+          } catch { }
           finish();
         }
       }, cfg.timeoutMs);
@@ -140,7 +139,7 @@ async function main() {
   for (const ws of sockets) {
     try {
       ws?.close();
-    } catch {}
+    } catch { }
   }
   await delay(2000);
 
