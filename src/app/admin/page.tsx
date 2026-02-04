@@ -54,6 +54,7 @@ import { useWebRTC } from '@/hooks/useWebRTC'
 import FilePreview from '@/components/FilePreview'
 import { ConnectionStatusBadge } from '@/components/ConnectionStatusBadge'
 import { OfflineDialog } from '@/components/OfflineDialog'
+import FullPageLoader from '@/components/FullPageLoader'
 import { Virtuoso } from 'react-virtuoso'
 import { useToast } from '@/hooks/use-toast'
 import { useNetworkStatus } from '@/hooks/useNetworkStatus'
@@ -108,6 +109,15 @@ function AdminDashboardInner() {
 
   // Network status
   const { isOnline } = useNetworkStatus()
+  const [isPageLoading, setIsPageLoading] = useState(true)
+
+  // Show loading screen for minimum 1 second
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setIsPageLoading(false)
+    }, 3000)
+    return () => clearTimeout(timer)
+  }, [])
 
   const [downloadDialogOpen, setDownloadDialogOpen] = useState(false)
   // Search and sort state
@@ -593,6 +603,10 @@ function AdminDashboardInner() {
   }
 
   // No persistence: admin print requests are session-only
+
+  if (isPageLoading) {
+    return <FullPageLoader variant="admin" />
+  }
 
   if (!isAuthenticated) {
     return (
@@ -1283,9 +1297,10 @@ function AdminDashboardInner() {
   )
 }
 
+
 export default function AdminDashboard() {
   return (
-    <Suspense fallback={<div className="min-h-screen flex items-center justify-center">Loading...</div>}>
+    <Suspense fallback={<FullPageLoader variant="admin" />}>
       <AdminDashboardInner />
     </Suspense>
   )

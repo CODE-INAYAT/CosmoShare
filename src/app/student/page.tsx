@@ -53,6 +53,7 @@ import FilePreview from '@/components/FilePreview'
 import LoadingSpinner from '@/components/LoadingSpinner'
 import { ConnectionStatusBadge } from '@/components/ConnectionStatusBadge'
 import { OfflineDialog } from '@/components/OfflineDialog'
+import FullPageLoader from '@/components/FullPageLoader'
 import { Virtuoso } from 'react-virtuoso'
 import { toast } from '@/hooks/use-toast'
 import { useNetworkStatus } from '@/hooks/useNetworkStatus'
@@ -118,6 +119,15 @@ function StudentDashboardInner() {
   // Network status
   const { isOnline } = useNetworkStatus()
   const [sentFiles, setSentFiles] = useState<FileShare[]>([])
+  const [isPageLoading, setIsPageLoading] = useState(true)
+
+  // Show loading screen for minimum 1 second
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setIsPageLoading(false)
+    }, 3000)
+    return () => clearTimeout(timer)
+  }, [])
   const [isUploading, setIsUploading] = useState(false)
   const [uploadProgress, setUploadProgress] = useState(0)
   const [googleWarningOpen, setGoogleWarningOpen] = useState(false)
@@ -1308,15 +1318,8 @@ function StudentDashboardInner() {
     window.location.href = '/'
   }
 
-  if (!userData) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <h1 className="text-2xl font-bold mb-4">Loading...</h1>
-          <p>Please wait while we set up your session.</p>
-        </div>
-      </div>
-    )
+  if (!userData || isPageLoading) {
+    return <FullPageLoader variant="labroom" />
   }
 
   return (
@@ -2835,9 +2838,10 @@ function StudentDashboardInner() {
   )
 }
 
+
 export default function StudentPage() {
   return (
-    <Suspense fallback={<div className="min-h-screen flex items-center justify-center"><LoadingSpinner /></div>}>
+    <Suspense fallback={<FullPageLoader variant="labroom" />}>
       <StudentDashboardInner />
     </Suspense>
   )

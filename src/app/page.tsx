@@ -1511,7 +1511,7 @@ export default function Home() {
               </div>
               <span className="text-base md:text-lg font-bold gradient-text">ShareMe</span>
             </div>
-            <p className="text-muted-foreground text-xs md:text-sm text-center" style={{ fontFamily: 'Consolas, monospace' }}>
+            <p className="text-muted-foreground text-sm md:text-sm text-center" style={{ fontFamily: 'Consolas, monospace' }}>
               Made With <svg className="mx-1 inline-block" style={{ height: '18px', width: '18px' }} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                 <g id="SVGRepo_bgCarrier" strokeWidth="0"></g>
                 <g id="SVGRepo_tracerCarrier" strokeLinecap="round" strokeLinejoin="round"></g>

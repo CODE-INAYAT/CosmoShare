@@ -27,6 +27,7 @@ import { QRCodeScanner } from '@/components/QRCodeScanner'
 import { CodeInput, CodeInputRef } from '@/components/CodeInput'
 import { ConnectionStatusBadge } from '@/components/ConnectionStatusBadge'
 import { OfflineDialog } from '@/components/OfflineDialog'
+import FullPageLoader from '@/components/FullPageLoader'
 
 // Hooks
 import { useOneShareWebRTC } from '@/hooks/useOneShareWebRTC'
@@ -134,14 +135,24 @@ const formatBytes = (bytes: number): string => {
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
 }
 
+
 // Inner component that uses searchParams
 function OneShareInner() {
     const router = useRouter()
     const searchParams = useSearchParams()
     const [mounted, setMounted] = useState(false)
+    const [isPageLoading, setIsPageLoading] = useState(true)
 
     // Network status
     const { isOnline } = useNetworkStatus()
+
+    // Show loading screen for minimum 1 second
+    useEffect(() => {
+        const timer = setTimeout(() => {
+            setIsPageLoading(false)
+        }, 3000)
+        return () => clearTimeout(timer)
+    }, [])
 
     // Mode selection
     const [mode, setMode] = useState<'select' | 'send' | 'receive'>('select')
@@ -734,7 +745,7 @@ function OneShareInner() {
         }
     }
 
-    if (!mounted) return null
+    if (!mounted || isPageLoading) return <FullPageLoader variant="oneshare" />
 
     return (
         <div className="min-h-screen bg-background text-foreground overflow-hidden relative transition-colors duration-500">
@@ -1507,14 +1518,12 @@ function OneShareInner() {
     )
 }
 
+
 // Main export with Suspense wrapper for useSearchParams
+
 export default function OneSharePage() {
     return (
-        <Suspense fallback={
-            <div className="min-h-screen flex items-center justify-center">
-                <Loader2 className="w-8 h-8 animate-spin" />
-            </div>
-        }>
+        <Suspense fallback={<FullPageLoader variant="oneshare" />}>
             <OneShareInner />
         </Suspense>
     )
