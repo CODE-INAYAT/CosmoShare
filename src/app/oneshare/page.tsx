@@ -1046,7 +1046,7 @@ function OneShareInner() {
                                             disabled={!isConnected || (selectedFiles.length === 0 && !linkUrl && (!message || !codeShareMode))}
                                             onClick={handleCreateSession}
                                         >
-                                            <Sparkles className="w-4 h-4 mr-2" />
+                                            <Hash className="w-4 h-4 mr-2" />
                                             Generate Share Code
                                         </Button>
                                     </CardContent>

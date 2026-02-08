@@ -24,6 +24,7 @@ import {
   Globe,
   ArrowRight,
   Sparkles,
+  UserPlus,
   MonitorSmartphone,
   Upload,
   Download,
@@ -754,7 +755,7 @@ export default function Home() {
     {
       icon: Share2,
       title: 'P2P File Sharing',
-      description: 'Lightning-fast peer-to-peer transfers using WebRTC technology. No server upload required.',
+      description: 'Lightning-fast peer-to-peer transfers using Seamless Real-Time Connectivity. No server upload required.',
       color: 'from-blue-500 to-sky-500'
     },
     {
@@ -873,7 +874,7 @@ export default function Home() {
                 className="gradient-primary text-white hover:opacity-90 transition-opacity hidden sm:flex glow-button"
                 onClick={() => document.getElementById('portal')?.scrollIntoView({ behavior: 'smooth' })}
               >
-                <Sparkles className="w-4 h-4 mr-2" />
+                <UserPlus className="w-4 h-4 mr-2" />
                 Join Room
               </Button>
             </div>
@@ -893,7 +894,7 @@ export default function Home() {
                   <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
                   <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
                 </span>
-                <span className="text-sm text-muted-foreground">Powered by WebRTC Technology</span>
+                <span className="text-sm text-muted-foreground">Seamless Real-Time Connectivity</span>
               </div>
 
               {/* Main Headline */}

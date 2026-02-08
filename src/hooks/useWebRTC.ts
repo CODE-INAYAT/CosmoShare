@@ -14,6 +14,7 @@ type ReceiveCallbacks = {
     message?: string,
     sender?: { name?: string; uniqueId?: string; allowReshare?: boolean; fileId?: string }
   ) => void
+  onTransferCancelled?: (fromId: string, sender?: { name?: string; uniqueId?: string }) => void
   onConnect?: (peerId: string) => void
   onClose?: (peerId: string) => void
   onSendStart?: (targetId: string, fileName: string, totalBytes: number) => void
@@ -51,10 +52,20 @@ export const useWebRTC = (socket: any, roomNumber: string, callbacks: ReceiveCal
     socket.on('webrtc-answer', onAnswer)
     socket.on('webrtc-ice-candidate', onIce)
 
+    const onTransferCancelled = (data: { senderId: string; senderName?: string; senderUniqueId?: string }) => {
+      const sender = { name: data.senderName, uniqueId: data.senderUniqueId }
+      if (data.senderId) {
+        recvState.current.delete(data.senderId)
+        callbacks.onTransferCancelled?.(data.senderId, sender)
+      }
+    }
+    socket.on('transfer-cancelled', onTransferCancelled)
+
     return () => {
       socket.off('webrtc-offer', onOffer)
       socket.off('webrtc-answer', onAnswer)
       socket.off('webrtc-ice-candidate', onIce)
+      socket.off('transfer-cancelled', onTransferCancelled)
     }
   }, [socket])
 
@@ -164,60 +175,6 @@ export const useWebRTC = (socket: any, roomNumber: string, callbacks: ReceiveCal
     })
 
     peer.on('data', async (data: any) => {
-      // Control frames: primarily strings, but some browsers can deliver as UTF-8 bytes.
-      if (typeof data === 'string') {
-        try {
-          const obj = JSON.parse(data)
-          switch (obj.type) {
-            case 'file-metadata': {
-              recvState.current.set(targetId, { meta: obj, buffers: [], received: 0 })
-              callbacks.onFileMetadata?.(targetId, obj)
-              return
-            }
-            case 'file-complete': {
-              const state = recvState.current.get(targetId)
-              if (state && state.meta) {
-                const blob = new Blob(state.buffers as BlobPart[], { type: state.meta.fileType })
-                const url = URL.createObjectURL(blob)
-                callbacks.onFileComplete?.(targetId, url, state.meta)
-                recvState.current.delete(targetId)
-              }
-              return
-            }
-            case 'message':
-              callbacks.onMessage?.(targetId, obj.message)
-              return
-            case 'msg-metadata': {
-              // Start receiving chunked message
-              msgRecvState.current.set(targetId, { totalSize: obj.totalSize, chunks: [], received: 0 })
-              return
-            }
-            case 'msg-chunk': {
-              const msgState = msgRecvState.current.get(targetId)
-              if (msgState) {
-                msgState.chunks.push(obj.data)
-                msgState.received += obj.data.length
-              }
-              return
-            }
-            case 'msg-complete': {
-              const msgState = msgRecvState.current.get(targetId)
-              if (msgState) {
-                const fullMessage = msgState.chunks.join('')
-                callbacks.onMessage?.(targetId, fullMessage)
-                msgRecvState.current.delete(targetId)
-              }
-              return
-            }
-            case 'link':
-              callbacks.onLink?.(targetId, obj.linkUrl, obj.message, { name: obj.senderName, uniqueId: obj.senderUniqueId, allowReshare: obj.allowReshare })
-              return
-          }
-        } catch {
-          // ignore malformed control frames
-        }
-      }
-
       // Binary chunk path (ArrayBuffer, TypedArray, or Blob). Heuristic decode for small JSON control frames.
       let u8: Uint8Array | null = null
       if (data instanceof ArrayBuffer) {
@@ -230,58 +187,77 @@ export const useWebRTC = (socket: any, roomNumber: string, callbacks: ReceiveCal
         u8 = new Uint8Array(buf)
       }
 
-      if (u8) {
+      // Control frames: primarily strings, but some browsers can deliver as UTF-8 bytes.
+      let obj: any = null
+      if (typeof data === 'string') {
+        try { obj = JSON.parse(data) } catch { }
+      } else if (u8) {
         // If it looks like a small JSON control frame (starts with '{' or '['), try to parse as control
         const firstByte = u8.byteLength > 0 ? u8[0] : 0
         const looksJson = (firstByte === 0x7b /* '{' */ || firstByte === 0x5b /* '[' */)
         if (looksJson && u8.byteLength <= 8 * 1024) {
           try {
             const text = new TextDecoder().decode(u8)
-            const obj = JSON.parse(text)
-            if (obj && obj.type) {
-              if (obj.type === 'file-metadata') {
-                recvState.current.set(targetId, { meta: obj, buffers: [], received: 0 })
-                callbacks.onFileMetadata?.(targetId, obj)
-                return
-              }
-              if (obj.type === 'file-complete') {
-                const state = recvState.current.get(targetId)
-                if (state && state.meta) {
-                  const blob = new Blob(state.buffers as BlobPart[], { type: state.meta.fileType })
-                  const url = URL.createObjectURL(blob)
-                  callbacks.onFileComplete?.(targetId, url, state.meta)
-                  recvState.current.delete(targetId)
-                }
-                return
-              }
-              if (obj.type === 'message') { callbacks.onMessage?.(targetId, obj.message, { name: obj.senderName, uniqueId: obj.senderUniqueId, allowReshare: obj.allowReshare }); return }
-              if (obj.type === 'msg-metadata') {
-                msgRecvState.current.set(targetId, { totalSize: obj.totalSize, chunks: [], received: 0, senderName: obj.senderName, senderUniqueId: obj.senderUniqueId, allowReshare: obj.allowReshare })
-                return
-              }
-              if (obj.type === 'msg-chunk') {
-                const msgState = msgRecvState.current.get(targetId)
-                if (msgState) {
-                  msgState.chunks.push(obj.data)
-                  msgState.received += obj.data.length
-                }
-                return
-              }
-              if (obj.type === 'msg-complete') {
-                const msgState = msgRecvState.current.get(targetId)
-                if (msgState) {
-                  const fullMessage = msgState.chunks.join('')
-                  callbacks.onMessage?.(targetId, fullMessage, { name: msgState.senderName, uniqueId: msgState.senderUniqueId, allowReshare: msgState.allowReshare })
-                  msgRecvState.current.delete(targetId)
-                }
-                return
-              }
-              if (obj.type === 'link') { callbacks.onLink?.(targetId, obj.linkUrl, obj.message, { name: obj.senderName, uniqueId: obj.senderUniqueId, allowReshare: obj.allowReshare }); return }
-            }
-          } catch {
-            // fall through to binary handling
-          }
+            obj = JSON.parse(text)
+          } catch { }
         }
+      }
+
+      if (obj && obj.type) {
+        switch (obj.type) {
+          case 'file-metadata': {
+            recvState.current.set(targetId, { meta: obj, buffers: [], received: 0 })
+            callbacks.onFileMetadata?.(targetId, obj)
+            return
+          }
+          case 'file-complete': {
+            const state = recvState.current.get(targetId)
+            if (state && state.meta) {
+              const blob = new Blob(state.buffers as BlobPart[], { type: state.meta.fileType })
+              const url = URL.createObjectURL(blob)
+              callbacks.onFileComplete?.(targetId, url, state.meta)
+              recvState.current.delete(targetId)
+            }
+            return
+          }
+          case 'message':
+            callbacks.onMessage?.(targetId, obj.message)
+            return
+          case 'msg-metadata': {
+            // Start receiving chunked message
+            msgRecvState.current.set(targetId, { totalSize: obj.totalSize, chunks: [], received: 0 })
+            return
+          }
+          case 'msg-chunk': {
+            const msgState = msgRecvState.current.get(targetId)
+            if (msgState) {
+              msgState.chunks.push(obj.data)
+              msgState.received += obj.data.length
+            }
+            return
+          }
+          case 'msg-complete': {
+            const msgState = msgRecvState.current.get(targetId)
+            if (msgState) {
+              const fullMessage = msgState.chunks.join('')
+              callbacks.onMessage?.(targetId, fullMessage)
+              msgRecvState.current.delete(targetId)
+            }
+            return
+          }
+          case 'link':
+            callbacks.onLink?.(targetId, obj.linkUrl, obj.message, { name: obj.senderName, uniqueId: obj.senderUniqueId, allowReshare: obj.allowReshare })
+            return
+          case 'transfer-cancelled':
+            // Clear any in-progress receive state for this sender
+            recvState.current.delete(targetId)
+            callbacks.onTransferCancelled?.(targetId, { name: obj.senderName, uniqueId: obj.senderUniqueId })
+            return
+        }
+      }
+
+      // Handle binary file data if not a control frame
+      if (u8) {
         const state = recvState.current.get(targetId)
         if (state) {
           // Avoid extra copies; store the Uint8Array directly (BlobPart)
@@ -293,7 +269,6 @@ export const useWebRTC = (socket: any, roomNumber: string, callbacks: ReceiveCal
     })
 
     peer.on('error', (err: any) => {
-      // Treat user-initiated/remote closes as benign and avoid noisy errors
       const message = String(err?.message || '')
       const name = String(err?.name || '')
       const reason = String(err?.reason || '')
@@ -355,161 +330,327 @@ export const useWebRTC = (socket: any, roomNumber: string, callbacks: ReceiveCal
     if (peer) peer.signal(candidate)
   }
 
-  const sendFile = async (targetId: string, file: File, metadata?: { message?: string; senderName?: string; senderUniqueId?: string; allowReshare?: boolean; fileId?: string }): Promise<'PW-RTC' | 'SW-RTC' | 'TW-RTC' | 'PW-RTC-F' | void> => {
-    let peer = peersRef.current.get(targetId)
-    if (!peer) {
-      peer = createPeer(targetId, true)
+  const sendFile = async (
+    targetId: string,
+    file: File,
+    metadata?: { message?: string; senderName?: string; senderUniqueId?: string; allowReshare?: boolean; fileId?: string },
+    resolveTargetId?: () => string | undefined, // Callback to get latest socket ID (for retry with refreshed user)
+    isCancelled?: () => boolean // Callback to check if transfer was cancelled externally
+  ): Promise<'PW-RTC' | 'SW-RTC' | 'TW-RTC' | 'PW-RTC-F' | void> => {
+    const MAX_RETRIES = 3
+    const ATTEMPT_TIMEOUT = 5000 // 5 seconds per attempt
+    let peer: SimplePeer.Instance | undefined
+    let connected = false
+    let currentTargetId = targetId
+
+    console.log(`[sendFile] Starting transfer to ${targetId}, file: ${file.name}`)
+
+    // IMMEDIATELY resolve to latest socket ID (user may have refreshed before transfer started)
+    if (resolveTargetId) {
+      const latestId = resolveTargetId()
+      if (latestId && latestId !== currentTargetId) {
+        console.log(`[sendFile] Using LATEST socket ID: ${latestId} (originally ${currentTargetId})`)
+        currentTargetId = latestId
+      }
     }
 
-    // Wait for data channel to be ready
-    if (peer.destroyed) return
-    if (!(peer as any).connected) {
-      await new Promise<void>((resolve, reject) => {
-        const onConnect = () => {
-          peer!.off('error', onError)
-          resolve()
+    // Try to establish connection up to 3 times
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+      // Store old ID before potentially updating (needed for cleanup)
+      const oldTargetId = currentTargetId
+
+      // Before each retry, get the latest socket ID (user may have refreshed)
+      if (attempt > 1 && resolveTargetId) {
+        const newTargetId = resolveTargetId()
+        if (newTargetId && newTargetId !== currentTargetId) {
+          console.log(`[sendFile] User came back with new ID: ${newTargetId} (was ${currentTargetId})`)
+          currentTargetId = newTargetId
+        } else if (!newTargetId) {
+          console.log(`[sendFile] User not found online, will retry with same ID`)
+        } else {
+          console.log(`[sendFile] User still has same ID: ${currentTargetId}`)
         }
-        const onError = (e: any) => {
-          peer!.off('connect', onConnect)
-          reject(e)
+      }
+
+      console.log(`[sendFile] Attempt ${attempt}/${MAX_RETRIES} for ${currentTargetId}`)
+
+      // Destroy previous peer if exists and failed - USE OLD ID for cleanup!
+      if (peer && (peer.destroyed || !(peer as any).connected)) {
+        console.log(`[sendFile] Destroying failed peer for ${oldTargetId}`)
+        try { peer.destroy() } catch { }
+        peersRef.current.delete(oldTargetId) // Delete OLD peer, not new one!
+      }
+
+      peer = peersRef.current.get(currentTargetId)
+      if (!peer) {
+        console.log(`[sendFile] Creating new peer for ${currentTargetId}`)
+        peer = createPeer(currentTargetId, true)
+      } else {
+        console.log(`[sendFile] Reusing existing peer for ${currentTargetId}`)
+      }
+
+      if (peer.destroyed) {
+        console.log(`[sendFile] Peer destroyed immediately, retrying...`)
+        continue
+      }
+
+      // Wait for connection with event-based detection AND timeout
+      if (!(peer as any).connected) {
+        console.log(`[sendFile] Waiting for connection (timeout: ${ATTEMPT_TIMEOUT}ms)...`)
+        const result = { connected: false }
+
+        await new Promise<void>((resolve) => {
+          const timeoutId = setTimeout(() => {
+            console.log(`[sendFile] Attempt ${attempt} timed out`)
+            peer!.off('connect', onConnect)
+            peer!.off('error', onConnectError)
+            peer!.off('close', onClose)
+            resolve()
+          }, ATTEMPT_TIMEOUT)
+
+          const onConnect = () => {
+            console.log(`[sendFile] Connected on attempt ${attempt}`)
+            clearTimeout(timeoutId)
+            peer!.off('error', onConnectError)
+            peer!.off('close', onClose)
+            result.connected = true
+            resolve()
+          }
+          const onConnectError = (err: any) => {
+            console.log(`[sendFile] Error on attempt ${attempt}:`, err?.message || err)
+            clearTimeout(timeoutId)
+            peer!.off('connect', onConnect)
+            peer!.off('close', onClose)
+            resolve()
+          }
+          const onClose = () => {
+            console.log(`[sendFile] Peer closed on attempt ${attempt}`)
+            clearTimeout(timeoutId)
+            peer!.off('connect', onConnect)
+            peer!.off('error', onConnectError)
+            resolve()
+          }
+          peer!.once('connect', onConnect)
+          peer!.once('error', onConnectError)
+          peer!.once('close', onClose)
+        })
+
+        if (!result.connected) {
+          console.log(`[sendFile] Attempt ${attempt} failed, will retry...`)
+          continue // Retry
         }
-        peer!.once('connect', onConnect)
-        peer!.once('error', onError)
-      }).catch(() => { })
-    }
-    if (peer.destroyed || !(peer as any).connected) return
+      }
 
-    // Determine connection method now that we're connected
-    const method = await getPeerMethod(targetId)
-
-    const meta = {
-      type: 'file-metadata',
-      fileName: file.name,
-      fileSize: file.size,
-      fileType: file.type,
-      message: metadata?.message,
-      senderName: metadata?.senderName,
-      senderUniqueId: metadata?.senderUniqueId,
-      allowReshare: metadata?.allowReshare,
-      fileId: metadata?.fileId,
-      method,
+      if (!peer.destroyed && (peer as any).connected) {
+        console.log(`[sendFile] Connection established on attempt ${attempt}`)
+        connected = true
+        break // Connection successful
+      }
     }
+
+    // All retries failed
+    if (!connected || !peer || peer.destroyed || !(peer as any).connected) {
+      console.log(`[sendFile] All ${MAX_RETRIES} attempts failed, showing Unreachable dialog`)
+      return // undefined triggers Unreachable dialog
+    }
+
+    // Event-based disconnect detection for during-transfer drops
+    let disconnected = false
+    let disconnectResolver: (() => void) | null = null
+    const disconnectPromise = new Promise<void>(resolve => { disconnectResolver = resolve })
+    const onDisconnect = () => { disconnected = true; disconnectResolver?.() }
+    peer.on('close', onDisconnect)
+    peer.on('error', onDisconnect)
+    const cleanup = () => { peer?.off('close', onDisconnect); peer?.off('error', onDisconnect) }
+
     try {
-      peer.send(JSON.stringify(meta))
-    } catch { }
 
-    // Adaptive chunk size per connection type (32 = SW-RTC) 
-    let chunkSize = 32 * 1024
-    if (method === 'PW-RTC') chunkSize = 60 * 1024
-    if (method === 'TW-RTC') chunkSize = 16 * 1024
-    let offset = 0
-    callbacks.onSendStart?.(targetId, file.name, file.size)
-    sendState.current.set(targetId, { fileName: file.name, total: file.size, sent: 0 })
+      // Determine connection method now that we're connected
+      const method = await getPeerMethod(currentTargetId)
 
-    const readSlice = async (start: number, end: number): Promise<ArrayBuffer> => {
-      // Use Blob.arrayBuffer() to avoid FileReader overhead on mobile
-      return await file.slice(start, end).arrayBuffer()
-    }
-
-    while (offset < file.size) {
-      if (peer.destroyed || !(peer as any).connected) {
-        // Abort gracefully if connection drops
-        break
+      const meta = {
+        type: 'file-metadata',
+        fileName: file.name,
+        fileSize: file.size,
+        fileType: file.type,
+        message: metadata?.message,
+        senderName: metadata?.senderName,
+        senderUniqueId: metadata?.senderUniqueId,
+        allowReshare: metadata?.allowReshare,
+        fileId: metadata?.fileId,
+        method,
       }
-      const next = Math.min(offset + chunkSize, file.size)
-      const chunk = await readSlice(offset, next)
-      // Use stream write for backpressure
-      const u8 = new Uint8Array(chunk)
-      let ok: any = true
       try {
-        ok = (peer as any).write ? (peer as any).write(u8) : (peer as any).send(u8)
-      } catch (e) {
-        // Likely channel closing mid-send; exit loop
-        break
+        peer.send(JSON.stringify(meta))
+      } catch { cleanup(); return }
+
+      // Adaptive chunk size per connection type
+      let chunkSize = 32 * 1024
+      if (method === 'PW-RTC') chunkSize = 60 * 1024
+      if (method === 'TW-RTC') chunkSize = 16 * 1024
+      let offset = 0
+      callbacks.onSendStart?.(currentTargetId, file.name, file.size)
+      sendState.current.set(currentTargetId, { fileName: file.name, total: file.size, sent: 0 })
+
+      const readSlice = async (start: number, end: number): Promise<ArrayBuffer> => {
+        return await file.slice(start, end).arrayBuffer()
       }
-      // Honor stream backpressure via simple-peer 'drain'
-      if (ok === false && (peer as any).once) {
-        await new Promise<void>(res => (peer as any).once('drain', () => res()))
-      }
-      // Additional RTCDataChannel backpressure for mobile devices with robust fallback
-      try {
-        const ch: any = (peer as any)?._channel || (peer as any)?.channel || (peer as any)?.dataChannel
-        if (ch && typeof ch.bufferedAmount === 'number') {
-          const MAX_BUFFER = 512 * 1024 // 512KB cap for mobile
-          const LOW_WATER = 256 * 1024
-          if (ch.bufferedAmount > MAX_BUFFER) {
-            try { if (!ch.bufferedAmountLowThreshold || ch.bufferedAmountLowThreshold > LOW_WATER) ch.bufferedAmountLowThreshold = LOW_WATER } catch { }
-            // Wait using both event and polling with timeout to avoid hangs on browsers not firing the event
-            await new Promise<void>((resolve) => {
-              let done = false
-              const clearAll = () => { done = true; try { ch.removeEventListener?.('bufferedamountlow', onLow as any) } catch { }; try { clearInterval(timer) } catch { }; try { clearTimeout(tmo) } catch { } }
-              const onLow = () => { if (done) return; clearAll(); resolve() }
-              const poll = () => { if (done) return; if (ch.bufferedAmount <= LOW_WATER) { clearAll(); resolve() } }
-              let timer: any = setInterval(poll, 50)
-              let tmo: any = setTimeout(() => { if (done) return; clearAll(); resolve() }, 2000)
-              try { ch.addEventListener?.('bufferedamountlow', onLow as any, { once: true }) } catch { }
-            })
+
+      let loopCounter = 0
+      while (offset < file.size) {
+        // High-frequency check for cancellation at start of iteration
+        if (isCancelled?.() || peer.destroyed || !(peer as any).connected || disconnected) {
+          break
+        }
+
+        const next = Math.min(offset + chunkSize, file.size)
+        // Read file slice asynchronously - this already yields but maybe not enough if disk I/O is fast/cached
+        const chunk = await readSlice(offset, next)
+
+        // Re-check after async read
+        if (isCancelled?.()) break
+
+        const u8 = new Uint8Array(chunk)
+        let ok: any = true
+        try {
+          ok = (peer as any).write ? (peer as any).write(u8) : (peer as any).send(u8)
+        } catch (e) {
+          break // Channel closing mid-send
+        }
+
+        // Honor stream backpressure - race against disconnect (not timeout)
+        if (ok === false && (peer as any).once) {
+          await Promise.race([
+            new Promise<void>(res => (peer as any).once('drain', () => res())),
+            disconnectPromise
+          ])
+          if (disconnected || peer.destroyed || !(peer as any).connected || isCancelled?.()) {
+            break
           }
         }
-      } catch { }
-      offset = next
-      callbacks.onSendProgress?.(targetId, file.name, offset, file.size)
-      const s = sendState.current.get(targetId)
-      if (s) { s.sent = offset; sendState.current.set(targetId, s) }
-    }
-    if (offset < file.size) {
-      // Aborted before completion
-      callbacks.onSendFailed?.(targetId, file.name, 'Transfer aborted')
-      sendState.current.delete(targetId)
+
+        // RTCDataChannel backpressure for mobile - race against disconnect
+        try {
+          const ch: any = (peer as any)?._channel || (peer as any)?.channel || (peer as any)?.dataChannel
+          if (ch && typeof ch.bufferedAmount === 'number') {
+            const MAX_BUFFER = 512 * 1024
+            const LOW_WATER = 256 * 1024
+
+            // Check cancellation before potentially waiting
+            if (isCancelled?.()) break
+
+            if (ch.bufferedAmount > MAX_BUFFER) {
+              try { if (!ch.bufferedAmountLowThreshold || ch.bufferedAmountLowThreshold > LOW_WATER) ch.bufferedAmountLowThreshold = LOW_WATER } catch { }
+              await Promise.race([
+                new Promise<void>((resolve) => {
+                  let done = false
+                  const onLow = () => { if (done) return; done = true; try { ch.removeEventListener?.('bufferedamountlow', onLow) } catch { }; try { clearInterval(timer) } catch { }; resolve() }
+                  // Poll more frequently (20ms) for better responsiveness, but check cancellation inside poll
+                  const poll = () => {
+                    if (done) return;
+                    if (ch.bufferedAmount <= LOW_WATER || disconnected || isCancelled?.()) { onLow() }
+                  }
+                  const timer = setInterval(poll, 20)
+                  try { ch.addEventListener?.('bufferedamountlow', onLow, { once: true }) } catch { }
+                }),
+                disconnectPromise
+              ])
+
+              if (disconnected || isCancelled?.()) break
+            }
+          }
+        } catch { }
+
+        offset = next
+        callbacks.onSendProgress?.(currentTargetId, file.name, offset, file.size)
+        const s = sendState.current.get(currentTargetId)
+        if (s) { s.sent = offset; sendState.current.set(currentTargetId, s) }
+
+        // Explicitly yield to main thread every few chunks to allow UI events (like Cancel click) to process
+        loopCounter++
+        if (loopCounter % 4 === 0) {
+          await new Promise<void>(r => setTimeout(r, 0))
+        }
+      }
+
+      if (offset < file.size) {
+        callbacks.onSendFailed?.(currentTargetId, file.name, 'Transfer aborted')
+        sendState.current.delete(currentTargetId)
+        cleanup()
+        return
+      }
+
+      if (!peer.destroyed && (peer as any).connected && !disconnected) {
+        try {
+          peer.send(JSON.stringify({ type: 'file-complete', fileName: file.name }))
+        } catch { }
+      }
+      callbacks.onSendComplete?.(currentTargetId, file.name)
+      sendState.current.delete(currentTargetId)
+      cleanup()
+      return method
+    } catch (e) {
+      cleanup()
       return
     }
-    if (!peer.destroyed && (peer as any).connected) {
-      try {
-        peer.send(JSON.stringify({ type: 'file-complete', fileName: file.name }))
-      } catch { }
-    }
-    callbacks.onSendComplete?.(targetId, file.name)
-    sendState.current.delete(targetId)
-    return method
   }
 
   const sendMessage = async (targetId: string, message: string, sender?: { name?: string; uniqueId?: string; allowReshare?: boolean }) => {
     const peer = peersRef.current.get(targetId)
     if (!peer || peer.destroyed) return
-    if (!(peer as any).connected) {
-      await new Promise<void>((resolve) => {
-        const onConnect = () => resolve()
-          ; (peer as any).once?.('connect', onConnect)
-      })
+
+    // Event-based disconnect detection (100% reliable, no timeouts)
+    let disconnected = false
+    const onDisconnect = () => { disconnected = true }
+    peer.on('close', onDisconnect)
+    peer.on('error', onDisconnect)
+    const cleanup = () => {
+      peer?.off('close', onDisconnect)
+      peer?.off('error', onDisconnect)
     }
-    if (!peer.destroyed && (peer as any).connected) {
-      try {
-        const CHUNK_SIZE = 6 * 1024 // 6KB chunks - stays under 8KB binary JSON limit with overhead
 
-        if (message.length <= CHUNK_SIZE) {
-          // Small message - send directly with sender info and allowReshare
-          peer.send(JSON.stringify({ type: 'message', message, senderName: sender?.name, senderUniqueId: sender?.uniqueId, allowReshare: sender?.allowReshare, timestamp: Date.now() }))
-        } else {
-          // Large message - send in chunks
-          const totalSize = message.length
+    try {
+      if (!(peer as any).connected) {
+        await new Promise<void>((resolve) => {
+          const onConnect = () => { peer!.off('error', onConnectError); resolve() }
+          const onConnectError = () => { peer!.off('connect', onConnect); disconnected = true; resolve() }
+          peer!.once('connect', onConnect)
+          peer!.once('error', onConnectError)
+        })
+      }
+      if (peer.destroyed || !(peer as any).connected || disconnected) { cleanup(); return }
 
-          // Send metadata with sender info and allowReshare
-          peer.send(JSON.stringify({ type: 'msg-metadata', totalSize, senderName: sender?.name, senderUniqueId: sender?.uniqueId, allowReshare: sender?.allowReshare, timestamp: Date.now() }))
+      const CHUNK_SIZE = 6 * 1024 // 6KB chunks - stays under 8KB binary JSON limit with overhead
 
-          // Send chunks
-          let offset = 0
-          while (offset < message.length) {
-            const chunk = message.slice(offset, offset + CHUNK_SIZE)
-            peer.send(JSON.stringify({ type: 'msg-chunk', data: chunk }))
-            offset += CHUNK_SIZE
-            // Small delay to prevent buffer overflow
-            await new Promise(r => setTimeout(r, 5))
-          }
+      if (message.length <= CHUNK_SIZE) {
+        // Small message - send directly with sender info and allowReshare
+        peer.send(JSON.stringify({ type: 'message', message, senderName: sender?.name, senderUniqueId: sender?.uniqueId, allowReshare: sender?.allowReshare, timestamp: Date.now() }))
+      } else {
+        // Large message - send in chunks
+        const totalSize = message.length
 
-          // Send completion signal
+        // Send metadata with sender info and allowReshare
+        peer.send(JSON.stringify({ type: 'msg-metadata', totalSize, senderName: sender?.name, senderUniqueId: sender?.uniqueId, allowReshare: sender?.allowReshare, timestamp: Date.now() }))
+
+        // Send chunks
+        let offset = 0
+        while (offset < message.length) {
+          if (disconnected || peer.destroyed || !(peer as any).connected) break
+          const chunk = message.slice(offset, offset + CHUNK_SIZE)
+          peer.send(JSON.stringify({ type: 'msg-chunk', data: chunk }))
+          offset += CHUNK_SIZE
+          // Small delay to prevent buffer overflow
+          await new Promise(r => setTimeout(r, 5))
+        }
+
+        // Send completion signal
+        if (!disconnected && !peer.destroyed && (peer as any).connected) {
           peer.send(JSON.stringify({ type: 'msg-complete' }))
         }
-      } catch { }
+      }
+      cleanup()
+    } catch {
+      cleanup()
     }
   }
 
@@ -523,18 +664,62 @@ export const useWebRTC = (socket: any, roomNumber: string, callbacks: ReceiveCal
   ): Promise<'PW-RTC' | 'SW-RTC' | 'TW-RTC' | 'PW-RTC-F' | void> => {
     const peer = peersRef.current.get(targetId)
     if (!peer || peer.destroyed) return
-    if (!(peer as any).connected) {
-      await new Promise<void>((resolve) => {
-        const onConnect = () => resolve()
-          ; (peer as any).once?.('connect', onConnect)
+
+    // Event-based disconnect detection (100% reliable, no timeouts)
+    let disconnected = false
+    const onDisconnect = () => { disconnected = true }
+    peer.on('close', onDisconnect)
+    peer.on('error', onDisconnect)
+    const cleanup = () => {
+      peer?.off('close', onDisconnect)
+      peer?.off('error', onDisconnect)
+    }
+
+    try {
+      if (!(peer as any).connected) {
+        await new Promise<void>((resolve) => {
+          const onConnect = () => { peer!.off('error', onConnectError); resolve() }
+          const onConnectError = () => { peer!.off('connect', onConnect); disconnected = true; resolve() }
+          peer!.once('connect', onConnect)
+          peer!.once('error', onConnectError)
+        })
+      }
+      if (peer.destroyed || !(peer as any).connected || disconnected) { cleanup(); return }
+
+      const method = await getPeerMethod(targetId)
+      peer.send(JSON.stringify({ type: 'link', linkUrl, message, senderName: sender?.name, senderUniqueId: sender?.uniqueId, allowReshare, method, fileId }))
+      cleanup()
+      return method
+    } catch {
+      cleanup()
+      return
+    }
+  }
+
+
+  const sendCancellation = (targetId: string, sender?: { name?: string; uniqueId?: string }) => {
+    // 1. Send via Socket (Reliable, Immediate)
+    if (socket && socket.connected) {
+      socket.emit('transfer-cancelled', {
+        targetId,
+        senderName: sender?.name,
+        senderUniqueId: sender?.uniqueId
       })
     }
-    if (!peer.destroyed && (peer as any).connected) {
-      try {
-        const method = await getPeerMethod(targetId)
-        peer.send(JSON.stringify({ type: 'link', linkUrl, message, senderName: sender?.name, senderUniqueId: sender?.uniqueId, allowReshare, method, fileId }))
-        return method
-      } catch { }
+
+    const peer = peersRef.current.get(targetId)
+    if (!peer || peer.destroyed || !(peer as any).connected) return
+
+    try {
+      const payload = JSON.stringify({
+        type: 'transfer-cancelled',
+        senderName: sender?.name,
+        senderUniqueId: sender?.uniqueId
+      })
+      if ((peer as any).write) (peer as any).write(payload)
+      else peer.send(payload)
+    } catch (e) {
+      console.error('Failed to send cancellation:', e)
     }
   }
 
@@ -559,6 +744,7 @@ export const useWebRTC = (socket: any, roomNumber: string, callbacks: ReceiveCal
     sendFile,
     sendMessage,
     sendLink,
+    sendCancellation,
     closeConnection,
     closeAllConnections,
     getPeerMethod,

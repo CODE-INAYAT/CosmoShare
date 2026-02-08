@@ -263,6 +263,18 @@ export class RoomDurableObject implements DurableObject {
           return
         }
 
+        case 'transfer-cancelled': {
+          const { targetId, senderName, senderUniqueId } = data
+          if (targetId) {
+            sendTo(targetId, 'transfer-cancelled', {
+              senderName,
+              senderUniqueId,
+              senderId: socketId
+            })
+          }
+          return
+        }
+
         // ============================================
         // OneShare Events: Room-less file sharing
         // ============================================

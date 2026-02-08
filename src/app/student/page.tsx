@@ -105,6 +105,7 @@ function StudentDashboardInner() {
   const searchParams = useSearchParams()
   const [userData, setUserData] = useState<any>(null)
   const [onlineUsers, setOnlineUsers] = useState<User[]>([])
+  const onlineUsersRef = useRef<User[]>([]) // Ref for resolveTargetId callback to avoid closure issues
   const [selectedFiles, setSelectedFiles] = useState<File[]>([])
   const [linkUrl, setLinkUrl] = useState('')
   const [message, setMessage] = useState('')
@@ -128,6 +129,11 @@ function StudentDashboardInner() {
     }, 3000)
     return () => clearTimeout(timer)
   }, [])
+
+  // Keep ref in sync with state (for callbacks that need current value)
+  useEffect(() => {
+    onlineUsersRef.current = onlineUsers
+  }, [onlineUsers])
   const [isUploading, setIsUploading] = useState(false)
   const [uploadProgress, setUploadProgress] = useState(0)
   const [googleWarningOpen, setGoogleWarningOpen] = useState(false)
@@ -156,26 +162,38 @@ function StudentDashboardInner() {
   const [offlineUsersInfo, setOfflineUsersInfo] = useState<{ id: string; name: string; uniqueId: string }[]>([])
   const [pendingTargets, setPendingTargets] = useState<string[]>([])
   const [preflightIsPrint, setPreflightIsPrint] = useState(false)
-  // Error modal for share failures
-  const [errorModalOpen, setErrorModalOpen] = useState(false)
-  const [errorModalMessage, setErrorModalMessage] = useState('')
+
+
   // Track current send target count to tailor error messages
   const sendingTargetsCountRef = useRef(0)
   // Track per-recipient transfer status for multi-recipient transfers
-  const [transferRecipients, setTransferRecipients] = useState<{ id: string; name: string; uniqueId: string; status: 'pending' | 'sending' | 'completed' }[]>([])
+  const [transferRecipients, setTransferRecipients] = useState<{ id: string; name: string; uniqueId: string; status: 'pending' | 'sending' | 'completed' | 'skipped' }[]>([])
   // Cache recipient info at selection time for better labels even if they go offline
   const recipientInfoRef = useRef<Record<string, { name: string; uniqueId: string }>>({})
+  // Skip/Cancel dialog for transfer failures
+  const [skipDialogOpen, setSkipDialogOpen] = useState(false)
+  const [failingRecipient, setFailingRecipient] = useState<{ id: string; name: string; uniqueId: string } | null>(null)
+  const [isMultiRecipientTransfer, setIsMultiRecipientTransfer] = useState(false)
+  const [remainingRecipientsCount, setRemainingRecipientsCount] = useState(0)
+  const skipDecisionResolverRef = useRef<((decision: 'skip' | 'cancel') => void) | null>(null)
+  const [skippedRecipients, setSkippedRecipients] = useState<{ name: string; uniqueId: string }[]>([])
+  const [successfulRecipients, setSuccessfulRecipients] = useState<{ name: string; uniqueId: string }[]>([])
+  const transferCancelledRef = useRef(false)
   // Success + progress dialogs
   const [successModalOpen, setSuccessModalOpen] = useState(false)
+  const [showAllSkippedRecipients, setShowAllSkippedRecipients] = useState(false) // Dialog for viewing all skipped recipients
   const [successInfo, setSuccessInfo] = useState<null | {
     mode: 'sent' | 'received'
+    outcome?: 'complete' | 'partial' | 'failed' // Transfer outcome (only for sent mode)
     to: string
     from: string
     totalSize: string
     totalFiles: number
     totalLinks: number
     recipients: { name: string; uniqueId: string }[]
+    successfulRecipients?: { name: string; uniqueId: string }[] // NEW: Who actually received files
     senders?: { name: string; uniqueId: string }[]
+    skippedRecipients?: { name: string; uniqueId: string }[]
   }>(null)
   const [showAllRecipients, setShowAllRecipients] = useState(false)
   const [uiProgress, setUiProgress] = useState(0)
@@ -621,23 +639,8 @@ function StudentDashboardInner() {
       }
     },
     onSendFailed: (_to, _name, reason) => {
-      // Show tailored message based on how many targets we intended to send to
-      const multi = sendingTargetsCountRef.current > 1
-      const base = multi ? 'Some or all recipient might got offline' : 'Recipient might got offline'
-      const extra = reason ? `\n\nDetails: ${reason}` : ''
-      setErrorModalMessage(`${base}\n\nMake Sure Recepient Is Live${extra}`)
-      setErrorModalOpen(true)
-      // Do not reset selected files; just stop the upload progress
-      setIsUploading(false)
-      setUploadProgress(0)
-      batchTotalRef.current = 0
-      batchCompletedRef.current = 0
-      currentFileTotalRef.current = 0
-      currentFileSentRef.current = 0
-      linkCountRef.current = 0
-      linksCompletedRef.current = 0
-    },
-    onMessage: (fromId, messageContent, sender) => {
+      console.log('Send failed:', reason)
+    }, onMessage: (fromId, messageContent, sender) => {
       noteRecvActivity()
       // Use sender info from message if available, otherwise fallback to lookup
       const senderName = sender?.name || (onlineUsers.find(u => u.id === fromId)?.name) || (fromId === adminId ? `Lab Admin (Room ${adminRoom || userData?.roomNumber || ''})` : 'Unknown')
@@ -690,6 +693,46 @@ function StudentDashboardInner() {
           setReceivedBatchCompletePending(true)
         }
         return next
+      })
+    },
+    onTransferCancelled: (fromId, sender) => {
+      // Clear any in-progress receive state for this sender
+      setRecvProgress(prev => {
+        const next = { ...prev }
+        for (const key of Object.keys(next)) {
+          if (next[key].fromId === fromId) {
+            delete next[key]
+          }
+        }
+        return next
+      })
+
+      // Hide speed dial by resetting received counter
+      setRecvCounter({ total: 0, received: 0 })
+
+      // Show permanent toast instead of dialog
+      const senderName = sender?.name || 'Sender'
+      const senderUniqueId = sender?.uniqueId || ''
+      toast({
+        title: (
+          <div className="flex items-center gap-2 text-red-600">
+            <X className="w-4 h-4" />
+            <span className="font-semibold">Transfer Cancelled</span>
+          </div>
+        ) as any,
+        description: (
+          <div className="mt-1.5 space-y-2">
+            <div className="text-sm text-foreground">
+              <span className="font-medium">{senderName}</span> ({senderUniqueId}) stopped the transfer.
+            </div>
+            <div className="text-xs text-muted-foreground bg-muted/50 p-2.5 rounded-md border border-border/50 flex items-start gap-2">
+              <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5 text-amber-500" />
+              <span>Any files fully received before cancellation are still available in your history.</span>
+            </div>
+          </div>
+        ) as any,
+        variant: 'default',
+        duration: Infinity,
       })
     }
   })
@@ -961,6 +1004,27 @@ function StudentDashboardInner() {
     linkCountRef.current = 0
     linksCompletedRef.current = 0
     setTransferRecipients([])
+    setSkippedRecipients([])
+    setSuccessfulRecipients([])
+    setSkipDialogOpen(false)
+    setFailingRecipient(null)
+    transferCancelledRef.current = false
+  }
+
+  // Skip decision handlers for transfer failures
+  const waitForSkipDecision = (): Promise<'skip' | 'cancel'> => {
+    return new Promise((resolve) => {
+      skipDecisionResolverRef.current = resolve
+    })
+  }
+
+  const handleSkipDecision = (decision: 'skip' | 'cancel') => {
+    if (skipDecisionResolverRef.current) {
+      skipDecisionResolverRef.current(decision)
+      skipDecisionResolverRef.current = null
+    }
+    setSkipDialogOpen(false)
+    setFailingRecipient(null)
   }
 
   const performShare = async (targets: string[], isPrintRequest: boolean) => {
@@ -985,21 +1049,23 @@ function StudentDashboardInner() {
     setSuccessInfo(null)
     setSuccessModalOpen(false)
 
+    // Build recipients info (Hoisted for try/catch scope)
+    const recipientsInfo: { id: string; name: string; uniqueId: string }[] = targets.map((tid) => {
+      if (adminId && tid === adminId) return { id: tid, name: 'Lab Admin', uniqueId: 'ADMIN' }
+      const u = onlineUsers.find((ou) => ou.id === tid)
+      if (u) return { id: u.id, name: u.name, uniqueId: u.uniqueId }
+      const cached = recipientInfoRef.current[tid]
+      if (cached) return { id: tid, name: cached.name, uniqueId: cached.uniqueId }
+      return { id: tid, name: 'User', uniqueId: tid.slice(-6) }
+    })
+    const localSuccessfulRecipients: { name: string; uniqueId: string }[] = []
+    const localSkippedRecipients: { name: string; uniqueId: string }[] = []
+
     try {
       const filesToShare: FileShare[] = []
       // Track aggregate method across recipients: PW-RTC(-F) < SW-RTC < TW-RTC
       const rank: Record<string, number> = { 'PW-RTC-F': 1, 'PW-RTC': 1, 'SW-RTC': 2, 'TW-RTC': 3 }
       let aggregateMethod: 'PW-RTC' | 'SW-RTC' | 'TW-RTC' | 'PW-RTC-F' | undefined
-
-      // Build recipients info for UI display based on targets
-      const recipientsInfo: { id: string; name: string; uniqueId: string }[] = targets.map((tid) => {
-        if (adminId && tid === adminId) return { id: tid, name: 'Lab Admin', uniqueId: 'ADMIN' }
-        const u = onlineUsers.find((ou) => ou.id === tid)
-        if (u) return { id: u.id, name: u.name, uniqueId: u.uniqueId }
-        const cached = recipientInfoRef.current[tid]
-        if (cached) return { id: tid, name: cached.name, uniqueId: cached.uniqueId }
-        return { id: tid, name: 'User', uniqueId: tid.slice(-6) }
-      })
 
       // Initialize recipient transfer status tracking (all pending initially)
       setTransferRecipients(recipientsInfo.map(r => ({ ...r, status: 'pending' as const })))
@@ -1099,79 +1165,263 @@ function StudentDashboardInner() {
       }
 
       // Send P2P via WebRTC to all targets sequentially (by target then files)
-      for (const targetId of targets) {
+      // Reset state at start
+      transferCancelledRef.current = false
+      setSuccessfulRecipients([])
+      setSkippedRecipients([])
+
+      // Track successful transfers locally (for use after loop)
+      // (Locals hoisted to outer scope)
+
+      for (let targetIndex = 0; targetIndex < targets.length; targetIndex++) {
+        const targetId = targets[targetIndex]
+
+        // Check if transfer was cancelled
+        if (transferCancelledRef.current) break
+
         // Mark this recipient as 'sending'
         setTransferRecipients(prev => prev.map(r => r.id === targetId ? { ...r, status: 'sending' as const } : r))
 
-        webrtc.ensureConnection(targetId)
-        for (const entry of filesToShare) {
-          if (!entry.isLink) {
-            const fileObj = selectedFiles.find(f => f.name === entry.fileName && f.size === entry.fileSize)
-            if (fileObj) {
-              const m = await webrtc.sendFile(targetId, fileObj, { message: entry.message, senderName: userData.name, senderUniqueId: userData.uniqueId, allowReshare, fileId: entry.fileId })
+        let recipientFailed = false
+        const recipientInfo = getRecipientInfo(targetId)
+
+        try {
+          webrtc.ensureConnection(targetId)
+
+          for (const entry of filesToShare) {
+            if (recipientFailed || transferCancelledRef.current) break
+
+            if (!entry.isLink) {
+              const fileObj = selectedFiles.find(f => f.name === entry.fileName && f.size === entry.fileSize)
+              if (fileObj) {
+                // Callback to resolve current socket ID (user may have refreshed and have new socket ID)
+                // Uses ref to ALWAYS get latest onlineUsers (avoids closure capturing stale state)
+                const resolveTargetId = () => {
+                  const user = onlineUsersRef.current.find(u => u.uniqueId === recipientInfo.uniqueId)
+                  return user?.id
+                }
+                const m = await webrtc.sendFile(targetId, fileObj, { message: entry.message, senderName: userData.name, senderUniqueId: userData.uniqueId, allowReshare, fileId: entry.fileId }, resolveTargetId, () => transferCancelledRef.current)
+
+                // If sendFile returned undefined, check if it's due to cancellation or connection failure
+                if (!m) {
+                  // If cancelled by user, don't mark as failed - just break out to show summary
+                  if (transferCancelledRef.current) break
+                  recipientFailed = true
+                  break
+                }
+                if (m && (!aggregateMethod || rank[m] > rank[aggregateMethod])) aggregateMethod = m
+              }
+            } else if (entry.isLink && entry.linkUrl) {
+              const m = await webrtc.sendLink(targetId, entry.linkUrl, entry.message, { name: userData.name, uniqueId: userData.uniqueId }, allowReshare, entry.fileId)
+
+              // If sendLink returned undefined, connection failed (recipient unreachable)
+              if (!m) {
+                recipientFailed = true
+                break
+              }
               if (m && (!aggregateMethod || rank[m] > rank[aggregateMethod])) aggregateMethod = m
+              linksCompletedRef.current += 1
+              const doneBytes = batchCompletedRef.current >= batchTotalRef.current
+              const doneLinks = linksCompletedRef.current >= linkCountRef.current
+              if (batchTotalRef.current + linkCountRef.current > 0 && doneBytes && doneLinks) {
+                setUploadProgress(100)
+              } else {
+                updateBatchProgress()
+              }
             }
-          } else if (entry.isLink && entry.linkUrl) {
-            const m = await webrtc.sendLink(targetId, entry.linkUrl, entry.message, { name: userData.name, uniqueId: userData.uniqueId }, allowReshare, entry.fileId)
-            if (m && (!aggregateMethod || rank[m] > rank[aggregateMethod])) aggregateMethod = m
-            linksCompletedRef.current += 1
-            const doneBytes = batchCompletedRef.current >= batchTotalRef.current
-            const doneLinks = linksCompletedRef.current >= linkCountRef.current
-            if (batchTotalRef.current + linkCountRef.current > 0 && doneBytes && doneLinks) {
-              setUploadProgress(100)
-              setTimeout(() => {
-                resetUploadState()
-              }, 400)
-            } else {
-              updateBatchProgress()
-            }
+          }
+        } catch (error) {
+          console.error('Transfer error for recipient:', targetId, error)
+          recipientFailed = true
+        }
+
+        // If cancelled mid-transfer, mark current recipient as skipped and break without showing dialog
+        if (transferCancelledRef.current && !recipientFailed) {
+          // Mark current recipient as skipped (transfer was interrupted)
+          setTransferRecipients(prev => prev.map(r => r.id === targetId ? { ...r, status: 'skipped' as const } : r))
+          localSkippedRecipients.push({ name: recipientInfo.name, uniqueId: recipientInfo.uniqueId })
+          setSkippedRecipients(prev => [...prev, { name: recipientInfo.name, uniqueId: recipientInfo.uniqueId }])
+          break
+        }
+
+        // Handle failure: show skip/cancel dialog for user decision
+        if (recipientFailed) {
+          // Calculate remaining recipients based on array position (not stale state!)
+          // Remaining = recipients after current index that haven't been skipped yet
+          const remainingCount = targets.length - targetIndex - 1 - localSkippedRecipients.length
+          const isMulti = targets.length > 1
+
+          // Set up skip dialog state
+          setFailingRecipient({ id: targetId, name: recipientInfo.name, uniqueId: recipientInfo.uniqueId })
+          setRemainingRecipientsCount(Math.max(0, remainingCount))
+          setIsMultiRecipientTransfer(isMulti)
+          setSkipDialogOpen(true)
+
+          // Wait for user decision
+          const decision = await waitForSkipDecision()
+
+          // Mark this recipient as skipped
+          setTransferRecipients(prev => prev.map(r => r.id === targetId ? { ...r, status: 'skipped' as const } : r))
+          localSkippedRecipients.push({ name: recipientInfo.name, uniqueId: recipientInfo.uniqueId })
+          setSkippedRecipients(prev => [...prev, { name: recipientInfo.name, uniqueId: recipientInfo.uniqueId }])
+
+          if (decision === 'cancel') {
+            // Abort entire transfer
+            transferCancelledRef.current = true
+            break // Exit the loop
+          } else {
+            // Continue to next recipient
+            continue
           }
         }
 
-        // Mark this recipient as 'completed'
+        // Mark this recipient as 'completed' and track success
         setTransferRecipients(prev => prev.map(r => r.id === targetId ? { ...r, status: 'completed' as const } : r))
+        localSuccessfulRecipients.push({ name: recipientInfo.name, uniqueId: recipientInfo.uniqueId })
+        setSuccessfulRecipients(prev => [...prev, { name: recipientInfo.name, uniqueId: recipientInfo.uniqueId }])
       }
 
-      // Update local history
-      if (aggregateMethod) {
-        filesToShare.forEach(f => { (f as any).method = aggregateMethod })
+      // If cancelled, mark any remaining unprocessed recipients as skipped
+      if (transferCancelledRef.current) {
+        const processedIds = new Set([
+          ...localSuccessfulRecipients.map(r => r.uniqueId),
+          ...localSkippedRecipients.map(r => r.uniqueId)
+        ])
+        for (const recipient of recipientsInfo) {
+          if (!processedIds.has(recipient.uniqueId)) {
+            localSkippedRecipients.push({ name: recipient.name, uniqueId: recipient.uniqueId })
+            setSkippedRecipients(prev => [...prev, { name: recipient.name, uniqueId: recipient.uniqueId }])
+            setTransferRecipients(prev => prev.map(r => r.id === recipient.id ? { ...r, status: 'skipped' as const } : r))
+          }
+        }
       }
-      setSentFiles(prev => [...filesToShare, ...prev])
+
+      // Determine transfer outcome based on results
+      const hasSuccessful = localSuccessfulRecipients.length > 0
+      const hasSkipped = localSkippedRecipients.length > 0
+      const allSkipped = localSkippedRecipients.length === targets.length
+
+      let outcome: 'complete' | 'partial' | 'failed'
+      if (allSkipped || !hasSuccessful) {
+        outcome = 'failed'
+      } else if (hasSkipped) {
+        outcome = 'partial'
+      } else {
+        outcome = 'complete'
+      }
+
+      // Only update history if at least one transfer succeeded
+      if (hasSuccessful) {
+        if (aggregateMethod) {
+          filesToShare.forEach(f => { (f as any).method = aggregateMethod })
+        }
+        setSentFiles(prev => [...filesToShare, ...prev])
+      }
+
+      // Clear selection state
       setSelectedFiles([])
       setLinkUrl('')
       setMessage('')
       setSelectedRecipients([])
       setAllowReshare(true)
 
-      // Prepare success feedback info
-      const totalBytes = filesToShare.filter(f => !f.isLink).reduce((sum, f) => sum + f.fileSize, 0)
-      const totalFiles = filesToShare.filter(f => !f.isLink).length
-      const totalLinks = filesToShare.filter(f => f.isLink).length
-      const recipientsInfoStr = (filesToShare[0]?.recipients || []).map(r => `${r.name} (${r.uniqueId})`).join(', ')
+      // Prepare feedback info based on outcome
+      const totalBytes = hasSuccessful ? filesToShare.filter(f => !f.isLink).reduce((sum, f) => sum + f.fileSize, 0) : 0
+      const totalFiles = hasSuccessful ? filesToShare.filter(f => !f.isLink).length : 0
+      const totalLinks = hasSuccessful ? filesToShare.filter(f => f.isLink).length : 0
       const fromInfo = `${userData.name} (${userData.uniqueId})`
+
       setSuccessInfo({
         mode: 'sent',
-        to: recipientsInfoStr || (isPrintRequest ? `Lab Admin (Room ${adminRoom || userData.roomNumber})` : '—'),
+        outcome,
+        to: localSuccessfulRecipients.length > 0
+          ? localSuccessfulRecipients.map(r => `${r.name} (${r.uniqueId})`).join(', ')
+          : (isPrintRequest ? `Lab Admin (Room ${adminRoom || userData.roomNumber})` : '—'),
         from: `${fromInfo} (You)`,
         totalSize: formatFileSize(totalBytes),
         totalFiles,
         totalLinks,
-        recipients: (filesToShare[0]?.recipients || []).map(r => ({ name: r.name, uniqueId: r.uniqueId }))
+        recipients: (filesToShare[0]?.recipients || []).map(r => ({ name: r.name, uniqueId: r.uniqueId })),
+        successfulRecipients: localSuccessfulRecipients.length > 0 ? localSuccessfulRecipients : undefined,
+        skippedRecipients: localSkippedRecipients.length > 0 ? localSkippedRecipients : undefined
       })
-      // Ensure progress reaches 100% smoothly before showing success
-      await ensureProgressComplete(1200)
-      // End of progress & open success modal
-      resetUploadState()
+
+      // Ensure progress animation completes (shorter for failed transfers)
+      await ensureProgressComplete(outcome === 'failed' ? 400 : 1200)
+
+      // End of progress & open result modal
       setIsUploading(false)
       setForceProgress(false)
+      setTransferRecipients([])
+      setSkipDialogOpen(false)
+      setFailingRecipient(null)
       setSuccessModalOpen(true)
     } catch (error) {
       console.error('Failed to share files:', error)
-      resetUploadState()
-      setErrorModalMessage(
-        'We could not complete the file share. This can happen if the connection drops or the recipient goes offline.\n\nMake Sure Recepient Is Live'
-      )
-      setErrorModalOpen(true)
+
+      // On any error/crash, first show the Unreachable dialog to let user decide
+      // Find which recipient was being processed (the one marked as 'sending')
+      const currentRecipient = recipientsInfo.find(r => {
+        const tr = transferRecipients.find(t => t.id === r.id && t.status === 'sending')
+        return !!tr
+      }) || recipientsInfo[0] // Fallback to first recipient if none found
+
+      if (currentRecipient) {
+        // Calculate remaining recipients
+        const processedCount = localSuccessfulRecipients.length + localSkippedRecipients.length
+        const remainingCount = Math.max(0, recipientsInfo.length - processedCount - 1)
+        const isMulti = recipientsInfo.length > 1
+
+        // Show the Unreachable dialog
+        setFailingRecipient({
+          id: currentRecipient.id,
+          name: currentRecipient.name,
+          uniqueId: currentRecipient.uniqueId
+        })
+        setRemainingRecipientsCount(remainingCount)
+        setIsMultiRecipientTransfer(isMulti)
+        setSkipDialogOpen(true)
+
+        // Wait for user decision
+        const decision = await waitForSkipDecision()
+
+        // Mark as skipped
+        localSkippedRecipients.push({ name: currentRecipient.name, uniqueId: currentRecipient.uniqueId })
+        setSkippedRecipients(prev => [...prev, { name: currentRecipient.name, uniqueId: currentRecipient.uniqueId }])
+      }
+
+      // Now determine outcome and show summary
+      const hasSuccessful = localSuccessfulRecipients.length > 0
+      const allSkipped = localSkippedRecipients.length >= recipientsInfo.length
+
+      let outcome: 'complete' | 'partial' | 'failed'
+      if (allSkipped || !hasSuccessful) {
+        outcome = 'failed'
+      } else {
+        outcome = 'partial'
+      }
+
+      setSuccessInfo({
+        mode: 'sent',
+        outcome,
+        to: localSuccessfulRecipients.length > 0
+          ? localSuccessfulRecipients.map(r => `${r.name} (${r.uniqueId})`).join(', ')
+          : (isPrintRequest ? `Lab Admin (Room ${adminRoom || userData.roomNumber})` : '—'),
+        from: `${userData.name} (${userData.uniqueId}) (You)`,
+        totalSize: formatFileSize(selectedFiles.reduce((acc, f) => acc + f.size, 0)),
+        totalFiles: selectedFiles.length,
+        totalLinks: selectedFiles.filter(f => f.type === 'text/uri-list').length,
+        recipients: recipientsInfo.map(r => ({ name: r.name, uniqueId: r.uniqueId })),
+        successfulRecipients: localSuccessfulRecipients.length > 0 ? localSuccessfulRecipients : undefined,
+        skippedRecipients: localSkippedRecipients.length > 0 ? localSkippedRecipients : undefined
+      })
+
+      setIsUploading(false)
+      setForceProgress(false)
+      setTransferRecipients([])
+      setSkipDialogOpen(false)
+      setFailingRecipient(null)
+      setSuccessModalOpen(true)
     } finally {
       // Keep the hook’s onSendComplete in control of the progress bar cleanup
     }
@@ -2542,6 +2792,34 @@ function StudentDashboardInner() {
                 </div>
               </div>
 
+              {/* Cancel Transfer Button - Now between progress bar and recipients */}
+              <Button
+                variant="outline"
+                size="sm"
+                className="text-red-600 border-red-200 hover:bg-red-50 hover:border-red-300"
+                onClick={() => {
+                  // Notify all recipients about cancellation (current sending and pending)
+                  transferRecipients
+                    .filter(r => r.status === 'sending' || r.status === 'pending')
+                    .forEach(r => {
+                      webrtc.sendCancellation(r.id, { name: userData?.name, uniqueId: userData?.uniqueId })
+                    })
+
+                  transferCancelledRef.current = true
+                  // If skip dialog is waiting, resolve with cancel
+                  if (skipDecisionResolverRef.current) {
+                    skipDecisionResolverRef.current('cancel')
+                    skipDecisionResolverRef.current = null
+                  }
+                  setSkipDialogOpen(false)
+                  // Don't reset state here - let the loop handle cancellation gracefully
+                  // so we can show the proper summary dialog (Failed/Partial).
+                }}
+              >
+                <X className="w-3.5 h-3.5 mr-1.5" />
+                Cancel Transfer
+              </Button>
+
               {/* Recipients Status List */}
               {transferRecipients.length > 0 && (
                 <div className="w-full space-y-2">
@@ -2590,16 +2868,18 @@ function StudentDashboardInner() {
                               <span className="text-[11px] font-medium text-emerald-600">Done</span>
                             </div>
                           )}
+                          {recipient.status === 'skipped' && (
+                            <div className="flex items-center gap-1">
+                              <AlertTriangle className="w-3.5 h-3.5 text-amber-500" />
+                              <span className="text-[11px] font-medium text-amber-600">Skipped</span>
+                            </div>
+                          )}
                         </div>
                       </div>
                     ))}
                   </div>
                 </div>
               )}
-
-              <p className="text-xs text-center text-muted-foreground max-w-sm">
-                Do not close this window.
-              </p>
             </div>
           </DialogContent>
         </Dialog>
@@ -2615,12 +2895,39 @@ function StudentDashboardInner() {
               <div className="p-5">
                 <div className="flex items-center justify-between mb-4">
                   <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center">
-                      <CheckCircle2 className="w-6 h-6" />
-                    </div>
+                    {/* Icon based on outcome */}
+                    {successInfo.mode === 'received' || successInfo.outcome === 'complete' ? (
+                      <div className="w-10 h-10 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center">
+                        <CheckCircle2 className="w-6 h-6" />
+                      </div>
+                    ) : successInfo.outcome === 'partial' ? (
+                      <div className="w-10 h-10 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center">
+                        <AlertTriangle className="w-6 h-6" />
+                      </div>
+                    ) : (
+                      <div className="w-10 h-10 rounded-full bg-red-100 text-red-700 flex items-center justify-center">
+                        <X className="w-6 h-6" />
+                      </div>
+                    )}
                     <div>
-                      <h3 className="text-base font-semibold leading-none">{successInfo.mode === 'received' ? 'Files received' : 'Transfer complete'}</h3>
-                      <p className="text-xs text-muted-foreground">{successInfo.mode === 'received' ? 'Your items were received successfully' : 'Your items were delivered successfully'}</p>
+                      <h3 className="text-base font-semibold leading-none">
+                        {successInfo.mode === 'received'
+                          ? 'Files received'
+                          : successInfo.outcome === 'complete'
+                            ? 'Transfer complete'
+                            : successInfo.outcome === 'partial'
+                              ? 'Transfer partially complete'
+                              : 'Transfer failed'}
+                      </h3>
+                      <p className="text-xs text-muted-foreground">
+                        {successInfo.mode === 'received'
+                          ? 'Your items were received successfully'
+                          : successInfo.outcome === 'complete'
+                            ? 'Your items were delivered successfully'
+                            : successInfo.outcome === 'partial'
+                              ? 'Some recipients did not receive the files'
+                              : 'No files were transferred'}
+                      </p>
                     </div>
                   </div>
                 </div>
@@ -2630,15 +2937,20 @@ function StudentDashboardInner() {
                     {successInfo.mode === 'sent' ? (
                       <>
                         <div className="col-span-3">
-                          <div className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1">To</div>
+                          <div className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1">
+                            {successInfo.outcome === 'failed' ? 'Intended Recipients' : 'Sent To'}
+                          </div>
                           <div className="flex flex-wrap gap-1.5">
-                            {successInfo.recipients.slice(0, 6).map((r, i) => {
+                            {/* Show successful recipients if any, otherwise show original recipients for failed */}
+                            {((successInfo.outcome === 'failed' ? successInfo.recipients : successInfo.successfulRecipients) || successInfo.recipients).slice(0, 6).map((r, i) => {
                               const isSelf = r.uniqueId === userData.uniqueId
                               const isAdmin = r.uniqueId === 'ADMIN'
                               const displayName = isAdmin ? `Lab Admin (Room ${userData.roomNumber})` : r.name
                               const avatarText = isAdmin ? 'A' : r.name.charAt(0).toUpperCase()
+                              const isFailed = successInfo.outcome === 'failed'
                               return (
-                                <span key={r.uniqueId + i} className="inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-xs bg-muted/50 dark:bg-neutral-800">
+                                <span key={r.uniqueId + i} className={`inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-xs ${isFailed ? 'border-red-200 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400' : 'bg-muted/50 dark:bg-neutral-800'
+                                  }`}>
                                   <span className="inline-flex w-5 h-5 items-center justify-center rounded-full text-white text-[10px] font-medium" style={{ backgroundImage: generateGradient(displayName) }}>
                                     {avatarText}
                                   </span>
@@ -2647,8 +2959,10 @@ function StudentDashboardInner() {
                                 </span>
                               )
                             })}
-                            {successInfo.recipients.length > 6 && (
-                              <span className="inline-flex items-center rounded-full border px-2.5 py-1 text-xs bg-muted/50 dark:bg-neutral-800">+{successInfo.recipients.length - 6} more</span>
+                            {((successInfo.outcome === 'failed' ? successInfo.recipients : successInfo.successfulRecipients) || successInfo.recipients).length > 6 && (
+                              <span className="inline-flex items-center rounded-full border px-2.5 py-1 text-xs bg-muted/50 dark:bg-neutral-800">
+                                +{((successInfo.outcome === 'failed' ? successInfo.recipients : successInfo.successfulRecipients) || successInfo.recipients).length - 6} more
+                              </span>
                             )}
                           </div>
                         </div>
@@ -2671,6 +2985,65 @@ function StudentDashboardInner() {
                             <div className="text-sm font-medium">{successInfo.totalLinks}</div>
                           </div>
                         </div>
+                        {/* Skipped Recipients Section - Only show for multi-recipient transfers */}
+                        {successInfo.skippedRecipients && successInfo.skippedRecipients.length > 0 && successInfo.recipients.length > 1 && (() => {
+                          const maxShow = 5
+                          const skipped = successInfo.skippedRecipients
+                          const remaining = skipped.length - maxShow
+                          return (
+                            <>
+                              <div className="col-span-3 border-t my-1" />
+                              <div className="col-span-3">
+                                <div className="text-[11px] uppercase tracking-wide text-amber-600 mb-1 flex items-center gap-1">
+                                  <AlertTriangle className="w-3 h-3" />
+                                  Skipped Recipients ({skipped.length})
+                                </div>
+                                <div className="flex flex-wrap gap-1.5">
+                                  {skipped.slice(0, maxShow).map((r, i) => (
+                                    <span key={r.uniqueId + i} className="inline-flex items-center gap-2 rounded-full border border-amber-200 bg-amber-50 dark:bg-amber-900/20 px-2.5 py-1 text-xs text-amber-700 dark:text-amber-400">
+                                      <span className="inline-flex w-5 h-5 items-center justify-center rounded-full bg-amber-200 text-amber-700 text-[10px] font-medium">
+                                        {r.name.charAt(0).toUpperCase()}
+                                      </span>
+                                      {r.name} ({r.uniqueId})
+                                    </span>
+                                  ))}
+                                  {remaining > 0 && (
+                                    <button
+                                      onClick={() => setShowAllSkippedRecipients(true)}
+                                      className="inline-flex items-center gap-1 rounded-full border border-amber-300 bg-amber-100 dark:bg-amber-900/30 px-2.5 py-1 text-xs text-amber-700 dark:text-amber-400 hover:bg-amber-200 dark:hover:bg-amber-900/50 transition-colors cursor-pointer font-medium"
+                                    >
+                                      +{remaining} more
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                              {/* Dialog for viewing all skipped recipients */}
+                              <Dialog open={showAllSkippedRecipients} onOpenChange={setShowAllSkippedRecipients}>
+                                <DialogContent className="max-w-md">
+                                  <DialogHeader>
+                                    <DialogTitle className="flex items-center gap-2 text-amber-600">
+                                      <AlertTriangle className="w-5 h-5" />
+                                      Skipped Recipients ({skipped.length})
+                                    </DialogTitle>
+                                  </DialogHeader>
+                                  <div className="space-y-2 max-h-80 overflow-y-auto">
+                                    {skipped.map((r, i) => (
+                                      <div key={r.uniqueId + i} className="flex items-center gap-3 p-2 rounded-xl border border-amber-200 bg-amber-50 dark:bg-amber-900/20">
+                                        <span className="inline-flex w-8 h-8 items-center justify-center rounded-full bg-amber-200 text-amber-700 text-sm font-medium flex-shrink-0">
+                                          {r.name.charAt(0).toUpperCase()}
+                                        </span>
+                                        <div className="flex-1 min-w-0">
+                                          <span className="text-sm font-medium text-amber-700 dark:text-amber-400 block truncate">{r.name}</span>
+                                          <span className="text-xs text-amber-600/70 dark:text-amber-500">{r.uniqueId}</span>
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </DialogContent>
+                              </Dialog>
+                            </>
+                          )
+                        })()}
                       </>
                     ) : (
                       <>
@@ -2722,49 +3095,94 @@ function StudentDashboardInner() {
                       </>
                     )}
                   </div>
-                  <div className="border-t p-4 text-[11px] text-muted-foreground dark:text-gray-400 bg-emerald-50/50 dark:bg-emerald-900/10">
-                    Each item gets a unique File ID. Check the File History tab to view and use them for tracking or resharing.
+                  {/* Footer message with outcome-based background */}
+                  <div className={`border-t p-4 text-[11px] text-muted-foreground dark:text-gray-400 ${successInfo.mode === 'received' || successInfo.outcome === 'complete'
+                    ? 'bg-emerald-50/50 dark:bg-emerald-900/10'
+                    : successInfo.outcome === 'partial'
+                      ? 'bg-amber-50/50 dark:bg-amber-900/10'
+                      : 'bg-red-50/50 dark:bg-red-900/10'
+                    }`}>
+                    {successInfo.outcome === 'failed'
+                      ? 'No files were shared. The transfer failed because all recipients were unreachable.'
+                      : successInfo.outcome === 'partial'
+                        ? 'Not all files were shared. The transfer was partially completed. Check skipped recipients above.'
+                        : 'Each item gets a unique File ID. Check the File History tab to view and use them for tracking or resharing.'}
                   </div>
                 </div>
 
+                {/* Buttons based on outcome */}
                 <div className="mt-4 flex flex-wrap gap-4 justify-center">
-                  <Button variant="outline" onClick={() => { setActiveTab('history'); setHistorySubTab(successInfo.mode === 'received' ? 'received' : 'sent'); setSuccessModalOpen(false) }}>Open File History</Button>
-                  <Button onClick={() => setSuccessModalOpen(false)}>Done</Button>
+                  {successInfo.outcome === 'failed' ? (
+                    // Failed: Only Retry button
+                    <Button onClick={() => setSuccessModalOpen(false)}>Retry</Button>
+                  ) : successInfo.outcome === 'partial' ? (
+                    // Partial: Retry + Open History
+                    <>
+                      <Button variant="outline" onClick={() => setSuccessModalOpen(false)}>Retry</Button>
+                      <Button onClick={() => { setActiveTab('history'); setHistorySubTab('sent'); setSuccessModalOpen(false) }}>Open File History</Button>
+                    </>
+                  ) : (
+                    // Complete: Open History + Done
+                    <>
+                      <Button variant="outline" onClick={() => { setActiveTab('history'); setHistorySubTab(successInfo.mode === 'received' ? 'received' : 'sent'); setSuccessModalOpen(false) }}>Open File History</Button>
+                      <Button onClick={() => setSuccessModalOpen(false)}>Done</Button>
+                    </>
+                  )}
                 </div>
               </div>
             )}
           </DialogContent>
         </Dialog>
 
-        {/* Error modal */}
-        <Dialog open={errorModalOpen} onOpenChange={setErrorModalOpen}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle className="flex items-center gap-2">
-                <span className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-red-100 text-red-700">
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5"><path d="M10.29 3.86c.9-1.53 3.12-1.53 4.02 0l7.69 13.1c.88 1.5-.21 3.39-2.01 3.39H4.61c-1.8 0-2.88-1.89-2.01-3.39l7.69-13.1zM12 8a1 1 0 0 0-1 1v4a1 1 0 1 0 2 0V9a1 1 0 0 0-1-1zm0 8.25a1.25 1.25 0 1 0 0-2.5 1.25 1.25 0 0 0 0 2.5z" /></svg>
+
+
+        {/* Skip/Cancel Transfer AlertDialog */}
+        <AlertDialog open={skipDialogOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle className="flex items-center gap-2">
+                <span className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-amber-100 text-amber-700">
+                  <AlertTriangle className="w-5 h-5" />
                 </span>
-                Couldn’t complete your share
-              </DialogTitle>
-              <DialogDescription className="text-muted-foreground">
-                Something interrupted the transfer. Please review the notes below and try again.
-              </DialogDescription>
-            </DialogHeader>
-            <div className="space-y-3">
-              <div className="whitespace-pre-line text-sm text-gray-800 bg-muted/50 p-3 rounded border border-gray-200">
-                {errorModalMessage}
-              </div>
-              <ul className="text-sm text-gray-700 list-disc pl-5 space-y-1">
-                <li>Check that the recipient is online and in the same room.</li>
-                <li>Keep this page open during the transfer.</li>
-                <li>Try again with a stable connection.</li>
-              </ul>
+                Recipient Unreachable
+              </AlertDialogTitle>
+              <AlertDialogDescription className="text-muted-foreground">
+                {failingRecipient && (
+                  <span>
+                    <strong>{failingRecipient.name} ({failingRecipient.uniqueId})</strong> appears to be offline or unreachable.
+                  </span>
+                )}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+
+            <div className="py-2">
+              {isMultiRecipientTransfer && remainingRecipientsCount > 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  You can skip this recipient and continue sending to the remaining {remainingRecipientsCount} recipient{remainingRecipientsCount > 1 ? 's' : ''}, or cancel the entire transfer.
+                </p>
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  The transfer cannot continue. Please check if the recipient is online and try again.
+                </p>
+              )}
             </div>
-            <div className="flex flex-col sm:flex-row sm:justify-end gap-2 mt-4">
-              <Button onClick={() => setErrorModalOpen(false)}>Close</Button>
-            </div>
-          </DialogContent>
-        </Dialog>
+
+            <AlertDialogFooter>
+              {/* Show Cancel Transfer normally, unless it's the last user in a multi-recipient transfer */}
+              {!isMultiRecipientTransfer || remainingRecipientsCount > 0 ? (
+                <AlertDialogCancel onClick={() => handleSkipDecision('cancel')}>
+                  Cancel Transfer
+                </AlertDialogCancel>
+              ) : null}
+              {/* Always show Skip User for multi-recipient transfers */}
+              {isMultiRecipientTransfer && (
+                <AlertDialogAction onClick={() => handleSkipDecision('skip')}>
+                  Skip User
+                </AlertDialogAction>
+              )}
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
       {/* Receiving Speed Dial (bottom-right) */}
       {
@@ -2831,6 +3249,8 @@ function StudentDashboardInner() {
         </DialogContent>
       </Dialog>
       {/* Animations moved to global utilities in globals.css */}
+
+
 
       {/* Offline Dialog */}
       <OfflineDialog isOnline={isOnline} />
