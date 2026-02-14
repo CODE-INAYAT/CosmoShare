@@ -190,6 +190,7 @@ function StudentDashboardInner() {
     totalSize: string
     totalFiles: number
     totalLinks: number
+    totalCodes?: number // CodeShare: 1 when code was shared
     recipients: { name: string; uniqueId: string }[]
     successfulRecipients?: { name: string; uniqueId: string }[] // NEW: Who actually received files
     senders?: { name: string; uniqueId: string }[]
@@ -687,6 +688,7 @@ function StudentDashboardInner() {
             totalSize: formatFileSize(messageContent.length),
             totalFiles: 0,
             totalLinks: 0,
+            totalCodes: 1,
             recipients: [{ name: userData?.name || 'You', uniqueId: userData?.uniqueId || '—' }],
             senders
           })
@@ -1115,50 +1117,151 @@ function StudentDashboardInner() {
         // Show progress for code sending
         setUploadProgress(30)
 
-        for (const targetId of targets) {
-          webrtc.ensureConnection(targetId)
-          await webrtc.sendMessage(targetId, message, { name: userData.name, uniqueId: userData.uniqueId, allowReshare })
+        // Reset state for per-recipient tracking
+        transferCancelledRef.current = false
+        setSuccessfulRecipients([])
+        setSkippedRecipients([])
+        setTransferRecipients(recipientsInfo.map(r => ({ ...r, status: 'pending' as const })))
+
+        const codeLocalSuccessful: { name: string; uniqueId: string }[] = []
+        const codeLocalSkipped: { name: string; uniqueId: string }[] = []
+
+        for (let targetIndex = 0; targetIndex < targets.length; targetIndex++) {
+          const targetId = targets[targetIndex]
+
+          // Check if transfer was cancelled
+          if (transferCancelledRef.current) break
+
+          // Mark this recipient as 'sending'
+          setTransferRecipients(prev => prev.map(r => r.id === targetId ? { ...r, status: 'sending' as const } : r))
+
+          const recipientInfo = getRecipientInfo(targetId)
+          let recipientFailed = false
+
+          try {
+            webrtc.ensureConnection(targetId)
+            await webrtc.sendMessage(targetId, message, { name: userData.name, uniqueId: userData.uniqueId, allowReshare })
+          } catch (error) {
+            console.error('CodeShare error for recipient:', targetId, error)
+            recipientFailed = true
+          }
+
+          // If cancelled mid-transfer, mark current recipient as skipped and break
+          if (transferCancelledRef.current && !recipientFailed) {
+            setTransferRecipients(prev => prev.map(r => r.id === targetId ? { ...r, status: 'skipped' as const } : r))
+            codeLocalSkipped.push({ name: recipientInfo.name, uniqueId: recipientInfo.uniqueId })
+            setSkippedRecipients(prev => [...prev, { name: recipientInfo.name, uniqueId: recipientInfo.uniqueId }])
+            break
+          }
+
+          // Handle failure: show skip/cancel dialog
+          if (recipientFailed) {
+            const remainingCount = targets.length - targetIndex - 1 - codeLocalSkipped.length
+            const isMulti = targets.length > 1
+
+            setFailingRecipient({ id: targetId, name: recipientInfo.name, uniqueId: recipientInfo.uniqueId })
+            setRemainingRecipientsCount(Math.max(0, remainingCount))
+            setIsMultiRecipientTransfer(isMulti)
+            setSkipDialogOpen(true)
+
+            const decision = await waitForSkipDecision()
+
+            setTransferRecipients(prev => prev.map(r => r.id === targetId ? { ...r, status: 'skipped' as const } : r))
+            codeLocalSkipped.push({ name: recipientInfo.name, uniqueId: recipientInfo.uniqueId })
+            setSkippedRecipients(prev => [...prev, { name: recipientInfo.name, uniqueId: recipientInfo.uniqueId }])
+
+            if (decision === 'cancel') {
+              transferCancelledRef.current = true
+              break
+            } else {
+              continue
+            }
+          }
+
+          // Mark this recipient as 'completed'
+          setTransferRecipients(prev => prev.map(r => r.id === targetId ? { ...r, status: 'completed' as const } : r))
+          codeLocalSuccessful.push({ name: recipientInfo.name, uniqueId: recipientInfo.uniqueId })
+          setSuccessfulRecipients(prev => [...prev, { name: recipientInfo.name, uniqueId: recipientInfo.uniqueId }])
+        }
+
+        // If cancelled, mark remaining unprocessed recipients as skipped
+        if (transferCancelledRef.current) {
+          const processedIds = new Set([
+            ...codeLocalSuccessful.map(r => r.uniqueId),
+            ...codeLocalSkipped.map(r => r.uniqueId)
+          ])
+          for (const recipient of recipientsInfo) {
+            if (!processedIds.has(recipient.uniqueId)) {
+              codeLocalSkipped.push({ name: recipient.name, uniqueId: recipient.uniqueId })
+              setSkippedRecipients(prev => [...prev, { name: recipient.name, uniqueId: recipient.uniqueId }])
+              setTransferRecipients(prev => prev.map(r => r.id === recipient.id ? { ...r, status: 'skipped' as const } : r))
+            }
+          }
+        }
+
+        // Determine outcome
+        const hasSuccessful = codeLocalSuccessful.length > 0
+        const hasSkipped = codeLocalSkipped.length > 0
+        const allSkipped = codeLocalSkipped.length === targets.length
+
+        let codeOutcome: 'complete' | 'partial' | 'failed'
+        if (allSkipped || !hasSuccessful) {
+          codeOutcome = 'failed'
+        } else if (hasSkipped) {
+          codeOutcome = 'partial'
+        } else {
+          codeOutcome = 'complete'
         }
 
         setUploadProgress(100)
 
-        // Add to sent history as a code entry
-        const codeEntry: FileShare = {
-          id: Date.now().toString() + Math.random(),
-          fileName: message.slice(0, 50) + (message.length > 50 ? '...' : ''),
-          fileSize: message.length,
-          fileType: 'code',
-          isLink: false,
-          message,
-          allowReshare,
-          senderId: userData.id,
-          receiverId: isPrintRequest ? 'admin' : 'multi',
-          recipients: recipientsInfo,
-          fileId: 'C' + Math.floor(10000 + Math.random() * 90000),
-          timestamp: new Date()
+        // Add to sent history only if at least one succeeded
+        if (hasSuccessful) {
+          const codeEntry: FileShare = {
+            id: Date.now().toString() + Math.random(),
+            fileName: message.slice(0, 50) + (message.length > 50 ? '...' : ''),
+            fileSize: message.length,
+            fileType: 'code',
+            isLink: false,
+            message,
+            allowReshare,
+            senderId: userData.id,
+            receiverId: isPrintRequest ? 'admin' : 'multi',
+            recipients: recipientsInfo,
+            fileId: 'C' + Math.floor(10000 + Math.random() * 90000),
+            timestamp: new Date()
+          }
+          setSentFiles(prev => [codeEntry, ...prev])
         }
-        setSentFiles(prev => [codeEntry, ...prev])
+
         setMessage('')
         setSelectedRecipients([])
         setCodeShareMode(false)
 
-        // Show success
-        await ensureProgressComplete()
+        // Show result
+        await ensureProgressComplete(codeOutcome === 'failed' ? 400 : 1200)
         setForceProgress(false)
         setIsUploading(false)
         setUiProgress(0)
         setUploadProgress(0)
+        setTransferRecipients([])
+        setSkipDialogOpen(false)
+        setFailingRecipient(null)
 
         setSuccessInfo({
           mode: 'sent',
-          to: recipientsInfo.length === 1
-            ? `${recipientsInfo[0].name} (${recipientsInfo[0].uniqueId})`
-            : recipientsInfo.slice(0, 3).map(r => `${r.name} (${r.uniqueId})`).join(', ') + (recipientsInfo.length > 3 ? ` +${recipientsInfo.length - 3} more` : ''),
+          outcome: codeOutcome,
+          to: codeLocalSuccessful.length > 0
+            ? codeLocalSuccessful.map(r => `${r.name} (${r.uniqueId})`).join(', ')
+            : (isPrintRequest ? `Lab Admin (Room ${adminRoom || userData.roomNumber})` : '—'),
           from: `${userData.name} (${userData.uniqueId}) (You)`,
           totalSize: formatFileSize(message.length),
           totalFiles: 0,
           totalLinks: 0,
-          recipients: recipientsInfo.map(r => ({ name: r.name, uniqueId: r.uniqueId }))
+          totalCodes: 1,
+          recipients: recipientsInfo.map(r => ({ name: r.name, uniqueId: r.uniqueId })),
+          successfulRecipients: codeLocalSuccessful.length > 0 ? codeLocalSuccessful : undefined,
+          skippedRecipients: codeLocalSkipped.length > 0 ? codeLocalSkipped : undefined
         })
         setSuccessModalOpen(true)
         return
@@ -2912,21 +3015,33 @@ function StudentDashboardInner() {
                     <div>
                       <h3 className="text-base font-semibold leading-none">
                         {successInfo.mode === 'received'
-                          ? 'Files received'
-                          : successInfo.outcome === 'complete'
-                            ? 'Transfer complete'
-                            : successInfo.outcome === 'partial'
-                              ? 'Transfer partially complete'
-                              : 'Transfer failed'}
+                          ? (successInfo.totalCodes ? 'Code received' : 'Files received')
+                          : successInfo.totalCodes
+                            ? (successInfo.outcome === 'complete'
+                              ? 'CodeShare complete'
+                              : successInfo.outcome === 'partial'
+                                ? 'CodeShare partially complete'
+                                : 'CodeShare failed')
+                            : (successInfo.outcome === 'complete'
+                              ? 'Transfer complete'
+                              : successInfo.outcome === 'partial'
+                                ? 'Transfer partially complete'
+                                : 'Transfer failed')}
                       </h3>
                       <p className="text-xs text-muted-foreground">
                         {successInfo.mode === 'received'
-                          ? 'Your items were received successfully'
-                          : successInfo.outcome === 'complete'
-                            ? 'Your items were delivered successfully'
-                            : successInfo.outcome === 'partial'
-                              ? 'Some recipients did not receive the files'
-                              : 'No files were transferred'}
+                          ? (successInfo.totalCodes ? 'Your code was received successfully' : 'Your items were received successfully')
+                          : successInfo.totalCodes
+                            ? (successInfo.outcome === 'complete'
+                              ? 'Your code was delivered successfully'
+                              : successInfo.outcome === 'partial'
+                                ? 'Some recipients did not receive the code'
+                                : 'Code was not shared')
+                            : (successInfo.outcome === 'complete'
+                              ? 'Your items were delivered successfully'
+                              : successInfo.outcome === 'partial'
+                                ? 'Some recipients did not receive the files'
+                                : 'No files were transferred')}
                       </p>
                     </div>
                   </div>
@@ -2967,7 +3082,7 @@ function StudentDashboardInner() {
                           </div>
                         </div>
                         <div className="col-span-3 border-t my-1" />
-                        <div className="col-span-3 grid grid-cols-2 gap-4">
+                        <div className={`col-span-3 grid ${successInfo.totalCodes ? 'grid-cols-2' : 'grid-cols-2'} gap-4`}>
                           <div>
                             <div className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1">From</div>
                             <div className="text-sm font-medium">{successInfo.from}</div>
@@ -2976,14 +3091,23 @@ function StudentDashboardInner() {
                             <div className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1">Total Size</div>
                             <div className="text-sm font-medium">{successInfo.totalSize}</div>
                           </div>
-                          <div>
-                            <div className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1">Files</div>
-                            <div className="text-sm font-medium">{successInfo.totalFiles}</div>
-                          </div>
-                          <div>
-                            <div className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1">Links</div>
-                            <div className="text-sm font-medium">{successInfo.totalLinks}</div>
-                          </div>
+                          {successInfo.totalCodes ? (
+                            <div>
+                              <div className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1">Code</div>
+                              <div className="text-sm font-medium">{successInfo.totalCodes}</div>
+                            </div>
+                          ) : (
+                            <>
+                              <div>
+                                <div className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1">Files</div>
+                                <div className="text-sm font-medium">{successInfo.totalFiles}</div>
+                              </div>
+                              <div>
+                                <div className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1">Links</div>
+                                <div className="text-sm font-medium">{successInfo.totalLinks}</div>
+                              </div>
+                            </>
+                          )}
                         </div>
                         {/* Skipped Recipients Section - Only show for multi-recipient transfers */}
                         {successInfo.skippedRecipients && successInfo.skippedRecipients.length > 0 && successInfo.recipients.length > 1 && (() => {
@@ -3083,14 +3207,23 @@ function StudentDashboardInner() {
                             <div className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1">Total Size</div>
                             <div className="text-sm font-medium">{successInfo.totalSize}</div>
                           </div>
-                          <div>
-                            <div className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1">Files</div>
-                            <div className="text-sm font-medium">{successInfo.totalFiles}</div>
-                          </div>
-                          <div>
-                            <div className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1">Links</div>
-                            <div className="text-sm font-medium">{successInfo.totalLinks}</div>
-                          </div>
+                          {successInfo.totalCodes ? (
+                            <div>
+                              <div className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1">Code</div>
+                              <div className="text-sm font-medium">{successInfo.totalCodes}</div>
+                            </div>
+                          ) : (
+                            <>
+                              <div>
+                                <div className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1">Files</div>
+                                <div className="text-sm font-medium">{successInfo.totalFiles}</div>
+                              </div>
+                              <div>
+                                <div className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1">Links</div>
+                                <div className="text-sm font-medium">{successInfo.totalLinks}</div>
+                              </div>
+                            </>
+                          )}
                         </div>
                       </>
                     )}
@@ -3102,11 +3235,19 @@ function StudentDashboardInner() {
                       ? 'bg-amber-50/50 dark:bg-amber-900/10'
                       : 'bg-red-50/50 dark:bg-red-900/10'
                     }`}>
-                    {successInfo.outcome === 'failed'
-                      ? 'No files were shared. The transfer failed because all recipients were unreachable.'
-                      : successInfo.outcome === 'partial'
-                        ? 'Not all files were shared. The transfer was partially completed. Check skipped recipients above.'
-                        : 'Each item gets a unique File ID. Check the File History tab to view and use them for tracking or resharing.'}
+                    {successInfo.totalCodes
+                      ? (successInfo.mode === 'received'
+                        ? 'Your code was received successfully. Check the File History tab to view or reshare it.'
+                        : (successInfo.outcome === 'failed'
+                          ? 'Code was not shared. The transfer failed because all recipients were unreachable.'
+                          : successInfo.outcome === 'partial'
+                            ? 'Not all recipients received the code. Check skipped recipients above.'
+                            : 'Your code was shared successfully. Check the File History tab to view or reshare it.'))
+                      : (successInfo.outcome === 'failed'
+                        ? 'No files were shared. The transfer failed because all recipients were unreachable.'
+                        : successInfo.outcome === 'partial'
+                          ? 'Not all files were shared. The transfer was partially completed. Check skipped recipients above.'
+                          : 'Each item gets a unique File ID. Check the File History tab to view and use them for tracking or resharing.')}
                   </div>
                 </div>
 

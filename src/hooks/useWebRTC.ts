@@ -221,11 +221,11 @@ export const useWebRTC = (socket: any, roomNumber: string, callbacks: ReceiveCal
             return
           }
           case 'message':
-            callbacks.onMessage?.(targetId, obj.message)
+            callbacks.onMessage?.(targetId, obj.message, { name: obj.senderName, uniqueId: obj.senderUniqueId, allowReshare: obj.allowReshare })
             return
           case 'msg-metadata': {
-            // Start receiving chunked message
-            msgRecvState.current.set(targetId, { totalSize: obj.totalSize, chunks: [], received: 0 })
+            // Start receiving chunked message (preserve sender info for callback on completion)
+            msgRecvState.current.set(targetId, { totalSize: obj.totalSize, chunks: [], received: 0, senderName: obj.senderName, senderUniqueId: obj.senderUniqueId, allowReshare: obj.allowReshare })
             return
           }
           case 'msg-chunk': {
@@ -240,7 +240,7 @@ export const useWebRTC = (socket: any, roomNumber: string, callbacks: ReceiveCal
             const msgState = msgRecvState.current.get(targetId)
             if (msgState) {
               const fullMessage = msgState.chunks.join('')
-              callbacks.onMessage?.(targetId, fullMessage)
+              callbacks.onMessage?.(targetId, fullMessage, { name: msgState.senderName, uniqueId: msgState.senderUniqueId, allowReshare: msgState.allowReshare })
               msgRecvState.current.delete(targetId)
             }
             return
