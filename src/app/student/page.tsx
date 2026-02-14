@@ -40,7 +40,12 @@ import {
   CheckCircle2,
   Copy,
   LogOut,
-  AlertTriangle
+  AlertTriangle,
+  Clock,
+  Zap,
+  Timer,
+  FileUp,
+  ArrowRight
 } from 'lucide-react'
 import { useSearchParams } from 'next/navigation'
 import { io } from 'socket.io-client'
@@ -163,6 +168,16 @@ function StudentDashboardInner() {
   const [pendingTargets, setPendingTargets] = useState<string[]>([])
   const [preflightIsPrint, setPreflightIsPrint] = useState(false)
 
+  // Auto-Share (Admin) – queue files and auto-send when admin comes online
+  const [autoShareActive, setAutoShareActive] = useState(false)
+  const autoShareActiveRef = useRef(false)
+  useEffect(() => { autoShareActiveRef.current = autoShareActive }, [autoShareActive])
+  const autoShareDataRef = useRef<{ files: File[]; linkUrl: string; message: string; allowReshare: boolean; codeMode: boolean } | null>(null)
+  const autoShareExpiryRef = useRef(0)
+  const [autoShareTimeLeft, setAutoShareTimeLeft] = useState(0)
+  const [autoShareSummary, setAutoShareSummary] = useState<{ fileCount: number; hasLink: boolean; hasCode: boolean; totalSize: string } | null>(null)
+  const performShareRef = useRef<any>(null)
+  const autoShareBannerRef = useRef<HTMLDivElement>(null)
 
   // Track current send target count to tailor error messages
   const sendingTargetsCountRef = useRef(0)
@@ -985,8 +1000,8 @@ function StudentDashboardInner() {
 
   // Helper to resolve recipient labels
   const getRecipientInfo = (id: string): { id: string; name: string; uniqueId: string } => {
-    if (id === 'admin') {
-      return { id: 'admin', name: `Lab Admin (Room ${adminRoom || userData?.roomNumber || ''})`, uniqueId: 'ADMIN' }
+    if (id === 'admin' || (adminId && id === adminId)) {
+      return { id, name: `Lab Admin (Room ${adminRoom || userData?.roomNumber || ''})`, uniqueId: 'ADMIN' }
     }
     const u = onlineUsers.find(u => u.id === id)
     if (u) return { id: u.id, name: u.name, uniqueId: u.uniqueId }
@@ -1028,6 +1043,146 @@ function StudentDashboardInner() {
     setSkipDialogOpen(false)
     setFailingRecipient(null)
   }
+
+  // --- Auto-Share (Admin) functions ---
+  const activateAutoShare = () => {
+    const data = {
+      files: [...selectedFiles],
+      linkUrl,
+      message,
+      allowReshare,
+      codeMode: codeShareMode,
+    }
+    autoShareDataRef.current = data
+    autoShareExpiryRef.current = Date.now() + 15 * 60 * 1000
+    setAutoShareTimeLeft(15 * 60)
+    setAutoShareActive(true)
+    autoShareActiveRef.current = true
+    setAutoShareSummary({
+      fileCount: data.files.length,
+      hasLink: !!data.linkUrl,
+      hasCode: data.codeMode && !!data.message,
+      totalSize: formatFileSize(data.files.reduce((s, f) => s + f.size, 0)),
+    })
+    setOfflineModalOpen(false)
+    // Clear current selection (files are now queued)
+    setSelectedFiles([])
+    setLinkUrl('')
+    setMessage('')
+    toast({
+      title: (
+        <div className="flex items-center gap-2">
+          <div className="w-5 h-5 rounded-full bg-primary/15 flex items-center justify-center">
+            <Timer className="w-3 h-3 text-primary" />
+          </div>
+          <span className="font-semibold">Auto-Share Queued</span>
+        </div>
+      ) as any,
+      description: (
+        <div className="space-y-1">
+          <p>Files will be sent automatically when admin comes online.</p>
+          <p className="text-[11px] text-muted-foreground">15-minute window • Keep this tab open</p>
+        </div>
+      ) as any,
+      duration: 5000,
+    })
+    // Scroll to the auto-share banner after a short delay for state to flush
+    setTimeout(() => {
+      autoShareBannerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    }, 100)
+  }
+
+  const cancelAutoShare = (reason: 'manual' | 'expired') => {
+    setAutoShareActive(false)
+    autoShareActiveRef.current = false
+    autoShareExpiryRef.current = 0
+    setAutoShareTimeLeft(0)
+    autoShareDataRef.current = null
+    setAutoShareSummary(null)
+    if (reason === 'expired') {
+      toast({
+        title: (
+          <div className="flex items-center gap-2">
+            <div className="w-5 h-5 rounded-full bg-amber-500/15 flex items-center justify-center">
+              <Clock className="w-3 h-3 text-amber-600 dark:text-amber-400" />
+            </div>
+            <span className="font-semibold">Auto-Share Expired</span>
+          </div>
+        ) as any,
+        description: (
+          <div className="space-y-1.5">
+            <p>The 15-minute window has passed. Admin did not come online.</p>
+            <p className="text-[11px] text-muted-foreground flex items-center gap-1">
+              <ArrowRight className="w-3 h-3" />
+              Select your files again and try once more.
+            </p>
+          </div>
+        ) as any,
+        variant: 'default',
+        duration: 10000,
+      })
+    } else {
+      toast({
+        title: 'Auto-Share Cancelled',
+        description: 'Your queued files have been removed.',
+        duration: 3000,
+      })
+    }
+  }
+
+  // Auto-Share countdown timer
+  useEffect(() => {
+    if (!autoShareActive) return
+    const interval = setInterval(() => {
+      const remaining = Math.max(0, Math.ceil((autoShareExpiryRef.current - Date.now()) / 1000))
+      setAutoShareTimeLeft(remaining)
+      if (remaining <= 0) {
+        clearInterval(interval)
+        cancelAutoShare('expired')
+      }
+    }, 1000)
+    return () => clearInterval(interval)
+  }, [autoShareActive])
+
+  // Auto-Share: trigger transfer when admin comes online
+  useEffect(() => {
+    if (!autoShareActive || !adminId) return
+    const data = autoShareDataRef.current
+    if (!data) return
+    // Admin is now online – trigger auto-share!
+    const capturedAdminId = adminId
+    setAutoShareActive(false)
+    autoShareActiveRef.current = false
+    autoShareExpiryRef.current = 0
+    setAutoShareTimeLeft(0)
+    setAutoShareSummary(null)
+    // Restore share state for performShare
+    setSelectedFiles(data.files)
+    setLinkUrl(data.linkUrl)
+    setMessage(data.message)
+    setAllowReshare(data.allowReshare)
+    setCodeShareMode(data.codeMode)
+    autoShareDataRef.current = null
+    toast({
+      title: (
+        <div className="flex items-center gap-2">
+          <div className="w-5 h-5 rounded-full bg-emerald-500/15 flex items-center justify-center">
+            <Zap className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
+          </div>
+          <span className="font-semibold">Admin is Online!</span>
+        </div>
+      ) as any,
+      description: (
+        <p>Initiating auto-share transfer now…</p>
+      ) as any,
+      duration: 4000,
+    })
+    // Allow state to flush then call performShare via ref (captures latest closure)
+    setTimeout(() => {
+      sendingTargetsCountRef.current = 1
+      performShareRef.current?.([capturedAdminId], true)
+    }, 200)
+  }, [adminId, autoShareActive])
 
   const performShare = async (targets: string[], isPrintRequest: boolean) => {
     if (targets.length === 0) return
@@ -1529,9 +1684,20 @@ function StudentDashboardInner() {
       // Keep the hook’s onSendComplete in control of the progress bar cleanup
     }
   }
+  // Keep ref pointing to latest performShare for auto-share callback
+  performShareRef.current = performShare
 
   // Preflight: check recipients are online; show modal if some are offline
   const preflightAndMaybeShare = (isPrintRequest: boolean, bypassGoogleCheck = false) => {
+    // Block if auto-share is already queued for admin
+    if (isPrintRequest && autoShareActive) {
+      toast({
+        title: 'Auto-Share Already Active',
+        description: 'Files are already queued for auto-share to admin. Cancel the existing one first.',
+        duration: 4000,
+      })
+      return
+    }
     // Allow proceeding if:
     // 1. Has files OR has link OR (codeShareMode is enabled AND has code)
     if (selectedFiles.length === 0 && !linkUrl && !(codeShareMode && message.trim())) return
@@ -1755,6 +1921,109 @@ function StudentDashboardInner() {
                 <CardDescription>Upload files or share links with friends or submit for printing</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
+                {/* Auto-Share (Admin) Active Banner */}
+                <AnimatePresence>
+                  {autoShareActive && autoShareSummary && (
+                    <motion.div
+                      ref={autoShareBannerRef}
+                      initial={{ opacity: 0, y: -12, scale: 0.97 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, y: -8, scale: 0.97 }}
+                      transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
+                    >
+                      <div className="relative overflow-hidden rounded-xl border border-primary/20 bg-card shadow-sm">
+                        {/* Top accent line */}
+                        <div className="h-[2px] bg-primary/30" />
+
+                        <div className="p-4 max-sm:p-3">
+                          {/* Header row: title + status badge */}
+                          <div className="flex items-center justify-between mb-3 max-sm:mb-2.5">
+                            <div className="flex items-center gap-2">
+                              <Timer className="w-4 h-4 text-primary" />
+                              <h4 className="text-sm font-semibold text-foreground">Auto-Share</h4>
+                            </div>
+                            <span className="inline-flex items-center gap-1.5 rounded-full bg-primary/10 text-primary text-[11px] max-sm:text-[10px] font-medium px-2.5 max-sm:px-2 py-1 max-sm:py-0.5">
+                              <span className="relative flex h-1.5 w-1.5">
+                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75" />
+                                <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-primary" />
+                              </span>
+                              Waiting for Admin
+                            </span>
+                          </div>
+
+                          {/* Main content: side-by-side (default), stacked on mobile */}
+                          <div className="flex flex-row items-center gap-4 max-sm:flex-col max-sm:gap-3">
+                            {/* SVG Countdown Ring */}
+                            <div className="relative shrink-0">
+                              <svg className="w-[88px] h-[88px] max-sm:w-16 max-sm:h-16 -rotate-90" viewBox="0 0 88 88">
+                                <circle cx="44" cy="44" r="38" className="fill-none stroke-muted/30" strokeWidth="4" />
+                                <circle
+                                  cx="44" cy="44" r="38"
+                                  className={`fill-none ${autoShareTimeLeft <= 60 ? 'stroke-red-500' : autoShareTimeLeft <= 300 ? 'stroke-amber-500' : 'stroke-primary'}`}
+                                  strokeWidth="4"
+                                  strokeLinecap="round"
+                                  strokeDasharray={`${2 * Math.PI * 38}`}
+                                  strokeDashoffset={`${2 * Math.PI * 38 * (1 - autoShareTimeLeft / 900)}`}
+                                  style={{ transition: 'stroke-dashoffset 1s linear' }}
+                                />
+                              </svg>
+                              <div className="absolute inset-0 flex flex-col items-center justify-center">
+                                <span className={`text-base max-sm:text-sm font-mono font-bold leading-none ${autoShareTimeLeft <= 60 ? 'text-red-500' : autoShareTimeLeft <= 300 ? 'text-amber-500' : 'text-foreground'}`}>
+                                  {Math.floor(autoShareTimeLeft / 60)}:{(autoShareTimeLeft % 60).toString().padStart(2, '0')}
+                                </span>
+                                <span className="text-[10px] max-sm:text-[8px] text-muted-foreground leading-none mt-1 max-sm:mt-0.5">remaining</span>
+                              </div>
+                            </div>
+
+                            {/* Details column */}
+                            <div className="flex-1 min-w-0 space-y-2.5 max-sm:w-full max-sm:space-y-2">
+                              {/* Queued items */}
+                              <div className="space-y-1">
+                                <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider max-sm:text-center">Queued</p>
+                                <div className="flex items-center gap-2 flex-wrap max-sm:justify-center">
+                                  {autoShareSummary.fileCount > 0 && (
+                                    <span className="inline-flex items-center gap-1.5 rounded-md bg-secondary/80 px-2 py-1 text-xs font-medium text-foreground">
+                                      <FileUp className="w-3 h-3 text-muted-foreground" />
+                                      {autoShareSummary.fileCount} file{autoShareSummary.fileCount > 1 ? 's' : ''}
+                                      <span className="text-muted-foreground font-normal">({autoShareSummary.totalSize})</span>
+                                    </span>
+                                  )}
+                                  {autoShareSummary.hasLink && (
+                                    <span className="inline-flex items-center gap-1.5 rounded-md bg-secondary/80 px-2 py-1 text-xs font-medium text-foreground">
+                                      <Link className="w-3 h-3 text-muted-foreground" />
+                                      1 link
+                                    </span>
+                                  )}
+                                  {autoShareSummary.hasCode && (
+                                    <span className="inline-flex items-center gap-1.5 rounded-md bg-secondary/80 px-2 py-1 text-xs font-medium text-foreground">
+                                      <Code className="w-3 h-3 text-muted-foreground" />
+                                      Code snippet
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+
+                              {/* Action row */}
+                              <div className="flex flex-row items-center justify-between max-sm:flex-col max-sm:gap-1.5">
+                                <p className="text-[11px] max-sm:text-[10px] text-muted-foreground max-sm:text-center">Will send instantly when admin connects</p>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-7 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive"
+                                  onClick={() => cancelAutoShare('manual')}
+                                >
+                                  <X className="w-3 h-3 mr-1" />
+                                  Cancel
+                                </Button>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+
                 {/* Code Share Toggle */}
                 <div className="flex items-center justify-between p-3 bg-secondary/50 dark:bg-secondary/30 rounded-xl border border-border/50">
                   <div className="flex items-center gap-3">
@@ -2193,7 +2462,7 @@ function StudentDashboardInner() {
                             </Button>
                             <Button
                               onClick={() => preflightAndMaybeShare(true)}
-                              disabled={isUploading || (selectedFiles.length === 0 && !linkUrl) || !adminId}
+                              disabled={isUploading || (selectedFiles.length === 0 && !linkUrl) || autoShareActive}
                               variant="outline"
                               className="flex-1"
                             >
@@ -2312,8 +2581,8 @@ function StudentDashboardInner() {
                                           }}
                                         />
                                         <div className="flex items-center gap-3">
-                                          <div className="w-8 h-8 rounded-full flex items-center justify-center text-white font-semibold text-sm" style={{ backgroundImage: generateGradient(`Lab Admin (Room ${adminRoom || userData.roomNumber})`) }}>
-                                            A
+                                          <div className="w-8 h-8 rounded-full flex items-center justify-center text-white font-semibold text-sm" style={{ backgroundImage: 'linear-gradient(135deg, #34d399, #06b6d4)' }}>
+                                            <Printer className="w-4 h-4" />
                                           </div>
                                           <span>Lab Admin (Room {adminRoom || userData.roomNumber})</span>
                                         </div>
@@ -2344,7 +2613,7 @@ function StudentDashboardInner() {
                             </Button>
                             <Button
                               onClick={() => preflightAndMaybeShare(true)}
-                              disabled={isUploading || (selectedFiles.length === 0 && !linkUrl) || !adminId}
+                              disabled={isUploading || (selectedFiles.length === 0 && !linkUrl) || autoShareActive}
                               variant="outline"
                               className="flex-1"
                             >
@@ -2849,14 +3118,51 @@ function StudentDashboardInner() {
                 <p>File will be shared with other online recipients.</p>
               </div>
             )}
+            {/* Auto-Share option when admin is offline for print */}
+            {preflightIsPrint && offlineUsersInfo.some(u => u.uniqueId === 'ADMIN') && pendingTargets.length === 0 && !autoShareActive && (
+              <div className="mt-3 rounded-xl border border-primary/20 bg-primary/[0.03] dark:bg-primary/[0.06]">
+                <div className="p-4">
+                  <div className="flex items-start gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-primary/15 flex items-center justify-center shrink-0">
+                      <Timer className="w-5 h-5 text-primary" />
+                    </div>
+                    <div className="flex-1">
+                      <p className="text-sm font-semibold text-foreground">Auto-Share</p>
+                      <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">
+                        Queue your files and they'll be sent to admin automatically the moment they come online.
+                      </p>
+                      <div className="flex items-center gap-3 mt-2.5">
+                        <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
+                          <Clock className="w-3 h-3" />
+                          <span>15 min window</span>
+                        </div>
+                        <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
+                          <Zap className="w-3 h-3" />
+                          <span>Instant transfer</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
             <div className="flex flex-col sm:flex-row sm:justify-end gap-2 mt-4">
               <Button variant="outline" onClick={() => setOfflineModalOpen(false)}>Cancel</Button>
-              <Button
-                disabled={pendingTargets.length === 0}
-                onClick={() => { sendingTargetsCountRef.current = pendingTargets.length; performShare(pendingTargets, preflightIsPrint); setOfflineModalOpen(false) }}
-              >
-                Proceed
-              </Button>
+              {preflightIsPrint && offlineUsersInfo.some(u => u.uniqueId === 'ADMIN') && pendingTargets.length === 0 && !autoShareActive && (
+                <Button
+                  onClick={activateAutoShare}
+                >
+                  <Timer className="w-4 h-4 mr-2" />
+                  Enable Auto-Share
+                </Button>
+              )}
+              {pendingTargets.length > 0 && (
+                <Button
+                  onClick={() => { sendingTargetsCountRef.current = pendingTargets.length; performShare(pendingTargets, preflightIsPrint); setOfflineModalOpen(false) }}
+                >
+                  Proceed
+                </Button>
+              )}
             </div>
           </DialogContent>
         </Dialog>
@@ -3061,13 +3367,12 @@ function StudentDashboardInner() {
                               const isSelf = r.uniqueId === userData.uniqueId
                               const isAdmin = r.uniqueId === 'ADMIN'
                               const displayName = isAdmin ? `Lab Admin (Room ${userData.roomNumber})` : r.name
-                              const avatarText = isAdmin ? 'A' : r.name.charAt(0).toUpperCase()
                               const isFailed = successInfo.outcome === 'failed'
                               return (
                                 <span key={r.uniqueId + i} className={`inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-xs ${isFailed ? 'border-red-200 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400' : 'bg-muted/50 dark:bg-neutral-800'
                                   }`}>
-                                  <span className="inline-flex w-5 h-5 items-center justify-center rounded-full text-white text-[10px] font-medium" style={{ backgroundImage: generateGradient(displayName) }}>
-                                    {avatarText}
+                                  <span className="inline-flex w-5 h-5 items-center justify-center rounded-full text-white text-[10px] font-medium" style={{ backgroundImage: isAdmin ? 'linear-gradient(135deg, #34d399, #06b6d4)' : generateGradient(displayName) }}>
+                                    {isAdmin ? <Printer className="w-3 h-3" /> : r.name.charAt(0).toUpperCase()}
                                   </span>
                                   {isAdmin ? displayName : `${r.name} (${r.uniqueId})`}
                                   {isSelf ? ' (You)' : ''}
@@ -3178,11 +3483,10 @@ function StudentDashboardInner() {
                               const isSelf = s.uniqueId === userData.uniqueId
                               const isAdmin = s.uniqueId === 'ADMIN'
                               const displayName = isAdmin ? `Lab Admin (Room ${userData.roomNumber})` : (s.name || 'Unknown')
-                              const avatarText = isAdmin ? 'A' : (s.name?.charAt(0).toUpperCase() || '?')
                               return (
                                 <span key={(s.uniqueId || '') + i} className="inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-xs bg-muted/50 dark:bg-neutral-800">
-                                  <span className="inline-flex w-5 h-5 items-center justify-center rounded-full text-white text-[10px] font-medium" style={{ backgroundImage: generateGradient(displayName) }}>
-                                    {avatarText}
+                                  <span className="inline-flex w-5 h-5 items-center justify-center rounded-full text-white text-[10px] font-medium" style={{ backgroundImage: isAdmin ? 'linear-gradient(135deg, #34d399, #06b6d4)' : generateGradient(displayName) }}>
+                                    {isAdmin ? <Printer className="w-3 h-3" /> : (s.name?.charAt(0).toUpperCase() || '?')}
                                   </span>
                                   {isAdmin ? displayName : `${s.name} (${s.uniqueId || '—'})`}
                                   {isSelf ? ' (You)' : ''}
@@ -3390,8 +3694,6 @@ function StudentDashboardInner() {
         </DialogContent>
       </Dialog>
       {/* Animations moved to global utilities in globals.css */}
-
-
 
       {/* Offline Dialog */}
       <OfflineDialog isOnline={isOnline} />
