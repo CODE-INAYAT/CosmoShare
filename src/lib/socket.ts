@@ -228,7 +228,7 @@ export const setupSocket = (io: ServerIO) => {
 
     // OneShare session storage: code -> { senderId, createdAt, files }
     // Using closure variable to persist across connections
-    const oneShareSessions = (io as any)._oneShareSessions || new Map<string, { senderId: string; createdAt: number; files?: any[] }>()
+    const oneShareSessions = (io as any)._oneShareSessions || new Map<string, { senderId: string; createdAt: number; files?: any[]; multiShare?: boolean; receivers?: Set<string> }>()
       ; (io as any)._oneShareSessions = oneShareSessions
 
     // Generate unique 4-digit code
@@ -242,30 +242,35 @@ export const setupSocket = (io: ServerIO) => {
       return code
     }
 
-    // Clean up expired sessions (older than 10 minutes)
+    // Clean up expired sessions (5 min for MultiShare, 10 min for regular)
     const cleanupExpiredSessions = () => {
       const now = Date.now()
+      const FIVE_MINUTES = 5 * 60 * 1000
       const TEN_MINUTES = 10 * 60 * 1000
       for (const [code, session] of oneShareSessions.entries()) {
-        if (now - session.createdAt > TEN_MINUTES) {
+        const ttl = session.multiShare ? FIVE_MINUTES : TEN_MINUTES
+        if (now - session.createdAt > ttl) {
+          // Notify participants that session expired
+          io.to(`oneshare-${code}`).emit('oneshare-cancelled', { code, reason: 'Session expired' })
           oneShareSessions.delete(code)
         }
       }
     }
 
     // Sender creates a OneShare session
-    socket.on('oneshare-create', (data: { files?: any[] }) => {
+    socket.on('oneshare-create', (data: { files?: any[]; multiShare?: boolean }) => {
       cleanupExpiredSessions()
       const code = generateOneShareCode()
       oneShareSessions.set(code, {
         senderId: socket.id,
         createdAt: Date.now(),
-        files: data.files
+        files: data.files,
+        multiShare: data.multiShare || false
       })
       // Join a private room for this session
       socket.join(`oneshare-${code}`)
       socket.emit('oneshare-created', { code })
-      console.log(`OneShare session created: ${code} by ${socket.id}`)
+      console.log(`OneShare session created: ${code} by ${socket.id}${data.multiShare ? ' (MultiShare)' : ''}`)
     })
 
     // Receiver joins a OneShare session with code
@@ -320,20 +325,30 @@ export const setupSocket = (io: ServerIO) => {
       })
     })
 
-    // Sender signals transfer complete
-    socket.on('oneshare-complete', (data: { code: string }) => {
-      const { code } = data
-      io.to(`oneshare-${code}`).emit('oneshare-transfer-complete', { code })
-      // Clean up session
-      oneShareSessions.delete(code)
-      console.log(`OneShare session completed and cleaned up: ${code}`)
+    // Sender signals transfer complete (for a specific receiver or entire session)
+    socket.on('oneshare-complete', (data: { code: string; receiverId?: string }) => {
+      const { code, receiverId } = data
+      const session = oneShareSessions.get(code)
+      if (!session) return
+      // Only the session sender can mark transfers complete
+      if (session.senderId !== socket.id) return
+      if (session.multiShare && receiverId) {
+        // MultiShare: notify only the specific receiver, keep session alive
+        io.to(receiverId).emit('oneshare-transfer-complete', { code })
+        console.log(`OneShare MultiShare transfer complete for receiver ${receiverId}: ${code}`)
+      } else {
+        // Regular: notify all in session room and clean up
+        io.to(`oneshare-${code}`).emit('oneshare-transfer-complete', { code })
+        oneShareSessions.delete(code)
+        console.log(`OneShare session completed and cleaned up: ${code}`)
+      }
     })
 
-    // Cancel/leave OneShare session
+    // Cancel/leave OneShare session — only the sender can cancel
     socket.on('oneshare-cancel', (data: { code: string }) => {
       const { code } = data
       const session = oneShareSessions.get(code)
-      if (session) {
+      if (session && session.senderId === socket.id) {
         io.to(`oneshare-${code}`).emit('oneshare-cancelled', { code })
         oneShareSessions.delete(code)
         console.log(`OneShare session cancelled: ${code}`)

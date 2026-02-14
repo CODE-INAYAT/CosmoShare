@@ -23,13 +23,17 @@ type ReceiveCallbacks = {
     onSendProgress?: (fileName: string, sentBytes: number, totalBytes: number) => void
     onSendComplete?: (fileName: string) => void
     onSendFailed?: (fileName: string, reason?: string) => void
+    // MultiShare callbacks
+    onReceiverConnected?: (receiverId: string) => void
+    onReceiverDisconnected?: (receiverId: string) => void
 }
 
 export const useOneShareWebRTC = (
     socket: any,
     code: string | null,
     isSender: boolean,
-    callbacks: ReceiveCallbacks = {}
+    callbacks: ReceiveCallbacks = {},
+    multiShare: boolean = false,
 ) => {
     const [peer, setPeer] = useState<SimplePeer.Instance | null>(null)
     const [isConnected, setIsConnected] = useState(false)
@@ -42,70 +46,16 @@ export const useOneShareWebRTC = (
     // Message receive state for chunked messages
     const msgRecvState = useRef<{ totalSize: number; chunks: string[]; received: number } | null>(null)
 
-    // Handle signaling events
-    useEffect(() => {
-        if (!socket || !code) return
+    // MultiShare: map of receiverId -> peer for sender
+    const peersMapRef = useRef<Map<string, SimplePeer.Instance>>(new Map())
+    const [connectedReceivers, setConnectedReceivers] = useState<string[]>([])
 
-        const handleReceiverJoined = (data: { receiverId: string }) => {
-            console.log('Receiver joined:', data?.receiverId)
-            setTargetId(data?.receiverId)
-            // Sender initiates the connection
-            if (isSender) {
-                createPeer(true, data?.receiverId)
-            }
-        }
+    // Store callbacks in ref to avoid stale closures
+    const callbacksRef = useRef(callbacks)
+    callbacksRef.current = callbacks
 
-        const handleJoined = (data: { senderId: string }) => {
-            console.log('Joined OneShare session, sender:', data?.senderId)
-            setTargetId(data?.senderId)
-            // Receiver waits for offer
-        }
-
-        const handleOffer = (data: { offer: any; senderId: string }) => {
-            console.log('Received offer from:', data?.senderId)
-            if (!isSender && !peerRef.current) {
-                createPeer(false, data?.senderId)
-            }
-            peerRef.current?.signal(data?.offer)
-        }
-
-        const handleAnswer = (data: { answer: any }) => {
-            console.log('Received answer')
-            peerRef.current?.signal(data?.answer)
-        }
-
-        const handleIceCandidate = (data: { candidate: any }) => {
-            peerRef.current?.signal(data?.candidate)
-        }
-
-        const handleCancelled = (data: { reason?: string }) => {
-            console.log('Session cancelled:', data?.reason)
-            cleanup()
-        }
-
-        socket.on('oneshare-receiver-joined', handleReceiverJoined)
-        socket.on('oneshare-joined', handleJoined)
-        socket.on('oneshare-offer', handleOffer)
-        socket.on('oneshare-answer', handleAnswer)
-        socket.on('oneshare-ice-candidate', handleIceCandidate)
-        socket.on('oneshare-cancelled', handleCancelled)
-
-        return () => {
-            socket.off('oneshare-receiver-joined', handleReceiverJoined)
-            socket.off('oneshare-joined', handleJoined)
-            socket.off('oneshare-offer', handleOffer)
-            socket.off('oneshare-answer', handleAnswer)
-            socket.off('oneshare-ice-candidate', handleIceCandidate)
-            socket.off('oneshare-cancelled', handleCancelled)
-        }
-    }, [socket, code, isSender])
-
-    const createPeer = (initiator: boolean, tid: string) => {
-        if (peerRef.current) {
-            peerRef.current.destroy()
-        }
-
-        // ICE servers for WebRTC
+    // ICE servers config
+    const getIceServers = () => {
         const stunDefaults = [
             { urls: 'stun:stun.l.google.com:19302' },
             { urls: 'stun:stun1.l.google.com:19302' },
@@ -123,42 +73,12 @@ export const useOneShareWebRTC = (
             stunDefaults.push({ urls: turnUrls, username: turnUser, credential: turnCred })
         }
 
-        const newPeer = new SimplePeer({
-            initiator,
-            trickle: true,
-            config: {
-                iceServers: stunDefaults,
-            }
-        })
+        return stunDefaults
+    }
 
-        newPeer.on('signal', (data: any) => {
-            if (!socket || !code) return
-
-            if (data.type === 'offer') {
-                socket.emit('oneshare-offer', { targetId: tid, offer: data, code })
-            } else if (data.type === 'answer') {
-                socket.emit('oneshare-answer', { targetId: tid, answer: data, code })
-            } else if ((data as any).candidate) {
-                socket.emit('oneshare-ice-candidate', { targetId: tid, candidate: data, code })
-            }
-        })
-
-        newPeer.on('connect', () => {
-            console.log('WebRTC connected!')
-            setIsConnected(true)
-            callbacks.onConnect?.()
-
-            // Tune data channel
-            try {
-                const ch: any = (newPeer as any)?._channel || (newPeer as any)?.channel
-                if (ch) {
-                    try { ch.binaryType = 'arraybuffer' } catch { }
-                    try { ch.bufferedAmountLowThreshold = 64 * 1024 } catch { }
-                }
-            } catch { }
-        })
-
-        newPeer.on('data', async (data: any) => {
+    // Setup data handler for a peer (receiver side or individual peer)
+    const setupDataHandler = (p: SimplePeer.Instance) => {
+        p.on('data', async (data: any) => {
             // Handle control frames (JSON strings)
             if (typeof data === 'string') {
                 try {
@@ -166,21 +86,21 @@ export const useOneShareWebRTC = (
                     switch (obj.type) {
                         case 'file-metadata':
                             recvState.current = { meta: obj, buffers: [], received: 0 }
-                            callbacks.onFileMetadata?.(obj)
+                            callbacksRef.current.onFileMetadata?.(obj)
                             return
                         case 'file-complete':
                             if (recvState.current.meta) {
                                 const blob = new Blob(recvState.current.buffers, { type: recvState.current.meta.fileType })
                                 const url = URL.createObjectURL(blob)
-                                callbacks.onFileComplete?.(url, recvState.current.meta)
+                                callbacksRef.current.onFileComplete?.(url, recvState.current.meta)
                                 recvState.current = { buffers: [], received: 0 }
                             }
                             return
                         case 'link':
-                            callbacks.onLink?.(obj.linkUrl, obj.message)
+                            callbacksRef.current.onLink?.(obj.linkUrl, obj.message)
                             return
                         case 'message-only':
-                            callbacks.onMessage?.(obj.message)
+                            callbacksRef.current.onMessage?.(obj.message)
                             return
                         case 'msg-metadata':
                             msgRecvState.current = { totalSize: obj.totalSize, chunks: [], received: 0 }
@@ -194,7 +114,7 @@ export const useOneShareWebRTC = (
                         case 'msg-complete':
                             if (msgRecvState.current) {
                                 const fullMessage = msgRecvState.current.chunks.join('')
-                                callbacks.onMessage?.(fullMessage)
+                                callbacksRef.current.onMessage?.(fullMessage)
                                 msgRecvState.current = null
                             }
                             return
@@ -226,24 +146,24 @@ export const useOneShareWebRTC = (
                         const obj = JSON.parse(text)
                         if (obj?.type === 'file-metadata') {
                             recvState.current = { meta: obj, buffers: [], received: 0 }
-                            callbacks.onFileMetadata?.(obj)
+                            callbacksRef.current.onFileMetadata?.(obj)
                             return
                         }
                         if (obj?.type === 'file-complete') {
                             if (recvState.current.meta) {
                                 const blob = new Blob(recvState.current.buffers, { type: recvState.current.meta.fileType })
                                 const url = URL.createObjectURL(blob)
-                                callbacks.onFileComplete?.(url, recvState.current.meta)
+                                callbacksRef.current.onFileComplete?.(url, recvState.current.meta)
                                 recvState.current = { buffers: [], received: 0 }
                             }
                             return
                         }
                         if (obj?.type === 'link') {
-                            callbacks.onLink?.(obj.linkUrl, obj.message)
+                            callbacksRef.current.onLink?.(obj.linkUrl, obj.message)
                             return
                         }
                         if (obj?.type === 'message-only') {
-                            callbacks.onMessage?.(obj.message)
+                            callbacksRef.current.onMessage?.(obj.message)
                             return
                         }
                         if (obj?.type === 'msg-metadata') {
@@ -260,7 +180,7 @@ export const useOneShareWebRTC = (
                         if (obj?.type === 'msg-complete') {
                             if (msgRecvState.current) {
                                 const fullMessage = msgRecvState.current.chunks.join('')
-                                callbacks.onMessage?.(fullMessage)
+                                callbacksRef.current.onMessage?.(fullMessage)
                                 msgRecvState.current = null
                             }
                             return
@@ -273,36 +193,181 @@ export const useOneShareWebRTC = (
                 // File chunk - copy to ensure proper ArrayBuffer type
                 recvState.current.buffers.push(u8.slice().buffer)
                 recvState.current.received += u8.byteLength
-                callbacks.onFileChunk?.(
+                callbacksRef.current.onFileChunk?.(
                     recvState.current.meta?.fileName || '',
                     recvState.current.received,
                     recvState.current.meta?.fileSize || 0
                 )
             }
         })
+    }
+
+    // Create a peer for a specific target (used by both regular & MultiShare)
+    const createPeerForTarget = (initiator: boolean, tid: string) => {
+        const newPeer = new SimplePeer({
+            initiator,
+            trickle: true,
+            config: {
+                iceServers: getIceServers(),
+            }
+        })
+
+        newPeer.on('signal', (data: any) => {
+            if (!socket || !code) return
+
+            if (data.type === 'offer') {
+                socket.emit('oneshare-offer', { targetId: tid, offer: data, code })
+            } else if (data.type === 'answer') {
+                socket.emit('oneshare-answer', { targetId: tid, answer: data, code })
+            } else if ((data as any).candidate) {
+                socket.emit('oneshare-ice-candidate', { targetId: tid, candidate: data, code })
+            }
+        })
+
+        newPeer.on('connect', () => {
+            console.log(`WebRTC connected with ${tid}!`)
+            // Tune data channel
+            try {
+                const ch: any = (newPeer as any)?._channel || (newPeer as any)?.channel
+                if (ch) {
+                    try { ch.binaryType = 'arraybuffer' } catch { }
+                    try { ch.bufferedAmountLowThreshold = 64 * 1024 } catch { }
+                }
+            } catch { }
+
+            if (multiShare && isSender) {
+                // MultiShare sender: track this receiver
+                setConnectedReceivers(prev => [...prev, tid])
+                callbacksRef.current.onReceiverConnected?.(tid)
+            } else {
+                // Regular: single peer behavior
+                setIsConnected(true)
+                callbacksRef.current.onConnect?.()
+            }
+        })
+
+        // Setup data handler for receiver side
+        if (!isSender) {
+            setupDataHandler(newPeer)
+        }
 
         newPeer.on('error', (err: any) => {
             console.error('Peer error:', err)
             const message = String(err?.message || '')
-            callbacks.onSendFailed?.('', message || 'Connection error')
+            if (!multiShare || !isSender) {
+                callbacksRef.current.onSendFailed?.('', message || 'Connection error')
+            }
         })
 
         newPeer.on('close', () => {
-            console.log('Peer closed')
-            setIsConnected(false)
-            callbacks.onClose?.()
+            console.log(`Peer closed: ${tid}`)
+            if (multiShare && isSender) {
+                // Remove from map
+                peersMapRef.current.delete(tid)
+                setConnectedReceivers(prev => prev.filter(id => id !== tid))
+                callbacksRef.current.onReceiverDisconnected?.(tid)
+            } else {
+                setIsConnected(false)
+                callbacksRef.current.onClose?.()
+            }
         })
 
+        return newPeer
+    }
+
+    // Handle signaling events
+    useEffect(() => {
+        if (!socket || !code) return
+
+        const handleReceiverJoined = (data: { receiverId: string }) => {
+            console.log('Receiver joined:', data?.receiverId)
+            setTargetId(data?.receiverId)
+            // Sender initiates the connection
+            if (isSender) {
+                if (multiShare) {
+                    // MultiShare: create a NEW peer for this receiver (don't destroy existing ones)
+                    const newPeer = createPeerForTarget(true, data.receiverId)
+                    peersMapRef.current.set(data.receiverId, newPeer)
+                } else {
+                    // Regular: single peer
+                    createPeer(true, data.receiverId)
+                }
+            }
+        }
+
+        const handleJoined = (data: { senderId: string }) => {
+            console.log('Joined OneShare session, sender:', data?.senderId)
+            setTargetId(data?.senderId)
+            // Receiver waits for offer
+        }
+
+        const handleOffer = (data: { offer: any; senderId: string }) => {
+            console.log('Received offer from:', data?.senderId)
+            if (!isSender && !peerRef.current) {
+                createPeer(false, data?.senderId)
+            }
+            peerRef.current?.signal(data?.offer)
+        }
+
+        const handleAnswer = (data: { answer: any; senderId?: string }) => {
+            console.log('Received answer from:', data?.senderId)
+            if (multiShare && isSender && data?.senderId) {
+                // MultiShare: route answer to the correct peer
+                const p = peersMapRef.current.get(data.senderId)
+                p?.signal(data.answer)
+            } else {
+                peerRef.current?.signal(data?.answer)
+            }
+        }
+
+        const handleIceCandidate = (data: { candidate: any; senderId?: string }) => {
+            if (multiShare && isSender && data?.senderId) {
+                // MultiShare: route ICE candidate to correct peer
+                const p = peersMapRef.current.get(data.senderId)
+                p?.signal(data.candidate)
+            } else {
+                peerRef.current?.signal(data?.candidate)
+            }
+        }
+
+        const handleCancelled = (data: { reason?: string }) => {
+            console.log('Session cancelled:', data?.reason)
+            cleanup()
+        }
+
+        socket.on('oneshare-receiver-joined', handleReceiverJoined)
+        socket.on('oneshare-joined', handleJoined)
+        socket.on('oneshare-offer', handleOffer)
+        socket.on('oneshare-answer', handleAnswer)
+        socket.on('oneshare-ice-candidate', handleIceCandidate)
+        socket.on('oneshare-cancelled', handleCancelled)
+
+        return () => {
+            socket.off('oneshare-receiver-joined', handleReceiverJoined)
+            socket.off('oneshare-joined', handleJoined)
+            socket.off('oneshare-offer', handleOffer)
+            socket.off('oneshare-answer', handleAnswer)
+            socket.off('oneshare-ice-candidate', handleIceCandidate)
+            socket.off('oneshare-cancelled', handleCancelled)
+        }
+    }, [socket, code, isSender, multiShare])
+
+    // Regular single-peer creation (for non-MultiShare or receiver)
+    const createPeer = (initiator: boolean, tid: string) => {
+        if (peerRef.current) {
+            peerRef.current.destroy()
+        }
+
+        const newPeer = createPeerForTarget(initiator, tid)
         peerRef.current = newPeer
         setPeer(newPeer)
         setTargetId(tid)
     }
 
-    const sendFile = async (file: File, metadata?: { message?: string; fileId?: string }) => {
-        const p = peerRef.current
+    // Send file to a specific peer (for MultiShare)
+    const sendFileToPeer = async (p: SimplePeer.Instance, file: File, metadata?: { message?: string; fileId?: string }, progressCb?: (sent: number, total: number) => void) => {
         if (!p || p.destroyed || !(p as any).connected) {
-            callbacks.onSendFailed?.(file.name, 'Not connected')
-            return
+            return false
         }
 
         const meta = {
@@ -316,11 +381,10 @@ export const useOneShareWebRTC = (
 
         try {
             p.send(JSON.stringify(meta))
-        } catch { }
+        } catch { return false }
 
         const chunkSize = 32 * 1024
         let offset = 0
-        callbacks.onSendStart?.(file.name, file.size)
 
         while (offset < file.size) {
             if (p.destroyed || !(p as any).connected) break
@@ -366,12 +430,11 @@ export const useOneShareWebRTC = (
             } catch { }
 
             offset = next
-            callbacks.onSendProgress?.(file.name, offset, file.size)
+            progressCb?.(offset, file.size)
         }
 
         if (offset < file.size) {
-            callbacks.onSendFailed?.(file.name, 'Transfer aborted')
-            return
+            return false
         }
 
         if (!p.destroyed && (p as any).connected) {
@@ -380,7 +443,67 @@ export const useOneShareWebRTC = (
             } catch { }
         }
 
-        callbacks.onSendComplete?.(file.name)
+        return true
+    }
+
+    // Send link to a specific peer
+    const sendLinkToPeer = async (p: SimplePeer.Instance, linkUrl: string, message?: string) => {
+        if (!p || p.destroyed || !(p as any).connected) return false
+        try {
+            p.send(JSON.stringify({ type: 'link', linkUrl, message }))
+            return true
+        } catch {
+            return false
+        }
+    }
+
+    // Send message to a specific peer
+    const sendMessageToPeer = async (p: SimplePeer.Instance, message: string) => {
+        if (!p || p.destroyed || !(p as any).connected) return false
+        try {
+            const CHUNK_SIZE = 6 * 1024
+
+            if (message.length <= CHUNK_SIZE) {
+                p.send(JSON.stringify({ type: 'message-only', message }))
+            } else {
+                const totalSize = message.length
+                p.send(JSON.stringify({ type: 'msg-metadata', totalSize, timestamp: Date.now() }))
+
+                let offset = 0
+                while (offset < message.length) {
+                    const chunk = message.slice(offset, offset + CHUNK_SIZE)
+                    p.send(JSON.stringify({ type: 'msg-chunk', data: chunk }))
+                    offset += CHUNK_SIZE
+                    await new Promise(r => setTimeout(r, 5))
+                }
+
+                p.send(JSON.stringify({ type: 'msg-complete' }))
+            }
+            return true
+        } catch {
+            return false
+        }
+    }
+
+    // Public API: Send file (uses single peer for regular, specific peer for MultiShare)
+    const sendFile = async (file: File, metadata?: { message?: string; fileId?: string }) => {
+        const p = peerRef.current
+        if (!p || p.destroyed || !(p as any).connected) {
+            callbacks.onSendFailed?.(file.name, 'Not connected')
+            return
+        }
+
+        callbacks.onSendStart?.(file.name, file.size)
+
+        const ok = await sendFileToPeer(p, file, metadata, (sent, total) => {
+            callbacks.onSendProgress?.(file.name, sent, total)
+        })
+
+        if (ok) {
+            callbacks.onSendComplete?.(file.name)
+        } else {
+            callbacks.onSendFailed?.(file.name, 'Transfer aborted')
+        }
     }
 
     const sendLink = async (linkUrl: string, message?: string) => {
@@ -390,10 +513,10 @@ export const useOneShareWebRTC = (
             return
         }
 
-        try {
-            p.send(JSON.stringify({ type: 'link', linkUrl, message }))
+        const ok = await sendLinkToPeer(p, linkUrl, message)
+        if (ok) {
             callbacks.onSendComplete?.('link')
-        } catch {
+        } else {
             callbacks.onSendFailed?.('link', 'Failed to send link')
         }
     }
@@ -405,46 +528,79 @@ export const useOneShareWebRTC = (
             return
         }
 
-        try {
-            const CHUNK_SIZE = 6 * 1024 // 6KB chunks - stays under 8KB binary JSON limit with overhead
-
-            if (message.length <= CHUNK_SIZE) {
-                // Small message - send directly
-                p.send(JSON.stringify({ type: 'message-only', message }))
-            } else {
-                // Large message - send in chunks
-                const totalSize = message.length
-
-                // Send metadata
-                p.send(JSON.stringify({ type: 'msg-metadata', totalSize, timestamp: Date.now() }))
-
-                // Send chunks
-                let offset = 0
-                while (offset < message.length) {
-                    const chunk = message.slice(offset, offset + CHUNK_SIZE)
-                    p.send(JSON.stringify({ type: 'msg-chunk', data: chunk }))
-                    offset += CHUNK_SIZE
-                    // Small delay to prevent buffer overflow
-                    await new Promise(r => setTimeout(r, 5))
-                }
-
-                // Send completion signal
-                p.send(JSON.stringify({ type: 'msg-complete' }))
-            }
+        const ok = await sendMessageToPeer(p, message)
+        if (ok) {
             callbacks.onSendComplete?.('message')
-        } catch {
+        } else {
             callbacks.onSendFailed?.('message', 'Failed to send message')
         }
     }
 
+    // MultiShare: send all content to a specific receiver
+    const sendToReceiver = async (
+        receiverId: string,
+        files: File[],
+        linkUrl?: string,
+        message?: string,
+        codeShareMode?: boolean,
+        progressCb?: (sent: number, total: number) => void
+    ) => {
+        const p = peersMapRef.current.get(receiverId)
+        if (!p || p.destroyed || !(p as any).connected) {
+            return false
+        }
+
+        const totalBytes = files.reduce((sum, f) => sum + f.size, 0)
+        let bytesSent = 0
+
+        try {
+            // Send files
+            for (const file of files) {
+                const ok = await sendFileToPeer(p, file, { message }, (sent) => {
+                    progressCb?.(bytesSent + sent, totalBytes || 1)
+                })
+                if (!ok) return false
+                bytesSent += file.size
+            }
+
+            // Send link if present
+            if (linkUrl) {
+                const ok = await sendLinkToPeer(p, linkUrl, message)
+                if (!ok) return false
+            }
+
+            // Send code if in code share mode with no files/links
+            if (codeShareMode && files.length === 0 && !linkUrl && message) {
+                const ok = await sendMessageToPeer(p, message)
+                if (!ok) return false
+            }
+
+            return true
+        } catch {
+            return false
+        }
+    }
+
+    // Get peer for a specific receiver (MultiShare)
+    const getPeerForReceiver = (receiverId: string) => {
+        return peersMapRef.current.get(receiverId) || null
+    }
+
     const cleanup = useCallback(() => {
+        // Cleanup single peer
         if (peerRef.current) {
             peerRef.current.destroy()
             peerRef.current = null
         }
+        // Cleanup all MultiShare peers
+        peersMapRef.current.forEach((p) => {
+            try { p.destroy() } catch { }
+        })
+        peersMapRef.current.clear()
         setPeer(null)
         setIsConnected(false)
         setTargetId(null)
+        setConnectedReceivers([])
     }, [])
 
     // Cleanup on unmount
@@ -469,5 +625,9 @@ export const useOneShareWebRTC = (
         sendMessage,
         cleanup,
         isConnectedNow,
+        // MultiShare exports
+        connectedReceivers,
+        sendToReceiver,
+        getPeerForReceiver,
     }
 }

@@ -31,6 +31,8 @@ type OneShareSession = {
   senderId: string
   createdAt: number
   files?: any[]
+  multiShare?: boolean
+  receivers: Set<string>  // Track all receiver socket IDs for scoped broadcasts
 }
 
 export class RoomDurableObject implements DurableObject {
@@ -61,12 +63,25 @@ export class RoomDurableObject implements DurableObject {
     return code
   }
 
-  // Clean up expired OneShare sessions (older than 10 minutes)
+  // Clean up expired OneShare sessions (5 min for MultiShare, 10 min for regular)
   cleanupExpiredOneShareSessions(): void {
     const now = Date.now()
+    const FIVE_MINUTES = 5 * 60 * 1000
     const TEN_MINUTES = 10 * 60 * 1000
     for (const [code, session] of Array.from(this.oneShareSessions.entries())) {
-      if (now - session.createdAt > TEN_MINUTES) {
+      const ttl = session.multiShare ? FIVE_MINUTES : TEN_MINUTES
+      if (now - session.createdAt > ttl) {
+        // Notify only session participants that session expired
+        const senderWs = this.sockets.get(session.senderId)
+        if (senderWs) {
+          try { senderWs.send(JSON.stringify({ event: 'oneshare-cancelled', data: { code, reason: 'Session expired' } })) } catch { }
+        }
+        for (const recvId of session.receivers) {
+          const recvWs = this.sockets.get(recvId)
+          if (recvWs) {
+            try { recvWs.send(JSON.stringify({ event: 'oneshare-cancelled', data: { code, reason: 'Session expired' } })) } catch { }
+          }
+        }
         this.oneShareSessions.delete(code)
       }
     }
@@ -121,9 +136,14 @@ export class RoomDurableObject implements DurableObject {
             }
             broadcast('user-left', user, sid)
           }
-          // Also cleanup any OneShare sessions owned by this socket
+          // Also cleanup any OneShare sessions owned by this stale socket
           for (const [code, session] of Array.from(this.oneShareSessions.entries())) {
             if (session.senderId === sid) {
+              // Notify only session receivers
+              for (const recvId of session.receivers) {
+                const recvWs = this.sockets.get(recvId)
+                if (recvWs) send(recvWs, 'oneshare-cancelled', { code, reason: 'Sender disconnected' })
+              }
               this.oneShareSessions.delete(code)
             }
           }
@@ -169,12 +189,13 @@ export class RoomDurableObject implements DurableObject {
       // Cleanup any OneShare sessions owned by this socket
       for (const [code, session] of Array.from(this.oneShareSessions.entries())) {
         if (session.senderId === socketId) {
-          // Notify any receivers that the session is cancelled
-          this.sockets.forEach((ws, id) => {
-            if (id !== socketId) {
-              send(ws, 'oneshare-cancelled', { code, reason: 'Sender disconnected' })
+          // Notify only session receivers that the session is cancelled
+          for (const recvId of session.receivers) {
+            const recvWs = this.sockets.get(recvId)
+            if (recvWs) {
+              send(recvWs, 'oneshare-cancelled', { code, reason: 'Sender disconnected' })
             }
-          })
+          }
           this.oneShareSessions.delete(code)
         }
       }
@@ -285,10 +306,12 @@ export class RoomDurableObject implements DurableObject {
           this.oneShareSessions.set(code, {
             senderId: socketId,
             createdAt: Date.now(),
-            files: data.files
+            files: data.files,
+            multiShare: data.multiShare || false,
+            receivers: new Set()
           })
           send(server, 'oneshare-created', { code })
-          console.log(`OneShare session created: ${code} by ${socketId}`)
+          console.log(`OneShare session created: ${code} by ${socketId}${data.multiShare ? ' (MultiShare)' : ''}`)
           return
         }
 
@@ -300,6 +323,8 @@ export class RoomDurableObject implements DurableObject {
             send(server, 'oneshare-error', { message: 'Invalid or expired code' })
             return
           }
+          // Track this receiver in the session
+          session.receivers.add(socketId)
           // Notify sender that receiver connected
           sendTo(session.senderId, 'oneshare-receiver-joined', {
             receiverId: socketId,
@@ -355,27 +380,40 @@ export class RoomDurableObject implements DurableObject {
         }
 
         case 'oneshare-complete': {
-          // Sender signals transfer complete
-          const { code } = data
-          // Notify all participants
-          this.sockets.forEach((ws) => {
-            send(ws, 'oneshare-transfer-complete', { code })
-          })
-          // Clean up session
-          this.oneShareSessions.delete(code)
-          console.log(`OneShare session completed: ${code}`)
+          // Sender signals transfer complete (for a specific receiver or entire session)
+          const { code, receiverId } = data
+          const session = this.oneShareSessions.get(code)
+          if (!session) return
+          // Only the session sender can mark transfers complete
+          if (session.senderId !== socketId) return
+          if (session.multiShare && receiverId) {
+            // MultiShare: notify only the specific receiver, keep session alive
+            const recvWs = this.sockets.get(receiverId)
+            if (recvWs) send(recvWs, 'oneshare-transfer-complete', { code })
+            console.log(`OneShare MultiShare transfer complete for receiver ${receiverId}: ${code}`)
+          } else {
+            // Regular: notify sender + all tracked receivers, then clean up
+            send(server, 'oneshare-transfer-complete', { code })
+            for (const recvId of session.receivers) {
+              const recvWs = this.sockets.get(recvId)
+              if (recvWs) send(recvWs, 'oneshare-transfer-complete', { code })
+            }
+            this.oneShareSessions.delete(code)
+            console.log(`OneShare session completed: ${code}`)
+          }
           return
         }
 
         case 'oneshare-cancel': {
-          // Cancel/leave OneShare session
+          // Cancel/leave OneShare session — only the sender can cancel
           const { code } = data
           const session = this.oneShareSessions.get(code)
-          if (session) {
-            // Notify all participants
-            this.sockets.forEach((ws) => {
-              send(ws, 'oneshare-cancelled', { code })
-            })
+          if (session && session.senderId === socketId) {
+            // Notify only session participants
+            for (const recvId of session.receivers) {
+              const recvWs = this.sockets.get(recvId)
+              if (recvWs) send(recvWs, 'oneshare-cancelled', { code })
+            }
             this.oneShareSessions.delete(code)
             console.log(`OneShare session cancelled: ${code}`)
           }
