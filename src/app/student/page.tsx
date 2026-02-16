@@ -3174,7 +3174,7 @@ function StudentDashboardInner() {
 
         {/* Upload progress dialog (circular redesigned) */}
         <Dialog open={isUploading || forceProgress}>
-          <DialogContent className="max-w-md border-primary/20">
+          <DialogContent className="max-w-md border-primary/20 overflow-hidden">
             <DialogHeader>
               <DialogTitle className="text-lg text-center font-semibold flex items-center justify-center gap-2 text-primary">
                 <Upload className="w-5 h-5" />
@@ -3184,7 +3184,7 @@ function StudentDashboardInner() {
                 Keep this tab open until your files finish sending.
               </DialogDescription>
             </DialogHeader>
-            <div className="flex flex-col items-center gap-6 py-4">
+            <div className="flex flex-col items-center gap-6 py-4 w-full overflow-hidden">
               <div className="relative">
                 <svg className="w-36 h-36 -rotate-90" viewBox="0 0 100 100">
                   <circle cx="50" cy="50" r="46" className="stroke-primary/20" strokeWidth="8" fill="none" />
@@ -3247,26 +3247,24 @@ function StudentDashboardInner() {
                     {transferRecipients.map((recipient) => (
                       <div
                         key={recipient.id}
-                        className={`flex items-center justify-between py-2 px-3 rounded-lg transition-colors ${recipient.status === 'sending'
+                        className={`flex items-center gap-2 py-2 px-3 rounded-lg transition-colors overflow-hidden ${recipient.status === 'sending'
                           ? 'bg-primary/8 border border-primary/30'
                           : recipient.status === 'completed'
                             ? 'bg-muted/40'
                             : 'bg-muted/20'
                           }`}
                       >
-                        <div className="flex items-center gap-2.5">
-                          <div
-                            className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-medium shrink-0"
-                            style={{ backgroundImage: recipient.uniqueId === 'ADMIN' ? 'linear-gradient(135deg, #34d399, #06b6d4)' : generateGradient(recipient.name) }}
-                          >
-                            {recipient.uniqueId === 'ADMIN' ? <Printer className="w-3.5 h-3.5" /> : recipient.name.charAt(0).toUpperCase()}
-                          </div>
-                          <div className="min-w-0">
-                            <p className="text-sm font-medium truncate">{recipient.name}</p>
-                            <p className="text-xs text-muted-foreground">{recipient.uniqueId}</p>
-                          </div>
+                        <div
+                          className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-medium shrink-0"
+                          style={{ backgroundImage: recipient.uniqueId === 'ADMIN' ? 'linear-gradient(135deg, #34d399, #06b6d4)' : generateGradient(recipient.name) }}
+                        >
+                          {recipient.uniqueId === 'ADMIN' ? <Printer className="w-3.5 h-3.5" /> : recipient.name.charAt(0).toUpperCase()}
                         </div>
-                        <div className="shrink-0 ml-2">
+                        <div className="min-w-0 flex-1 overflow-hidden">
+                          <p className="text-sm font-medium truncate">{recipient.name}</p>
+                          <p className="text-xs text-muted-foreground truncate">{recipient.uniqueId}</p>
+                        </div>
+                        <div className="shrink-0">
                           {recipient.status === 'pending' && (
                             <span className="text-xs text-muted-foreground">Queued</span>
                           )}
