@@ -745,24 +745,24 @@ function FilePreviewInner({ file, senderName, senderUniqueId, recipients, timest
       </AlertDialog>
       {/* Preview dialog (shared between meatballs tap and inline button on desktop) */}
       <Dialog open={isPreviewOpen} onOpenChange={setIsPreviewOpen}>
-        <DialogContent showCloseButton={false} className="sm:max-w-[92vw] max-w-[92vw] w-[92vw] h-[85vh] p-0 rounded-2xl overflow-hidden flex flex-col">
-          <div className="flex items-center justify-between px-4 py-3 border-b bg-card dark:bg-gray-900 dark:border-gray-800">
-            <DialogHeader className="p-0 m-0">
-              <DialogTitle className="flex items-center gap-2 text-base font-semibold truncate max-w-[60vw]">
-                {file.isLink ? <Link className="w-5 h-5" /> : <FileIcon className="w-5 h-5" />}
-                <span className="truncate" title={file.fileName}>{file.fileName}</span>
+        <DialogContent showCloseButton={false} className="max-w-[95vw] sm:max-w-[92vw] w-[95vw] sm:w-[92vw] h-[80vh] sm:h-[85vh] p-0 rounded-2xl overflow-hidden flex flex-col">
+          <div className="flex items-center justify-between px-2.5 py-2 sm:px-4 sm:py-3 border-b bg-card dark:bg-gray-900 dark:border-gray-800 gap-1.5 sm:gap-2 min-w-0">
+            <DialogHeader className="p-0 m-0 min-w-0 flex-1 overflow-hidden">
+              <DialogTitle className="flex items-center gap-1.5 sm:gap-2 text-sm sm:text-base font-semibold min-w-0">
+                {file.isLink ? <Link className="w-4 h-4 sm:w-5 sm:h-5 shrink-0" /> : <FileIcon className="w-4 h-4 sm:w-5 sm:h-5 shrink-0" />}
+                <span className="overflow-x-auto whitespace-nowrap scrollbar-thin" title={file.fileName}>{file.fileName}</span>
               </DialogTitle>
             </DialogHeader>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1 sm:gap-2 shrink-0">
               <TooltipProvider delayDuration={150}>
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <button
                       onClick={handleDownload}
                       aria-label={file.isLink ? 'Open link' : 'Download'}
-                      className="cursor-pointer inline-flex items-center justify-center h-9 w-9 rounded-full text-primary hover:text-primary/90 hover:bg-primary/10 dark:hover:bg-primary/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 active:scale-95"
+                      className="cursor-pointer inline-flex items-center justify-center h-8 w-8 sm:h-9 sm:w-9 rounded-full text-primary hover:text-primary/90 hover:bg-primary/10 dark:hover:bg-primary/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 active:scale-95"
                     >
-                      {file.isLink ? <ExternalLink className="w-5 h-5" /> : <Download className="w-5 h-5" />}
+                      {file.isLink ? <ExternalLink className="w-[18px] h-[18px] sm:w-5 sm:h-5" /> : <Download className="w-[18px] h-[18px] sm:w-5 sm:h-5" />}
                     </button>
                   </TooltipTrigger>
                   <TooltipContent side="bottom">{file.isLink ? 'Open link' : 'Download'}</TooltipContent>
@@ -773,9 +773,9 @@ function FilePreviewInner({ file, senderName, senderUniqueId, recipients, timest
                       <button
                         onClick={() => onReshare({ fileName: file.fileName, fileType: file.fileType, fileSize: file.fileSize, fileData: file.fileData, fileUrl: file.fileUrl, linkUrl: file.linkUrl })}
                         aria-label="Reshare"
-                        className="cursor-pointer inline-flex items-center justify-center h-9 w-9 rounded-full text-primary hover:text-primary/90 hover:bg-primary/10 dark:hover:bg-primary/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 active:scale-95"
+                        className="cursor-pointer inline-flex items-center justify-center h-8 w-8 sm:h-9 sm:w-9 rounded-full text-primary hover:text-primary/90 hover:bg-primary/10 dark:hover:bg-primary/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 active:scale-95"
                       >
-                        <Share2 className="w-5 h-5" />
+                        <Share2 className="w-[18px] h-[18px] sm:w-5 sm:h-5" />
                       </button>
                     </TooltipTrigger>
                     <TooltipContent side="bottom">Reshare</TooltipContent>
@@ -786,9 +786,9 @@ function FilePreviewInner({ file, senderName, senderUniqueId, recipients, timest
                     <DialogClose asChild>
                       <button
                         aria-label="Close"
-                        className="cursor-pointer inline-flex items-center justify-center h-9 w-9 rounded-full text-muted-foreground hover:text-foreground hover:bg-gray-100 dark:hover:bg-gray-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-400/50 active:scale-95"
+                        className="cursor-pointer inline-flex items-center justify-center h-8 w-8 sm:h-9 sm:w-9 rounded-full text-muted-foreground hover:text-foreground hover:bg-gray-100 dark:hover:bg-gray-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-400/50 active:scale-95"
                       >
-                        <X className="w-5 h-5" />
+                        <X className="w-[18px] h-[18px] sm:w-5 sm:h-5" />
                       </button>
                     </DialogClose>
                   </TooltipTrigger>
