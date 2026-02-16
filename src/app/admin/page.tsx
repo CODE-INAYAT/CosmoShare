@@ -655,40 +655,40 @@ function AdminDashboardInner() {
 
   return (
     <div className="min-h-screen bg-background text-foreground">
-      <div className="container mx-auto px-4 py-6">
+      <div className="container mx-auto px-2 py-3 sm:px-4 sm:py-6">
         {/* Header */}
-        <div className="dashboard-header p-4 rounded-xl mb-6 flex flex-col md:flex-row items-center justify-between gap-4">
-          <div className="flex items-center gap-4">
-            <div className="p-2.5 bg-muted rounded-lg">
-              <Printer className="w-6 h-6 text-primary" />
+        <div className="dashboard-header p-3 sm:p-4 rounded-xl mb-4 sm:mb-6 flex flex-col md:flex-row items-start sm:items-center justify-between gap-3 sm:gap-4">
+          <div className="flex items-center gap-3 sm:gap-4 min-w-0 max-w-full">
+            <div className="p-2 sm:p-2.5 bg-muted rounded-lg shrink-0">
+              <Printer className="w-5 h-5 sm:w-6 sm:h-6 text-primary" />
             </div>
-            <div>
-              <h1 className="text-xl font-semibold">Lab Admin Dashboard</h1>
-              <p className="text-sm text-muted-foreground">Room {roomNumber} Management</p>
+            <div className="min-w-0">
+              <h1 className="text-base sm:text-xl font-semibold truncate">Lab Admin Dashboard</h1>
+              <p className="text-xs sm:text-sm text-muted-foreground">Room {roomNumber} Management</p>
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
-            <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
+            <div className="flex items-center gap-1.5 sm:gap-2">
               <ConnectionStatusBadge
                 isOnline={isOnline}
                 isSocketConnected={isConnected}
               />
-              <Badge variant="outline" className="flex items-center gap-1.5 px-2.5 py-1 text-xs">
-                <Users className="w-3.5 h-3.5" />
-                {onlineUsers.length} Students
+              <Badge variant="outline" className="flex items-center gap-1 sm:gap-1.5 px-2 sm:px-2.5 py-1 text-xs">
+                <Users className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
+                {onlineUsers.length} <span className="hidden sm:inline">Students</span>
               </Badge>
             </div>
-            <Button variant="outline" size="sm" onClick={handleRefreshSocket}>
-              <RefreshCw className="w-4 h-4 mr-2" />
-              Refresh
+            <Button variant="outline" size="sm" onClick={handleRefreshSocket} className="h-8 px-2 sm:px-3">
+              <RefreshCw className="w-4 h-4 sm:mr-2" />
+              <span className="hidden sm:inline">Refresh</span>
             </Button>
             <AlertDialog open={leaveRoomDialogOpen} onOpenChange={setLeaveRoomDialogOpen}>
               <AlertDialogTrigger asChild>
                 <Button
                   variant="outline"
                   size="sm"
-                  className="border-red-400/50 text-red-700 dark:border-red-500/40 dark:text-red-400 hover:border-red-500 hover:text-red-600 hover:bg-red-50/50 dark:hover:bg-red-950/20 dark:hover:text-red-400 transition-all duration-200"
+                  className="h-8 px-2 sm:px-3 border-red-400/50 text-red-700 dark:border-red-500/40 dark:text-red-400 hover:border-red-500 hover:text-red-600 hover:bg-red-50/50 dark:hover:bg-red-950/20 dark:hover:text-red-400 transition-all duration-200"
                 >
                   <LogOut className="w-4 h-4 md:mr-2" />
                   <span className="hidden md:inline">Leave Room</span>
@@ -723,17 +723,17 @@ function AdminDashboardInner() {
 
         {/* Tabs: Received Files | Analytics | Students */}
         <Tabs defaultValue="received" className="w-full">
-          <TabsList className="mb-6 h-10 p-1 bg-muted rounded-lg">
-            <TabsTrigger value="received" className="flex items-center gap-2 rounded-md text-sm">
-              <Printer className="w-4 h-4" />
-              Received Files
+          <TabsList className="mb-4 sm:mb-6 h-9 sm:h-10 p-1 bg-muted rounded-lg w-full sm:w-auto">
+            <TabsTrigger value="received" className="flex items-center gap-1.5 sm:gap-2 rounded-md text-xs sm:text-sm">
+              <Printer className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+              <span className="hidden sm:inline">Received</span> Files
             </TabsTrigger>
-            <TabsTrigger value="analytics" className="flex items-center gap-2 rounded-md text-sm">
-              <FileText className="w-4 h-4" />
+            <TabsTrigger value="analytics" className="flex items-center gap-1.5 sm:gap-2 rounded-md text-xs sm:text-sm">
+              <FileText className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
               Analytics
             </TabsTrigger>
-            <TabsTrigger value="students" className="flex items-center gap-2 rounded-md text-sm">
-              <Users className="w-4 h-4" />
+            <TabsTrigger value="students" className="flex items-center gap-1.5 sm:gap-2 rounded-md text-xs sm:text-sm">
+              <Users className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
               Students
             </TabsTrigger>
           </TabsList>
@@ -743,20 +743,20 @@ function AdminDashboardInner() {
             <div className="grid grid-cols-1 gap-6">
               <div className="col-span-1">
                 <Card>
-                  <CardHeader className="pb-4 sticky top-0 z-20 bg-card border-b">
-                    <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-                      <div className="flex items-center gap-4">
+                  <CardHeader className="pb-3 sm:pb-4 px-3 sm:px-6 sticky top-0 z-20 bg-card border-b">
+                    <div className="flex flex-col gap-3 sm:gap-4 md:flex-row md:items-center md:justify-between">
+                      <div className="flex items-center gap-3 sm:gap-4">
                         <div>
-                          <CardTitle className="flex items-center gap-2 text-lg font-semibold">
-                            <Printer className="w-5 h-5 text-primary" />
+                          <CardTitle className="flex items-center gap-2 text-base sm:text-lg font-semibold">
+                            <Printer className="w-4 h-4 sm:w-5 sm:h-5 text-primary" />
                             Print Requests
                           </CardTitle>
-                          <p className="text-sm text-muted-foreground">
-                            Manage student print requests and file sharing
+                          <p className="text-xs sm:text-sm text-muted-foreground">
+                            Manage student print requests
                           </p>
                         </div>
                       </div>
-                      <div className="flex items-center gap-2 w-full md:w-auto">
+                      <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
                         <div className="flex-1 md:flex-initial relative">
                           <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
                           <Input
@@ -843,10 +843,10 @@ function AdminDashboardInner() {
                             </PopoverContent>
                           </Popover>
                         </TooltipProvider>
-                        <div className="flex bg-muted rounded-lg p-1 gap-1">
+                        <div className="flex bg-muted rounded-lg p-1 gap-0.5 sm:gap-1">
                           <button
                             onClick={() => setFilter('all')}
-                            className={`h-8 px-3 rounded-md text-sm font-medium transition-all duration-150 ${filter === 'all'
+                            className={`h-7 sm:h-8 px-2 sm:px-3 rounded-md text-xs sm:text-sm font-medium transition-all duration-150 ${filter === 'all'
                               ? 'bg-primary text-primary-foreground shadow-sm'
                               : 'text-muted-foreground hover:text-foreground hover:bg-muted-foreground/10'
                               }`}
@@ -855,7 +855,7 @@ function AdminDashboardInner() {
                           </button>
                           <button
                             onClick={() => setFilter('pending')}
-                            className={`h-8 px-3 rounded-md text-sm font-medium transition-all duration-150 ${filter === 'pending'
+                            className={`h-7 sm:h-8 px-2 sm:px-3 rounded-md text-xs sm:text-sm font-medium transition-all duration-150 ${filter === 'pending'
                               ? 'bg-amber-500 text-white shadow-sm'
                               : 'text-muted-foreground hover:text-foreground hover:bg-muted-foreground/10'
                               }`}
@@ -864,7 +864,7 @@ function AdminDashboardInner() {
                           </button>
                           <button
                             onClick={() => setFilter('printed')}
-                            className={`h-8 px-3 rounded-md text-sm font-medium transition-all duration-150 ${filter === 'printed'
+                            className={`h-7 sm:h-8 px-2 sm:px-3 rounded-md text-xs sm:text-sm font-medium transition-all duration-150 ${filter === 'printed'
                               ? 'bg-primary text-primary-foreground shadow-sm'
                               : 'text-muted-foreground hover:text-foreground hover:bg-muted-foreground/10'
                               }`}
@@ -876,13 +876,13 @@ function AdminDashboardInner() {
                         <TooltipProvider>
                           <Tooltip>
                             <TooltipTrigger asChild>
-                              <div className={`flex items-center gap-2 px-2.5 py-1.5 rounded-lg border shadow-sm transition-colors ${autoDownload
+                              <div className={`flex items-center gap-1.5 sm:gap-2 px-2 sm:px-2.5 py-1 sm:py-1.5 rounded-lg border shadow-sm transition-colors ${autoDownload
                                 ? 'bg-emerald-50 border-emerald-200 dark:bg-emerald-950/30 dark:border-emerald-800'
                                 : 'bg-card'
                                 }`}>
-                                <Download className={`w-3.5 h-3.5 transition-colors ${autoDownload ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground'
+                                <Download className={`w-3 h-3 sm:w-3.5 sm:h-3.5 transition-colors ${autoDownload ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground'
                                   }`} />
-                                <span className={`text-xs font-medium transition-colors ${autoDownload ? 'text-emerald-700 dark:text-emerald-300' : ''
+                                <span className={`text-xs font-medium transition-colors hidden sm:inline ${autoDownload ? 'text-emerald-700 dark:text-emerald-300' : ''
                                   }`}>Auto-Download</span>
                                 <Switch
                                   id="auto-download-admin"
@@ -900,11 +900,11 @@ function AdminDashboardInner() {
                       </div>
                     </div>
                   </CardHeader>
-                  <CardContent>
+                  <CardContent className="px-2 sm:px-6">
                     {/* Inline receiving removed (handled via speed dial) */}
 
                     {processedRequests.length === 0 ? (
-                      <div className="text-center py-16 animate-in fade-in-0 zoom-in-95">
+                      <div className="text-center py-10 sm:py-16 animate-in fade-in-0 zoom-in-95">
                         {/* Choose icon based on type filter */}
                         {typeFilter === 'links' ? (
                           <div className="p-4 bg-blue-500/10 rounded-full inline-block mb-4">
@@ -972,7 +972,7 @@ function AdminDashboardInner() {
                           overscan={8}
                           itemContent={(index, request) => {
                             return (
-                              <div className={`p-3 transition-colors ${debouncedQuery ? 'animate-in fade-in-0 zoom-in-95' : ''}`}>
+                              <div className={`p-1.5 sm:p-3 transition-colors ${debouncedQuery ? 'animate-in fade-in-0 zoom-in-95' : ''}`}>
                                 <FilePreview
                                   file={{
                                     id: request.id,
@@ -1007,51 +1007,51 @@ function AdminDashboardInner() {
 
           {/* Analytics Tab */}
           <TabsContent value="analytics" className="animate-fade-in">
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-              <div className="stat-card p-6 rounded-2xl">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-6">
+              <div className="stat-card p-3 sm:p-6 rounded-xl sm:rounded-2xl">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm font-medium text-muted-foreground">Total Requests</p>
-                    <p className="text-3xl font-bold mt-1">{printRequests.length}</p>
+                    <p className="text-xs sm:text-sm font-medium text-muted-foreground">Total Requests</p>
+                    <p className="text-2xl sm:text-3xl font-bold mt-1">{printRequests.length}</p>
                   </div>
-                  <div className="p-3 bg-primary/10 rounded-xl">
-                    <FileText className="w-6 h-6 text-primary" />
+                  <div className="p-2 sm:p-3 bg-primary/10 rounded-lg sm:rounded-xl">
+                    <FileText className="w-5 h-5 sm:w-6 sm:h-6 text-primary" />
                   </div>
                 </div>
               </div>
 
-              <div className="stat-card p-6 rounded-2xl">
+              <div className="stat-card p-3 sm:p-6 rounded-xl sm:rounded-2xl">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm font-medium text-muted-foreground">Pending</p>
-                    <p className="text-3xl font-bold text-orange-500 mt-1">{pendingCount}</p>
+                    <p className="text-xs sm:text-sm font-medium text-muted-foreground">Pending</p>
+                    <p className="text-2xl sm:text-3xl font-bold text-orange-500 mt-1">{pendingCount}</p>
                   </div>
-                  <div className="p-3 bg-orange-500/10 rounded-xl">
-                    <Clock className="w-6 h-6 text-orange-500" />
+                  <div className="p-2 sm:p-3 bg-orange-500/10 rounded-lg sm:rounded-xl">
+                    <Clock className="w-5 h-5 sm:w-6 sm:h-6 text-orange-500" />
                   </div>
                 </div>
               </div>
 
-              <div className="stat-card p-6 rounded-2xl">
+              <div className="stat-card p-3 sm:p-6 rounded-xl sm:rounded-2xl">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm font-medium text-muted-foreground">Printed</p>
-                    <p className="text-3xl font-bold text-green-500 mt-1">{printedCount}</p>
+                    <p className="text-xs sm:text-sm font-medium text-muted-foreground">Printed</p>
+                    <p className="text-2xl sm:text-3xl font-bold text-green-500 mt-1">{printedCount}</p>
                   </div>
-                  <div className="p-3 bg-green-500/10 rounded-xl">
-                    <Check className="w-6 h-6 text-green-500" />
+                  <div className="p-2 sm:p-3 bg-green-500/10 rounded-lg sm:rounded-xl">
+                    <Check className="w-5 h-5 sm:w-6 sm:h-6 text-green-500" />
                   </div>
                 </div>
               </div>
 
-              <div className="stat-card p-6 rounded-2xl">
+              <div className="stat-card p-3 sm:p-6 rounded-xl sm:rounded-2xl">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm font-medium text-muted-foreground">Online Now</p>
-                    <p className="text-3xl font-bold mt-1">{onlineUsers.length}</p>
+                    <p className="text-xs sm:text-sm font-medium text-muted-foreground">Online Now</p>
+                    <p className="text-2xl sm:text-3xl font-bold mt-1">{onlineUsers.length}</p>
                   </div>
-                  <div className="p-3 bg-accent/10 rounded-xl">
-                    <Users className="w-6 h-6 text-accent" />
+                  <div className="p-2 sm:p-3 bg-accent/10 rounded-lg sm:rounded-xl">
+                    <Users className="w-5 h-5 sm:w-6 sm:h-6 text-accent" />
                   </div>
                 </div>
               </div>
@@ -1059,18 +1059,18 @@ function AdminDashboardInner() {
           </TabsContent>
 
           {/* Students Tab */}
-          <TabsContent value="students" className="mt-4">
+          <TabsContent value="students" className="mt-3 sm:mt-4">
             <Card>
-              <CardHeader className="pb-4">
-                <CardTitle className="flex items-center gap-2 text-lg font-semibold">
-                  <Users className="w-5 h-5" />
+              <CardHeader className="pb-3 sm:pb-4 px-3 sm:px-6">
+                <CardTitle className="flex items-center gap-2 text-base sm:text-lg font-semibold">
+                  <Users className="w-4 h-4 sm:w-5 sm:h-5" />
                   Online Students
                 </CardTitle>
-                <CardDescription>
+                <CardDescription className="text-xs sm:text-sm">
                   Students currently in Room {roomNumber}
                 </CardDescription>
               </CardHeader>
-              <CardContent>
+              <CardContent className="px-3 sm:px-6">
                 <div className="space-y-2">
                   {onlineUsers.length === 0 ? (
                     <div className="text-center py-12">
@@ -1088,15 +1088,15 @@ function AdminDashboardInner() {
                         itemContent={(index) => {
                           const user = onlineUsers[index]
                           return (
-                            <div key={user.id} className="flex items-center gap-3 p-3 hover:bg-muted/50 rounded-lg transition-colors">
-                              <div className="w-8 h-8 rounded-full flex items-center justify-center text-white font-semibold text-sm" style={{ backgroundImage: generateGradient(user.name) }}>
+                            <div key={user.id} className="flex items-center gap-2 sm:gap-3 p-2 sm:p-3 hover:bg-muted/50 rounded-lg transition-colors">
+                              <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center text-white font-semibold text-xs sm:text-sm shrink-0" style={{ backgroundImage: generateGradient(user.name) }}>
                                 {user.name.charAt(0).toUpperCase()}
                               </div>
-                              <div className="flex-1">
-                                <p className="font-medium text-sm">{user.name}</p>
-                                <p className="text-xs text-muted-foreground">{user.uniqueId}</p>
+                              <div className="flex-1 min-w-0">
+                                <p className="font-medium text-xs sm:text-sm overflow-x-auto whitespace-nowrap scrollbar-thin">{user.name}</p>
+                                <p className="text-xs text-muted-foreground truncate">{user.uniqueId}</p>
                               </div>
-                              <Badge className="bg-primary hover:bg-primary text-primary-foreground text-xs">Online</Badge>
+                              <Badge className="hidden sm:inline-flex bg-primary hover:bg-primary text-primary-foreground text-xs shrink-0">Online</Badge>
                             </div>
                           )
                         }}

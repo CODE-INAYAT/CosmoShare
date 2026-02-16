@@ -1843,19 +1843,19 @@ function StudentDashboardInner() {
 
   return (
     <div className="min-h-screen bg-background text-foreground">
-      <div className="container mx-auto px-4 py-6">
+      <div className="container mx-auto px-2 py-3 sm:px-4 sm:py-6">
         {/* Header */}
-        <div className="dashboard-header p-4 rounded-xl mb-6 flex flex-col md:flex-row items-center justify-between gap-4">
-          <div className="flex items-center gap-4">
-            <div className="w-11 h-11 rounded-full flex items-center justify-center text-white font-semibold text-lg" style={{ backgroundImage: generateGradient(userData.name) }}>
+        <div className="dashboard-header p-3 sm:p-4 rounded-xl mb-4 sm:mb-6 flex flex-col md:flex-row items-center justify-between gap-3 sm:gap-4 overflow-hidden">
+          <div className="flex items-center gap-3 sm:gap-4 min-w-0 max-w-full">
+            <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-full flex items-center justify-center text-white font-semibold text-base sm:text-lg shrink-0" style={{ backgroundImage: generateGradient(userData.name) }}>
               {userData.name.charAt(0).toUpperCase()}
             </div>
-            <div>
-              <h1 className="text-xl font-semibold text-foreground">{userData.name}</h1>
-              <p className="text-sm text-muted-foreground">ID: {userData.uniqueId} • Room {userData.roomNumber}</p>
+            <div className="min-w-0 overflow-hidden">
+              <h1 className="text-base sm:text-xl font-semibold text-foreground truncate max-w-[55vw] sm:max-w-none">{userData.name}</h1>
+              <p className="text-xs sm:text-sm text-muted-foreground truncate">ID: {userData.uniqueId} • Room {userData.roomNumber}</p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap justify-center">
             <ConnectionStatusBadge
               isOnline={isOnline}
               isSocketConnected={isConnected}
@@ -1904,23 +1904,23 @@ function StudentDashboardInner() {
 
         {/* Top-level tabs */}
         <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)} className="w-full">
-          <TabsList className="grid w-full grid-cols-3 h-10 p-1 bg-muted rounded-lg">
-            <TabsTrigger value="share">Share Files</TabsTrigger>
-            <TabsTrigger value="history">File History</TabsTrigger>
-            <TabsTrigger value="users">Online Users</TabsTrigger>
+          <TabsList className="grid w-full grid-cols-3 h-9 sm:h-10 p-1 bg-muted rounded-lg">
+            <TabsTrigger value="share" className="text-xs sm:text-sm px-1 sm:px-3">Share Files</TabsTrigger>
+            <TabsTrigger value="history" className="text-xs sm:text-sm px-1 sm:px-3">File History</TabsTrigger>
+            <TabsTrigger value="users" className="text-xs sm:text-sm px-1 sm:px-3">Online Users</TabsTrigger>
           </TabsList>
 
           {/* Share Files Tab */}
-          <TabsContent value="share" className="mt-4">
-            <Card>
-              <CardHeader className="pb-4">
-                <CardTitle className="flex items-center gap-2 text-lg font-semibold">
-                  <Share2 className="w-5 h-5" />
+          <TabsContent value="share" className="mt-3 sm:mt-4">
+            <Card className="py-3 sm:py-4">
+              <CardHeader className="pb-3 sm:pb-4 px-3 sm:px-6">
+                <CardTitle className="flex items-center gap-2 text-base sm:text-lg font-semibold">
+                  <Share2 className="w-4 h-4 sm:w-5 sm:h-5" />
                   Share Files
                 </CardTitle>
-                <CardDescription>Upload files or share links with friends or submit for printing</CardDescription>
+                <CardDescription className="text-xs sm:text-sm">Upload files or share links with friends or submit for printing</CardDescription>
               </CardHeader>
-              <CardContent className="space-y-4">
+              <CardContent className="space-y-3 sm:space-y-4 px-3 sm:px-6">
                 {/* Auto-Share (Admin) Active Banner */}
                 <AnimatePresence>
                   {autoShareActive && autoShareSummary && (
@@ -2025,16 +2025,16 @@ function StudentDashboardInner() {
                 </AnimatePresence>
 
                 {/* Code Share Toggle */}
-                <div className="flex items-center justify-between p-3 bg-secondary/50 dark:bg-secondary/30 rounded-xl border border-border/50">
-                  <div className="flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-emerald-500/30 to-cyan-500/30 dark:from-emerald-500/20 dark:to-cyan-500/20 flex items-center justify-center">
-                      <Code className="w-4 h-4 text-emerald-500" />
+                <div className="flex items-center justify-between p-2.5 sm:p-3 bg-secondary/50 dark:bg-secondary/30 rounded-xl border border-border/50">
+                  <div className="flex items-center gap-2.5 sm:gap-3">
+                    <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-lg bg-gradient-to-br from-emerald-500/30 to-cyan-500/30 dark:from-emerald-500/20 dark:to-cyan-500/20 flex items-center justify-center shrink-0">
+                      <Code className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-emerald-500" />
                     </div>
                     <div>
                       <label htmlFor="code-share-toggle" className="text-sm font-medium cursor-pointer">
                         Code Share
                       </label>
-                      <p className="text-xs text-muted-foreground">Share code snippets directly</p>
+                      <p className="text-[11px] sm:text-xs text-muted-foreground">Share code snippets directly</p>
                     </div>
                   </div>
                   <Switch
@@ -2062,9 +2062,9 @@ function StudentDashboardInner() {
                           placeholder="// Paste your code here...&#10;function example() {&#10;  return 'Hello World';&#10;}"
                           value={message}
                           onChange={(e) => setMessage(e.target.value)}
-                          rows={8}
-                          className="resize-none font-mono text-sm bg-slate-800 text-slate-200 dark:bg-slate-900 dark:text-slate-100 border-slate-600 overflow-auto"
-                          style={{ fontFamily: 'Consolas, Monaco, monospace', maxHeight: '250px' }}
+                          rows={6}
+                          className="resize-none font-mono text-xs sm:text-sm bg-slate-800 text-slate-200 dark:bg-slate-900 dark:text-slate-100 border-slate-600 overflow-auto"
+                          style={{ fontFamily: 'Consolas, Monaco, monospace', maxHeight: '200px' }}
                         />
                         <p className="text-xs text-muted-foreground">
                           Share code snippets that receivers can copy directly
@@ -2199,11 +2199,11 @@ function StudentDashboardInner() {
                       </div>
 
                       {/* Actions */}
-                      <div className="flex gap-2">
+                      <div className="flex flex-col sm:flex-row gap-2">
                         <Button
                           onClick={() => preflightAndMaybeShare(false)}
                           disabled={isUploading || !message.trim() || selectedRecipients.length === 0}
-                          className="flex-1"
+                          className="flex-1 text-sm"
                         >
                           <Send className="w-4 h-4 mr-2" />
                           Send Message
@@ -2226,21 +2226,21 @@ function StudentDashboardInner() {
                           <TabsTrigger value="links">Links</TabsTrigger>
                         </TabsList>
 
-                        <TabsContent value="files" className="space-y-4">
+                        <TabsContent value="files" className="space-y-3 sm:space-y-4">
                           {/* Dropzone */}
                           <div
                             {...getRootProps()}
-                            className={`dropzone p-8 text-center cursor-pointer ${isDragActive ? 'dropzone-active border-primary' : ''
+                            className={`dropzone p-5 sm:p-8 text-center cursor-pointer ${isDragActive ? 'dropzone-active border-primary' : ''
                               }`}
                           >
                             <input {...getInputProps()} />
-                            <Upload className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
+                            <Upload className="w-8 h-8 sm:w-12 sm:h-12 mx-auto mb-3 sm:mb-4 text-muted-foreground" />
                             {isDragActive ? (
-                              <p className="text-primary">Drop the files here...</p>
+                              <p className="text-primary text-sm sm:text-base">Drop the files here...</p>
                             ) : (
                               <div>
-                                <p className="text-muted-foreground mb-2">Drag & drop files here, or click to select</p>
-                                <p className="text-sm text-muted-foreground">Support for multiple files</p>
+                                <p className="text-muted-foreground mb-1.5 sm:mb-2 text-sm sm:text-base">Drag & drop files here, or click to select</p>
+                                <p className="text-xs sm:text-sm text-muted-foreground">Support for multiple files</p>
                               </div>
                             )}
                           </div>
@@ -2254,10 +2254,10 @@ function StudentDashboardInner() {
                               <div className="max-h-32 overflow-y-auto space-y-2">
                                 {selectedFiles.map((file, index) => (
                                   <div key={index} className="flex items-center justify-between p-2 bg-muted/50 rounded-full">
-                                    <div className="flex items-center gap-2">
-                                      <FileText className="w-4 h-4" />
-                                      <span className="text-sm truncate">{file.name}</span>
-                                      <span className="text-xs text-muted-foreground">({formatFileSize(file.size)})</span>
+                                    <div className="flex items-center gap-2 min-w-0 flex-1">
+                                      <FileText className="w-4 h-4 shrink-0" />
+                                      <span className="text-xs sm:text-sm truncate">{file.name}</span>
+                                      <span className="text-[10px] sm:text-xs text-muted-foreground shrink-0">({formatFileSize(file.size)})</span>
                                     </div>
                                     <Button variant="ghost" size="sm" onClick={() => removeFile(index)}>
                                       <X className="w-4 h-4" />
@@ -2451,11 +2451,11 @@ function StudentDashboardInner() {
                           {/* Progress moved to global dialog */}
 
                           {/* Actions */}
-                          <div className="flex gap-2">
+                          <div className="flex flex-col sm:flex-row gap-2">
                             <Button
                               onClick={() => preflightAndMaybeShare(false)}
                               disabled={isUploading || (selectedFiles.length === 0 && !linkUrl) || selectedRecipients.length === 0}
-                              className="flex-1"
+                              className="flex-1 text-sm"
                             >
                               <Send className="w-4 h-4 mr-2" />
                               Share Files
@@ -2464,7 +2464,7 @@ function StudentDashboardInner() {
                               onClick={() => preflightAndMaybeShare(true)}
                               disabled={isUploading || (selectedFiles.length === 0 && !linkUrl) || autoShareActive}
                               variant="outline"
-                              className="flex-1"
+                              className="flex-1 text-sm"
                             >
                               <Printer className="w-4 h-4 mr-2" />
                               {`Submit For Print (Lab ${userData.roomNumber})`}
@@ -2472,7 +2472,7 @@ function StudentDashboardInner() {
                           </div>
                         </TabsContent>
 
-                        <TabsContent value="links" className="space-y-4">
+                        <TabsContent value="links" className="space-y-3 sm:space-y-4">
                           <div className="space-y-2">
                             <Label htmlFor="link">Share Link</Label>
                             <Input
@@ -2602,11 +2602,11 @@ function StudentDashboardInner() {
                           {/* Progress moved to global dialog */}
 
                           {/* Actions */}
-                          <div className="flex gap-2">
+                          <div className="flex flex-col sm:flex-row gap-2">
                             <Button
                               onClick={() => preflightAndMaybeShare(false)}
                               disabled={isUploading || (selectedFiles.length === 0 && !linkUrl) || selectedRecipients.length === 0}
-                              className="flex-1"
+                              className="flex-1 text-sm"
                             >
                               <Send className="w-4 h-4 mr-2" />
                               Share Files
@@ -2615,7 +2615,7 @@ function StudentDashboardInner() {
                               onClick={() => preflightAndMaybeShare(true)}
                               disabled={isUploading || (selectedFiles.length === 0 && !linkUrl) || autoShareActive}
                               variant="outline"
-                              className="flex-1"
+                              className="flex-1 text-sm"
                             >
                               <Printer className="w-4 h-4 mr-2" />
                               {`Submit For Print (Lab ${userData.roomNumber})`}
@@ -2946,27 +2946,27 @@ function StudentDashboardInner() {
               <CardContent>
                 <div className="space-y-2">
                   <div className="flex items-center gap-3 p-3 bg-muted/50 rounded-lg">
-                    <div className="w-8 h-8 rounded-full flex items-center justify-center text-white font-semibold text-sm" style={{ backgroundImage: generateGradient(userData.name) }}>
+                    <div className="w-8 h-8 rounded-full flex items-center justify-center text-white font-semibold text-sm shrink-0" style={{ backgroundImage: generateGradient(userData.name) }}>
                       {userData.name.charAt(0).toUpperCase()}
                     </div>
-                    <div className="flex-1">
-                      <p className="font-medium text-sm">{userData.name}</p>
-                      <p className="text-xs text-muted-foreground">{userData.uniqueId} (You)</p>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium text-sm overflow-x-auto whitespace-nowrap scrollbar-thin">{userData.name}</p>
+                      <p className="text-xs text-muted-foreground truncate">{userData.uniqueId} (You)</p>
                     </div>
-                    <Badge className="bg-primary hover:bg-primary text-primary-foreground text-xs">Online</Badge>
+                    <Badge className="bg-primary hover:bg-primary text-primary-foreground text-xs shrink-0 hidden sm:inline-flex">Online</Badge>
                   </div>
 
                   {/* Lab Admin shown at top if online */}
                   {adminId && (
                     <div className="flex items-center gap-3 p-3 hover:bg-muted/50 rounded-lg transition-colors">
-                      <div className="w-8 h-8 rounded-full bg-gradient-to-br from-emerald-400 to-cyan-500 flex items-center justify-center text-white shadow-sm">
+                      <div className="w-8 h-8 rounded-full bg-gradient-to-br from-emerald-400 to-cyan-500 flex items-center justify-center text-white shadow-sm shrink-0">
                         <Printer className="w-4 h-4" />
                       </div>
-                      <div className="flex-1">
-                        <p className="font-medium text-sm">Lab Admin (Room {adminRoom || userData.roomNumber})</p>
-                        <p className="text-xs text-muted-foreground">ADMIN</p>
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium text-sm overflow-x-auto whitespace-nowrap scrollbar-thin">Lab Admin (Room {adminRoom || userData.roomNumber})</p>
+                        <p className="text-xs text-muted-foreground truncate">ADMIN</p>
                       </div>
-                      <Badge className="bg-primary hover:bg-primary text-primary-foreground text-xs">Online</Badge>
+                      <Badge className="bg-primary hover:bg-primary text-primary-foreground text-xs shrink-0 hidden sm:inline-flex">Online</Badge>
                     </div>
                   )}
 
@@ -2978,14 +2978,14 @@ function StudentDashboardInner() {
                         const user = onlineUsers[index]
                         return (
                           <div key={user.id} className="flex items-center gap-3 p-3 hover:bg-muted/50 rounded-lg transition-colors">
-                            <div className="w-8 h-8 rounded-full flex items-center justify-center text-white font-semibold text-sm" style={{ backgroundImage: generateGradient(user.name) }}>
+                            <div className="w-8 h-8 rounded-full flex items-center justify-center text-white font-semibold text-sm shrink-0" style={{ backgroundImage: generateGradient(user.name) }}>
                               {user.name.charAt(0).toUpperCase()}
                             </div>
-                            <div className="flex-1">
-                              <p className="font-medium text-sm">{user.name}</p>
-                              <p className="text-xs text-muted-foreground">{user.uniqueId}</p>
+                            <div className="flex-1 min-w-0">
+                              <p className="font-medium text-sm overflow-x-auto whitespace-nowrap scrollbar-thin">{user.name}</p>
+                              <p className="text-xs text-muted-foreground truncate">{user.uniqueId}</p>
                             </div>
-                            <Badge className="bg-primary hover:bg-primary text-primary-foreground text-xs">Online</Badge>
+                            <Badge className="bg-primary hover:bg-primary text-primary-foreground text-xs shrink-0 hidden sm:inline-flex">Online</Badge>
                           </div>
                         )
                       }}

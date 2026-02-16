@@ -38,9 +38,11 @@ import {
   X,
   MessageSquare,
   Copy,
-  Clipboard
+  Clipboard,
+  MoreHorizontal
 } from 'lucide-react'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 
 interface RecipientInfo { id: string; name: string; uniqueId: string }
 
@@ -223,6 +225,8 @@ function FilePreviewInner({ file, senderName, senderUniqueId, recipients, timest
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
   const [isRecipientsOpen, setIsRecipientsOpen] = useState(false)
   const [copiedCode, setCopiedCode] = useState(false)
+  const [meatballsOpen, setMeatballsOpen] = useState(false)
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
   const FileIcon = getFileIcon(file.fileType, file.fileName)
   const isPreviewableType = (
     file.fileType.startsWith('image/') ||
@@ -392,55 +396,120 @@ function FilePreviewInner({ file, senderName, senderUniqueId, recipients, timest
   return (
     <Card className="group relative chat-bubble border-none shadow-none bg-transparent">
       <CardContent className="p-0">
-        <div className="mb-3 flex items-center gap-3">
+        <div className="mb-3 flex items-center gap-2 sm:gap-3">
           <div className="relative">
-            <div className="w-9 h-9 rounded-full flex items-center justify-center text-white font-semibold text-lg" style={{ backgroundImage: userGradient }}>
+            <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-full flex items-center justify-center text-white font-semibold text-base sm:text-lg" style={{ backgroundImage: userGradient }}>
               {(senderName || 'U').charAt(0).toUpperCase()}
             </div>
-            <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 border border-white dark:border-gray-700 rounded-full" style={{ backgroundImage: userGradient }} />
+            <div className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 sm:w-3 sm:h-3 border border-white dark:border-gray-700 rounded-full" style={{ backgroundImage: userGradient }} />
           </div>
-          <div className="flex-1">
-            <p className="text-xs text-muted-foreground dark:text-muted-foreground">{isOwnItem ? 'Uploaded By' : 'Received From'}</p>
-            <h4 className="text-sm font-semibold text-foreground dark:text-white">{senderName || 'Unknown'}{senderUniqueId ? ` (${senderUniqueId})` : ''}{isOwnItem ? ' (You)' : ''}</h4>
+          <div className="flex-1 min-w-0">
+            <p className="text-[11px] sm:text-xs text-muted-foreground dark:text-muted-foreground">{isOwnItem ? 'Uploaded By' : 'Received From'}</p>
+            <h4 className="text-xs sm:text-sm font-semibold text-foreground dark:text-white truncate">{senderName || 'Unknown'}{senderUniqueId ? ` (${senderUniqueId})` : ''}{isOwnItem ? ' (You)' : ''}</h4>
           </div>
         </div>
-        <div className="p-4 ms-8 mr-4 bg-card border border-border rounded-lg shadow-lg dark:bg-card dark:border-border relative group cursor-default min-h-fit" style={{ borderRadius: 35, paddingBottom: 10, paddingTop: 10 }}>
-          <div className="items-center justify-between mb-3 sm:flex">
-            <div className="text-sm font-normal text-muted-foreground dark:text-gray-300">
+        <div className="p-3 sm:p-4 ms-4 sm:ms-8 mr-1 sm:mr-4 bg-card border border-border rounded-lg shadow-lg dark:bg-card dark:border-border relative group cursor-default min-h-fit" style={{ borderRadius: 25, paddingBottom: 10, paddingTop: 10 }}>
+          <div className="flex items-center justify-between mb-3">
+            <div className="text-sm font-normal text-muted-foreground dark:text-gray-300 min-w-0">
               {file.fileId && <span className="italic text-muted-foreground dark:text-white ml-[5px]">{file.fileType === 'code' ? 'Code ID' : 'File ID'} : {highlight(file.fileId)}</span>}
             </div>
-            {onMarkPrinted && !isPrinted && (
-              <Button
-                size="sm"
-                onClick={onMarkPrinted}
-                className="rounded-full bg-neutral-900/95 text-white hover:bg-neutral-800 h-7 px-3 active:scale-[0.97] transition-all shadow-sm ring-1 ring-neutral-900/20"
-              >
-                <Check className="w-4 h-4 mr-1" />
-                Mark Printed
-              </Button>
-            )}
-            {isPrinted && (
-              <Badge className="rounded-full bg-green-600 text-white h-7 px-3 flex items-center gap-1 animate-in fade-in-0 zoom-in-95 duration-200 shadow-sm ring-1 ring-green-700/30">
-                <Check className="w-3 h-3" />
-                Printed
-              </Badge>
-            )}
+            <div className="flex items-center gap-2 shrink-0">
+              {onMarkPrinted && !isPrinted && (
+                <Button
+                  size="sm"
+                  onClick={onMarkPrinted}
+                  className="hidden sm:inline-flex rounded-full bg-neutral-900/95 text-white hover:bg-neutral-800 h-7 px-3 active:scale-[0.97] transition-all shadow-sm ring-1 ring-neutral-900/20"
+                >
+                  <Check className="w-4 h-4 mr-1" />
+                  Mark Printed
+                </Button>
+              )}
+              {isPrinted && (
+                <Badge className="rounded-full bg-green-600 text-white h-7 px-3 flex items-center gap-1 animate-in fade-in-0 zoom-in-95 duration-200 shadow-sm ring-1 ring-green-700/30">
+                  <Check className="w-3 h-3" />
+                  Printed
+                </Badge>
+              )}
+              {/* Meatballs menu - mobile only */}
+              <Popover open={meatballsOpen} onOpenChange={setMeatballsOpen}>
+                <PopoverTrigger asChild>
+                  <button
+                    className="sm:hidden inline-flex items-center justify-center h-7 w-7 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted/80 transition-colors active:scale-95"
+                    aria-label="More actions"
+                  >
+                    <MoreHorizontal className="w-4.5 h-4.5" />
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent align="end" side="bottom" className="w-44 p-1 sm:hidden">
+                  {onMarkPrinted && !isPrinted && (
+                    <button
+                      className="flex items-center gap-2.5 w-full px-3 py-2 text-sm text-foreground hover:bg-muted rounded-md transition-colors"
+                      onClick={() => { setMeatballsOpen(false); onMarkPrinted() }}
+                    >
+                      <Check className="w-4 h-4 text-muted-foreground" />
+                      Mark Printed
+                    </button>
+                  )}
+                  {canPreview && (
+                    <button
+                      className="flex items-center gap-2.5 w-full px-3 py-2 text-sm text-foreground hover:bg-muted rounded-md transition-colors"
+                      onClick={() => { setMeatballsOpen(false); setIsPreviewOpen(true) }}
+                    >
+                      <Eye className="w-4 h-4 text-muted-foreground" />
+                      Preview
+                    </button>
+                  )}
+                  <button
+                    className="flex items-center gap-2.5 w-full px-3 py-2 text-sm text-foreground hover:bg-muted rounded-md transition-colors"
+                    onClick={() => { setMeatballsOpen(false); handleDownload() }}
+                  >
+                    {file.isLink ? <ExternalLink className="w-4 h-4 text-muted-foreground" /> : <Download className="w-4 h-4 text-muted-foreground" />}
+                    {file.isLink ? 'Open Link' : 'Download'}
+                  </button>
+                  {onReshare && (isOwnItem || (file.allowReshare ?? true)) && (
+                    <button
+                      className="flex items-center gap-2.5 w-full px-3 py-2 text-sm text-foreground hover:bg-muted rounded-md transition-colors"
+                      onClick={() => { setMeatballsOpen(false); onReshare({ fileName: file.fileName, fileType: file.fileType, fileSize: file.fileSize, fileData: file.fileData, fileUrl: file.fileUrl, linkUrl: file.linkUrl, message: file.fileType === 'code' ? file.message : undefined }) }}
+                    >
+                      <Share2 className="w-4 h-4 text-muted-foreground" />
+                      Reshare
+                    </button>
+                  )}
+                  {typeof onDelete === 'function' && (
+                    <button
+                      className="flex items-center gap-2.5 w-full px-3 py-2 text-sm text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 rounded-md transition-colors"
+                      onClick={() => { setMeatballsOpen(false); setDeleteConfirmOpen(true) }}
+                    >
+                      <Trash2 className="w-4 h-4" />
+                      Delete
+                    </button>
+                  )}
+                </PopoverContent>
+              </Popover>
+            </div>
           </div>
           {/* Hide file info bar for code type - show only the code block */}
           {file.fileType !== 'code' && (
-            <div className="p-3 mb-2 text-xs italic font-normal text-muted-foreground border border-border rounded-lg bg-muted/50 dark:bg-muted dark:border-border dark:text-gray-300 min-h-fit" style={{ borderRadius: 30 }}>
-              <div className="flex items-center justify-between gap-2.5">
-                <div className="flex flex-col gap-2.5">
+            <div className="p-2 sm:p-3 mb-2 text-xs italic font-normal text-muted-foreground border border-border rounded-lg bg-muted/50 dark:bg-muted dark:border-border dark:text-gray-300 min-h-fit" style={{ borderRadius: 20 }}>
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-2.5">
+                {/* File info section - clickable: preview if possible, else download */}
+                <div
+                  className="flex flex-col gap-2 sm:gap-2.5 min-w-0 flex-1 cursor-pointer"
+                  onClick={() => { canPreview ? setIsPreviewOpen(true) : handleDownload() }}
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); canPreview ? setIsPreviewOpen(true) : handleDownload() } }}
+                >
                   <div className="leading-1.5 flex w-full max-w-md flex-col">
-                    <div className="flex items-start bg-muted/50 rounded-xl p-2 h-auto w-full md:w-auto" style={{ borderRadius: 15 }}>
-                      <div className="me-2 flex-1">
-                        <span className="flex items-center gap-2 text-sm font-medium text-foreground dark:text-white pb-2 flex-wrap">
-                          <span className="file-icon">{file.isLink ? <Link className="h-10 w-10 text-foreground dark:text-gray-200" /> : <FileIcon className="h-10 w-10 text-foreground dark:text-gray-200" />}</span>
+                    <div className="flex items-start rounded-xl p-1.5 sm:p-2 h-auto w-full md:w-auto cursor-pointer" style={{ borderRadius: 15 }}>
+                      <div className="me-2 flex-1 min-w-0">
+                        <span className="flex items-center gap-1.5 sm:gap-2 text-sm font-medium text-foreground dark:text-white pb-2 cursor-pointer">
+                          <span className="file-icon shrink-0">{file.isLink ? <Link className="h-7 w-7 sm:h-10 sm:w-10 text-foreground dark:text-gray-200" /> : <FileIcon className="h-7 w-7 sm:h-10 sm:w-10 text-foreground dark:text-gray-200" />}</span>
                           <TooltipProvider delayDuration={150}>
                             <Tooltip>
                               <TooltipTrigger asChild>
                                 <span
-                                  className="file-exam-semester truncate whitespace-nowrap overflow-hidden text-ellipsis max-w-[12rem] sm:max-w-[16rem] md:max-w-[22rem] cursor-help"
+                                  className="file-exam-semester truncate whitespace-nowrap overflow-hidden text-ellipsis max-w-[40vw] sm:max-w-[16rem] md:max-w-[22rem] cursor-pointer"
                                 >
                                   {highlight(file.isLink ? (file.linkUrl || '') : displayName)}
                                 </span>
@@ -451,7 +520,7 @@ function FilePreviewInner({ file, senderName, senderUniqueId, recipients, timest
                             </Tooltip>
                           </TooltipProvider>
                         </span>
-                        <span className="flex text-xs font-normal text-muted-foreground dark:text-muted-foreground gap-2 flex-wrap">
+                        <span className="flex text-xs font-normal text-muted-foreground dark:text-muted-foreground gap-2">
                           <span className="file-size">{formatFileSize(file.fileSize)}</span>
                           <svg xmlns="http://www.w3.org/2000/svg" aria-hidden="true" className="self-center" width="3" height="4" viewBox="0 0 3 4" fill="none"><circle cx="1.5" cy="2" r="1.5" fill="#6B7280" /></svg>
                           <span className="file-type">{getDisplayExtension(file.fileType, file.fileName, file.isLink)}</span>
@@ -460,87 +529,31 @@ function FilePreviewInner({ file, senderName, senderUniqueId, recipients, timest
                     </div>
                   </div>
                 </div>
+                {/* Action buttons - hidden on mobile, shown on sm+ */}
                 <TooltipProvider delayDuration={150}>
-                  <div className="flex items-center gap-3 pr-2 md:pr-3 mr-1 md:mr-2">
+                  <div className="hidden sm:flex items-center gap-3 pr-2 md:pr-3 mr-1 md:mr-2">
                     {canPreview && (
-                      <Dialog open={isPreviewOpen} onOpenChange={setIsPreviewOpen}>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <DialogTrigger asChild>
-                              <button
-                                className="cursor-pointer inline-flex items-center justify-center h-9 w-9 rounded-full text-primary hover:text-primary/90 hover:bg-primary/10 dark:hover:bg-primary/20 transition-colors transition-transform focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:ring-offset-2 focus-visible:ring-offset-background active:scale-95"
-                                aria-label="Preview"
-                              >
-                                <Eye className="w-6 h-6" />
-                              </button>
-                            </DialogTrigger>
-                          </TooltipTrigger>
-                          <TooltipContent side="top">Preview</TooltipContent>
-                        </Tooltip>
-                        <DialogContent showCloseButton={false} className="sm:max-w-[92vw] max-w-[92vw] w-[92vw] h-[85vh] p-0 rounded-2xl overflow-hidden flex flex-col">
-                          <div className="flex items-center justify-between px-4 py-3 border-b bg-card dark:bg-gray-900 dark:border-gray-800">
-                            <DialogHeader className="p-0 m-0">
-                              <DialogTitle className="flex items-center gap-2 text-base font-semibold truncate max-w-[60vw]">
-                                {file.isLink ? <Link className="w-5 h-5" /> : <FileIcon className="w-5 h-5" />}
-                                <span className="truncate" title={file.fileName}>{file.fileName}</span>
-                              </DialogTitle>
-                            </DialogHeader>
-                            <div className="flex items-center gap-2">
-                              <Tooltip>
-                                <TooltipTrigger asChild>
-                                  <button
-                                    onClick={handleDownload}
-                                    aria-label={file.isLink ? 'Open link' : 'Download'}
-                                    className="cursor-pointer inline-flex items-center justify-center h-9 w-9 rounded-full text-primary hover:text-primary/90 hover:bg-primary/10 dark:hover:bg-primary/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:ring-offset-2 focus-visible:ring-offset-background active:scale-95"
-                                  >
-                                    {file.isLink ? <ExternalLink className="w-5 h-5" /> : <Download className="w-5 h-5" />}
-                                  </button>
-                                </TooltipTrigger>
-                                <TooltipContent side="bottom">{file.isLink ? 'Open link' : 'Download'}</TooltipContent>
-                              </Tooltip>
-                              {onReshare && (isOwnItem || (file.allowReshare ?? true)) && (
-                                <Tooltip>
-                                  <TooltipTrigger asChild>
-                                    <button
-                                      onClick={() => onReshare({ fileName: file.fileName, fileType: file.fileType, fileSize: file.fileSize, fileData: file.fileData, fileUrl: file.fileUrl, linkUrl: file.linkUrl })}
-                                      aria-label="Reshare"
-                                      className="cursor-pointer inline-flex items-center justify-center h-9 w-9 rounded-full text-primary hover:text-primary/90 hover:bg-primary/10 dark:hover:bg-primary/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:ring-offset-2 focus-visible:ring-offset-background active:scale-95"
-                                    >
-                                      <Share2 className="w-5 h-5" />
-                                    </button>
-                                  </TooltipTrigger>
-                                  <TooltipContent side="bottom">Reshare</TooltipContent>
-                                </Tooltip>
-                              )}
-                              <Tooltip>
-                                <TooltipTrigger asChild>
-                                  <DialogClose asChild>
-                                    <button
-                                      aria-label="Close"
-                                      className="cursor-pointer inline-flex items-center justify-center h-9 w-9 rounded-full text-muted-foreground hover:text-foreground hover:bg-gray-100 dark:text-muted-foreground dark:hover:text-white dark:hover:bg-gray-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-400/50 focus-visible:ring-offset-2 focus-visible:ring-offset-background active:scale-95"
-                                    >
-                                      <X className="w-5 h-5" />
-                                    </button>
-                                  </DialogClose>
-                                </TooltipTrigger>
-                                <TooltipContent side="bottom">Close</TooltipContent>
-                              </Tooltip>
-                            </div>
-                          </div>
-                          <div className="flex-1 overflow-hidden bg-card dark:bg-gray-900">
-                            {renderPreview('dialog')}
-                          </div>
-                        </DialogContent>
-                      </Dialog>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <button
+                            onClick={() => setIsPreviewOpen(true)}
+                            className="cursor-pointer inline-flex items-center justify-center h-9 w-9 rounded-full text-primary hover:text-primary/90 hover:bg-primary/10 dark:hover:bg-primary/20 transition-colors transition-transform focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:ring-offset-2 focus-visible:ring-offset-background active:scale-95"
+                            aria-label="Preview"
+                          >
+                            <Eye className="w-6 h-6" />
+                          </button>
+                        </TooltipTrigger>
+                        <TooltipContent side="top">Preview</TooltipContent>
+                      </Tooltip>
                     )}
                     <Tooltip>
                       <TooltipTrigger asChild>
                         <button
                           onClick={handleDownload}
                           aria-label={file.isLink ? 'Open link' : 'Download'}
-                          className="cursor-pointer inline-flex items-center justify-center h-9 w-9 rounded-full text-primary hover:text-primary/90 hover:bg-primary/10 dark:hover:bg-primary/20 transition-colors transition-transform focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:ring-offset-2 focus-visible:ring-offset-background active:scale-95"
+                          className="cursor-pointer inline-flex items-center justify-center h-7 w-7 sm:h-9 sm:w-9 rounded-full text-primary hover:text-primary/90 hover:bg-primary/10 dark:hover:bg-primary/20 transition-colors transition-transform focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:ring-offset-2 focus-visible:ring-offset-background active:scale-95"
                         >
-                          {file.isLink ? <ExternalLink className="w-6 h-6" /> : <svg className="w-6 h-6" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><path stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 15v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2M12 4v12m0 0-4-4m4 4 4-4" /></svg>}
+                          {file.isLink ? <ExternalLink className="w-4 h-4 sm:w-6 sm:h-6" /> : <svg className="w-4 h-4 sm:w-6 sm:h-6" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><path stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 15v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2M12 4v12m0 0-4-4m4 4 4-4" /></svg>}
                         </button>
                       </TooltipTrigger>
                       <TooltipContent side="top">{file.isLink ? 'Open link' : 'Download'}</TooltipContent>
@@ -551,9 +564,9 @@ function FilePreviewInner({ file, senderName, senderUniqueId, recipients, timest
                           <button
                             onClick={() => onReshare({ fileName: file.fileName, fileType: file.fileType, fileSize: file.fileSize, fileData: file.fileData, fileUrl: file.fileUrl, linkUrl: file.linkUrl })}
                             aria-label="Reshare"
-                            className="cursor-pointer inline-flex items-center justify-center h-9 w-9 rounded-full text-primary hover:text-primary/90 hover:bg-primary/10 dark:hover:bg-primary/20 transition-colors transition-transform focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:ring-offset-2 focus-visible:ring-offset-background active:scale-95"
+                            className="cursor-pointer inline-flex items-center justify-center h-7 w-7 sm:h-9 sm:w-9 rounded-full text-primary hover:text-primary/90 hover:bg-primary/10 dark:hover:bg-primary/20 transition-colors transition-transform focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:ring-offset-2 focus-visible:ring-offset-background active:scale-95"
                           >
-                            <Share2 className="w-6 h-6" />
+                            <Share2 className="w-4 h-4 sm:w-6 sm:h-6" />
                           </button>
                         </TooltipTrigger>
                         <TooltipContent side="top">Reshare</TooltipContent>
@@ -565,10 +578,10 @@ function FilePreviewInner({ file, senderName, senderUniqueId, recipients, timest
                           <TooltipTrigger asChild>
                             <AlertDialogTrigger asChild>
                               <button
-                                className="cursor-pointer inline-flex items-center justify-center h-9 w-9 rounded-full text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/30 transition-colors transition-transform focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500/50 focus-visible:ring-offset-2 focus-visible:ring-offset-background active:scale-95"
+                                className="cursor-pointer inline-flex items-center justify-center h-7 w-7 sm:h-9 sm:w-9 rounded-full text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/30 transition-colors transition-transform focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500/50 focus-visible:ring-offset-2 focus-visible:ring-offset-background active:scale-95"
                                 aria-label="Delete"
                               >
-                                <Trash2 className="w-6 h-6" />
+                                <Trash2 className="w-4 h-4 sm:w-6 sm:h-6" />
                               </button>
                             </AlertDialogTrigger>
                           </TooltipTrigger>
@@ -700,7 +713,7 @@ function FilePreviewInner({ file, senderName, senderUniqueId, recipients, timest
             </time>
           )}
         </div>
-        <div className="ms-8 mt-2 flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+        <div className="ms-4 sm:ms-8 mt-2 flex flex-wrap items-center gap-2 sm:gap-3 text-xs text-muted-foreground">
           {recipients && recipients.length > 0 && (
             <span className="truncate">To: {(() => {
               const maxShow = 2
@@ -714,9 +727,81 @@ function FilePreviewInner({ file, senderName, senderUniqueId, recipients, timest
               )
             })()}</span>
           )}
-          {file.method && <span className="text-primary dark:text-primary font-medium">Method : {file.method}</span>}
+          {file.method && <span className="hidden sm:inline text-primary dark:text-primary font-medium">Method : {file.method}</span>}
         </div>
       </CardContent>
+      {/* Delete confirmation dialog triggered from meatballs menu */}
+      <AlertDialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete this item?</AlertDialogTitle>
+            <AlertDialogDescription>This will remove it from your history. You can undo for 30 seconds.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={() => { setDeleteConfirmOpen(false); onDelete?.() }} className="bg-destructive text-white hover:bg-destructive/90">Delete</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+      {/* Preview dialog (shared between meatballs tap and inline button on desktop) */}
+      <Dialog open={isPreviewOpen} onOpenChange={setIsPreviewOpen}>
+        <DialogContent showCloseButton={false} className="sm:max-w-[92vw] max-w-[92vw] w-[92vw] h-[85vh] p-0 rounded-2xl overflow-hidden flex flex-col">
+          <div className="flex items-center justify-between px-4 py-3 border-b bg-card dark:bg-gray-900 dark:border-gray-800">
+            <DialogHeader className="p-0 m-0">
+              <DialogTitle className="flex items-center gap-2 text-base font-semibold truncate max-w-[60vw]">
+                {file.isLink ? <Link className="w-5 h-5" /> : <FileIcon className="w-5 h-5" />}
+                <span className="truncate" title={file.fileName}>{file.fileName}</span>
+              </DialogTitle>
+            </DialogHeader>
+            <div className="flex items-center gap-2">
+              <TooltipProvider delayDuration={150}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      onClick={handleDownload}
+                      aria-label={file.isLink ? 'Open link' : 'Download'}
+                      className="cursor-pointer inline-flex items-center justify-center h-9 w-9 rounded-full text-primary hover:text-primary/90 hover:bg-primary/10 dark:hover:bg-primary/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 active:scale-95"
+                    >
+                      {file.isLink ? <ExternalLink className="w-5 h-5" /> : <Download className="w-5 h-5" />}
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom">{file.isLink ? 'Open link' : 'Download'}</TooltipContent>
+                </Tooltip>
+                {onReshare && (isOwnItem || (file.allowReshare ?? true)) && (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        onClick={() => onReshare({ fileName: file.fileName, fileType: file.fileType, fileSize: file.fileSize, fileData: file.fileData, fileUrl: file.fileUrl, linkUrl: file.linkUrl })}
+                        aria-label="Reshare"
+                        className="cursor-pointer inline-flex items-center justify-center h-9 w-9 rounded-full text-primary hover:text-primary/90 hover:bg-primary/10 dark:hover:bg-primary/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 active:scale-95"
+                      >
+                        <Share2 className="w-5 h-5" />
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent side="bottom">Reshare</TooltipContent>
+                  </Tooltip>
+                )}
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <DialogClose asChild>
+                      <button
+                        aria-label="Close"
+                        className="cursor-pointer inline-flex items-center justify-center h-9 w-9 rounded-full text-muted-foreground hover:text-foreground hover:bg-gray-100 dark:hover:bg-gray-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-400/50 active:scale-95"
+                      >
+                        <X className="w-5 h-5" />
+                      </button>
+                    </DialogClose>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom">Close</TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            </div>
+          </div>
+          <div className="flex-1 overflow-hidden bg-card dark:bg-gray-900">
+            {renderPreview('dialog')}
+          </div>
+        </DialogContent>
+      </Dialog>
       <Dialog open={isRecipientsOpen} onOpenChange={setIsRecipientsOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader><DialogTitle>Recipients</DialogTitle></DialogHeader>
