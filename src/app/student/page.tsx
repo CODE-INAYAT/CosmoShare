@@ -45,7 +45,8 @@ import {
   Zap,
   Timer,
   FileUp,
-  ArrowRight
+  ArrowRight,
+  History
 } from 'lucide-react'
 import { useSearchParams } from 'next/navigation'
 import { io } from 'socket.io-client'
@@ -1081,7 +1082,7 @@ function StudentDashboardInner() {
       description: (
         <div className="space-y-1">
           <p>Files will be sent automatically when admin comes online.</p>
-          <p className="text-[11px] text-muted-foreground">15-minute window • Keep this tab open</p>
+          <p className="text-xs text-muted-foreground">15-minute window • Keep this tab open</p>
         </div>
       ) as any,
       duration: 5000,
@@ -1112,7 +1113,7 @@ function StudentDashboardInner() {
         description: (
           <div className="space-y-1.5">
             <p>The 15-minute window has passed. Admin did not come online.</p>
-            <p className="text-[11px] text-muted-foreground flex items-center gap-1">
+            <p className="text-xs text-muted-foreground flex items-center gap-1">
               <ArrowRight className="w-3 h-3" />
               Select your files again and try once more.
             </p>
@@ -1942,7 +1943,7 @@ function StudentDashboardInner() {
                               <Timer className="w-4 h-4 text-primary" />
                               <h4 className="text-sm font-semibold text-foreground">Auto-Share</h4>
                             </div>
-                            <span className="inline-flex items-center gap-1.5 rounded-full bg-primary/10 text-primary text-[11px] max-sm:text-[10px] font-medium px-2.5 max-sm:px-2 py-1 max-sm:py-0.5">
+                            <span className="inline-flex items-center gap-1.5 rounded-full bg-primary/10 text-primary text-xs max-sm:text-[10px] font-medium px-2.5 max-sm:px-2 py-1 max-sm:py-0.5">
                               <span className="relative flex h-1.5 w-1.5">
                                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75" />
                                 <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-primary" />
@@ -1979,7 +1980,7 @@ function StudentDashboardInner() {
                             <div className="flex-1 min-w-0 space-y-2.5 max-sm:w-full max-sm:space-y-2">
                               {/* Queued items */}
                               <div className="space-y-1">
-                                <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider max-sm:text-center">Queued</p>
+                                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide max-sm:text-center">Queued</p>
                                 <div className="flex items-center gap-2 flex-wrap max-sm:justify-center">
                                   {autoShareSummary.fileCount > 0 && (
                                     <span className="inline-flex items-center gap-1.5 rounded-md bg-secondary/80 px-2 py-1 text-xs font-medium text-foreground">
@@ -2005,7 +2006,7 @@ function StudentDashboardInner() {
 
                               {/* Action row */}
                               <div className="flex flex-row items-center justify-between max-sm:flex-col max-sm:gap-1.5">
-                                <p className="text-[11px] max-sm:text-[10px] text-muted-foreground max-sm:text-center">Will send instantly when admin connects</p>
+                                <p className="text-xs max-sm:text-[10px] text-muted-foreground max-sm:text-center">Will send instantly when admin connects</p>
                                 <Button
                                   variant="ghost"
                                   size="sm"
@@ -2034,7 +2035,7 @@ function StudentDashboardInner() {
                       <label htmlFor="code-share-toggle" className="text-sm font-medium cursor-pointer">
                         Code Share
                       </label>
-                      <p className="text-[11px] sm:text-xs text-muted-foreground">Share code snippets directly</p>
+                      <p className="text-xs text-muted-foreground">Share code snippets directly</p>
                     </div>
                   </div>
                   <Switch
@@ -2172,7 +2173,7 @@ function StudentDashboardInner() {
                                           </div>
                                           <div className="flex-1 min-w-0">
                                             <p className="text-sm font-medium truncate">{user.name}</p>
-                                            <p className="text-[11px] text-muted-foreground">{user.uniqueId}</p>
+                                            <p className="text-xs text-muted-foreground">{user.uniqueId}</p>
                                           </div>
                                           <div className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 transition-colors ${selectedRecipients.includes(user.id) ? 'bg-primary' : 'border-2 border-muted-foreground/30'}`}>
                                             {selectedRecipients.includes(user.id) && <Check className="w-3 h-3 text-primary-foreground" />}
@@ -2390,7 +2391,7 @@ function StudentDashboardInner() {
                                                 </div>
                                                 <div className="flex-1 min-w-0">
                                                   <p className="text-sm font-medium truncate">{user.name}</p>
-                                                  <p className="text-[11px] text-muted-foreground">{user.uniqueId}</p>
+                                                  <p className="text-xs text-muted-foreground">{user.uniqueId}</p>
                                                 </div>
                                                 <div className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 transition-colors ${checked ? 'bg-primary' : 'border-2 border-muted-foreground/30'}`}>
                                                   {checked && <Check className="w-3 h-3 text-primary-foreground" />}
@@ -2422,7 +2423,7 @@ function StudentDashboardInner() {
                                             </div>
                                             <div className="flex-1">
                                               <p className="text-sm font-medium">Lab Admin</p>
-                                              <p className="text-[11px] text-muted-foreground">Room {adminRoom || userData.roomNumber}</p>
+                                              <p className="text-xs text-muted-foreground">Room {adminRoom || userData.roomNumber}</p>
                                             </div>
                                             <div className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 transition-colors ${selectedRecipients.includes('admin') ? 'bg-primary' : 'border-2 border-muted-foreground/30'}`}>
                                               {selectedRecipients.includes('admin') && <Check className="w-3 h-3 text-primary-foreground" />}
@@ -2555,7 +2556,7 @@ function StudentDashboardInner() {
                                                 }}
                                               />
                                               <div className="flex items-center gap-3">
-                                                <div className="w-8 h-8 rounded-full flex items-center justify-center text-white font-semibold text-sm" style={{ backgroundImage: generateGradient(u.name) }}>{u.name.charAt(0).toUpperCase()}</div>
+                                                <div className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-medium" style={{ backgroundImage: generateGradient(u.name) }}>{u.name.charAt(0).toUpperCase()}</div>
                                                 <div>
                                                   <p className="text-sm font-medium">{u.name}</p>
                                                   <p className="text-xs text-muted-foreground">{u.uniqueId}</p>
@@ -2581,7 +2582,7 @@ function StudentDashboardInner() {
                                           }}
                                         />
                                         <div className="flex items-center gap-3">
-                                          <div className="w-8 h-8 rounded-full flex items-center justify-center text-white font-semibold text-sm" style={{ backgroundImage: 'linear-gradient(135deg, #34d399, #06b6d4)' }}>
+                                          <div className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-medium" style={{ backgroundImage: 'linear-gradient(135deg, #34d399, #06b6d4)' }}>
                                             <Printer className="w-4 h-4" />
                                           </div>
                                           <span>Lab Admin (Room {adminRoom || userData.roomNumber})</span>
@@ -2631,12 +2632,16 @@ function StudentDashboardInner() {
           </TabsContent>
 
           {/* File History Tab */}
-          <TabsContent value="history" className="mt-4">
-            <Card>
-              <CardHeader className="pb-4">
-                <CardTitle className="text-lg font-semibold">File History</CardTitle>
+          <TabsContent value="history" className="mt-3 sm:mt-4">
+            <Card className="py-3 sm:py-4">
+              <CardHeader className="pb-3 sm:pb-4 px-3 sm:px-6">
+                <CardTitle className="flex items-center gap-2 text-base sm:text-lg font-semibold">
+                  <History className="w-4 h-4 sm:w-5 sm:h-5" />
+                  File History
+                </CardTitle>
+                <CardDescription className="text-xs sm:text-sm">View your sent and received files</CardDescription>
               </CardHeader>
-              <CardContent>
+              <CardContent className="px-3 sm:px-6">
                 <Tabs value={historySubTab} onValueChange={(v) => setHistorySubTab(v as any)} className="w-full">
                   <TabsList className="grid w-full grid-cols-2 h-9 p-1 bg-muted rounded-lg">
                     <TabsTrigger value="received">Received</TabsTrigger>
@@ -2934,19 +2939,19 @@ function StudentDashboardInner() {
           </TabsContent>
 
           {/* Online Users Tab */}
-          <TabsContent value="users" className="mt-4">
-            <Card>
-              <CardHeader className="pb-4">
-                <CardTitle className="flex items-center gap-2 text-lg font-semibold">
-                  <Users className="w-5 h-5" />
+          <TabsContent value="users" className="mt-3 sm:mt-4">
+            <Card className="py-3 sm:py-4">
+              <CardHeader className="pb-3 sm:pb-4 px-3 sm:px-6">
+                <CardTitle className="flex items-center gap-2 text-base sm:text-lg font-semibold">
+                  <Users className="w-4 h-4 sm:w-5 sm:h-5" />
                   Online Users
                 </CardTitle>
-                <CardDescription>Students currently in Room {userData.roomNumber}</CardDescription>
+                <CardDescription className="text-xs sm:text-sm">Students currently in Room {userData.roomNumber}</CardDescription>
               </CardHeader>
-              <CardContent>
+              <CardContent className="px-3 sm:px-6">
                 <div className="space-y-2">
                   <div className="flex items-center gap-3 p-3 bg-muted/50 rounded-lg">
-                    <div className="w-8 h-8 rounded-full flex items-center justify-center text-white font-semibold text-sm shrink-0" style={{ backgroundImage: generateGradient(userData.name) }}>
+                    <div className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-medium shrink-0" style={{ backgroundImage: generateGradient(userData.name) }}>
                       {userData.name.charAt(0).toUpperCase()}
                     </div>
                     <div className="flex-1 min-w-0">
@@ -2978,7 +2983,7 @@ function StudentDashboardInner() {
                         const user = onlineUsers[index]
                         return (
                           <div key={user.id} className="flex items-center gap-3 p-3 hover:bg-muted/50 rounded-lg transition-colors">
-                            <div className="w-8 h-8 rounded-full flex items-center justify-center text-white font-semibold text-sm shrink-0" style={{ backgroundImage: generateGradient(user.name) }}>
+                            <div className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-medium shrink-0" style={{ backgroundImage: generateGradient(user.name) }}>
                               {user.name.charAt(0).toUpperCase()}
                             </div>
                             <div className="flex-1 min-w-0">
@@ -3027,20 +3032,20 @@ function StudentDashboardInner() {
                   )}
                 </div>
                 <div className="space-y-1 pt-1">
-                  <DialogTitle className="text-xl font-semibold text-foreground">
+                  <DialogTitle className="text-lg font-semibold text-foreground">
                     {googleLinkType === 'sheets' ? 'Google Sheets Detected' :
                       googleLinkType === 'slides' ? 'Google Slides Detected' :
                         googleLinkType === 'docs' ? 'Google Docs Detected' :
                           'Google Drive Link Detected'}
                   </DialogTitle>
-                  <DialogDescription className="text-base text-muted-foreground">
+                  <DialogDescription className="text-sm text-muted-foreground">
                     Check sharing permissions
                   </DialogDescription>
                 </div>
               </div>
 
               {/* Content */}
-              <div className="text-muted-foreground text-[15px] leading-relaxed">
+              <div className="text-muted-foreground text-sm leading-relaxed">
                 You are sharing a <span className="font-medium text-foreground">
                   {googleLinkType === 'sheets' ? 'Google Sheet' :
                     googleLinkType === 'slides' ? 'Google Slide' :
@@ -3099,7 +3104,7 @@ function StudentDashboardInner() {
               {offlineUsersInfo.map(u => (
                 <div key={u.id} className="flex items-center justify-between p-2 bg-muted/50 rounded">
                   <div className="flex items-center gap-2">
-                    <div className="w-8 h-8 rounded-full flex items-center justify-center text-white font-semibold text-sm" style={{ backgroundImage: generateGradient(u.name) }}>{u.name.charAt(0).toUpperCase()}</div>
+                    <div className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-medium" style={{ backgroundImage: generateGradient(u.name) }}>{u.name.charAt(0).toUpperCase()}</div>
                     <div>
                       <p className="text-sm font-medium">{u.name}</p>
                       <p className="text-xs text-muted-foreground">{u.uniqueId}</p>
@@ -3258,29 +3263,29 @@ function StudentDashboardInner() {
                           </div>
                           <div className="min-w-0">
                             <p className="text-sm font-medium truncate">{recipient.name}</p>
-                            <p className="text-[11px] text-muted-foreground">{recipient.uniqueId}</p>
+                            <p className="text-xs text-muted-foreground">{recipient.uniqueId}</p>
                           </div>
                         </div>
                         <div className="shrink-0 ml-2">
                           {recipient.status === 'pending' && (
-                            <span className="text-[11px] text-muted-foreground">Queued</span>
+                            <span className="text-xs text-muted-foreground">Queued</span>
                           )}
                           {recipient.status === 'sending' && (
                             <div className="flex items-center gap-1.5">
                               <div className="w-3.5 h-3.5 rounded-full border-2 border-primary border-t-transparent animate-spin" />
-                              <span className="text-[11px] font-medium text-primary">Sending</span>
+                              <span className="text-xs font-medium text-primary">Sending</span>
                             </div>
                           )}
                           {recipient.status === 'completed' && (
                             <div className="flex items-center gap-1">
                               <Check className="w-3.5 h-3.5 text-emerald-600" />
-                              <span className="text-[11px] font-medium text-emerald-600">Done</span>
+                              <span className="text-xs font-medium text-emerald-600">Done</span>
                             </div>
                           )}
                           {recipient.status === 'skipped' && (
                             <div className="flex items-center gap-1">
                               <AlertTriangle className="w-3.5 h-3.5 text-amber-500" />
-                              <span className="text-[11px] font-medium text-amber-600">Skipped</span>
+                              <span className="text-xs font-medium text-amber-600">Skipped</span>
                             </div>
                           )}
                         </div>
@@ -3295,31 +3300,31 @@ function StudentDashboardInner() {
 
         {/* Success feedback dialog (enhanced) */}
         <Dialog open={successModalOpen} onOpenChange={setSuccessModalOpen}>
-          <DialogContent className="sm:max-w-lg p-0 overflow-hidden">
+          <DialogContent className="sm:max-w-lg p-0 overflow-hidden max-h-[85vh] flex flex-col">
             <DialogHeader className="sr-only">
               <DialogTitle>Transfer complete summary</DialogTitle>
               <DialogDescription>Summary of recently completed file/link transfer</DialogDescription>
             </DialogHeader>
             {successInfo && (
-              <div className="p-5">
-                <div className="flex items-center justify-between mb-4">
-                  <div className="flex items-center gap-3">
+              <div className="p-3 sm:p-5 overflow-y-auto flex-1">
+                <div className="flex items-center justify-between mb-3 sm:mb-4">
+                  <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
                     {/* Icon based on outcome */}
                     {successInfo.mode === 'received' || successInfo.outcome === 'complete' ? (
-                      <div className="w-10 h-10 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center">
-                        <CheckCircle2 className="w-6 h-6" />
+                      <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0">
+                        <CheckCircle2 className="w-5 h-5 sm:w-6 sm:h-6" />
                       </div>
                     ) : successInfo.outcome === 'partial' ? (
-                      <div className="w-10 h-10 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center">
-                        <AlertTriangle className="w-6 h-6" />
+                      <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center shrink-0">
+                        <AlertTriangle className="w-5 h-5 sm:w-6 sm:h-6" />
                       </div>
                     ) : (
-                      <div className="w-10 h-10 rounded-full bg-red-100 text-red-700 flex items-center justify-center">
-                        <X className="w-6 h-6" />
+                      <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-red-100 text-red-700 flex items-center justify-center shrink-0">
+                        <X className="w-5 h-5 sm:w-6 sm:h-6" />
                       </div>
                     )}
-                    <div>
-                      <h3 className="text-base font-semibold leading-none">
+                    <div className="min-w-0">
+                      <h3 className="text-sm sm:text-base font-semibold leading-none">
                         {successInfo.mode === 'received'
                           ? (successInfo.totalCodes ? 'Code received' : 'Files received')
                           : successInfo.totalCodes
@@ -3354,11 +3359,11 @@ function StudentDashboardInner() {
                 </div>
 
                 <div className="rounded-md border bg-white dark:bg-neutral-900">
-                  <div className="grid grid-cols-3 gap-4 p-4">
+                  <div className="grid grid-cols-3 gap-3 sm:gap-4 p-3 sm:p-4">
                     {successInfo.mode === 'sent' ? (
                       <>
                         <div className="col-span-3">
-                          <div className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1">
+                          <div className="text-xs uppercase tracking-wide text-muted-foreground mb-1">
                             {successInfo.outcome === 'failed' ? 'Intended Recipients' : 'Sent To'}
                           </div>
                           <div className="flex flex-wrap gap-1.5">
@@ -3389,26 +3394,26 @@ function StudentDashboardInner() {
                         <div className="col-span-3 border-t my-1" />
                         <div className={`col-span-3 grid ${successInfo.totalCodes ? 'grid-cols-2' : 'grid-cols-2'} gap-4`}>
                           <div>
-                            <div className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1">From</div>
-                            <div className="text-sm font-medium">{successInfo.from}</div>
+                            <div className="text-xs uppercase tracking-wide text-muted-foreground mb-1">From</div>
+                            <div className="text-sm font-medium truncate">{successInfo.from}</div>
                           </div>
                           <div>
-                            <div className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1">Total Size</div>
+                            <div className="text-xs uppercase tracking-wide text-muted-foreground mb-1">Total Size</div>
                             <div className="text-sm font-medium">{successInfo.totalSize}</div>
                           </div>
                           {successInfo.totalCodes ? (
                             <div>
-                              <div className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1">Code</div>
+                              <div className="text-xs uppercase tracking-wide text-muted-foreground mb-1">Code</div>
                               <div className="text-sm font-medium">{successInfo.totalCodes}</div>
                             </div>
                           ) : (
                             <>
                               <div>
-                                <div className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1">Files</div>
+                                <div className="text-xs uppercase tracking-wide text-muted-foreground mb-1">Files</div>
                                 <div className="text-sm font-medium">{successInfo.totalFiles}</div>
                               </div>
                               <div>
-                                <div className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1">Links</div>
+                                <div className="text-xs uppercase tracking-wide text-muted-foreground mb-1">Links</div>
                                 <div className="text-sm font-medium">{successInfo.totalLinks}</div>
                               </div>
                             </>
@@ -3423,7 +3428,7 @@ function StudentDashboardInner() {
                             <>
                               <div className="col-span-3 border-t my-1" />
                               <div className="col-span-3">
-                                <div className="text-[11px] uppercase tracking-wide text-amber-600 mb-1 flex items-center gap-1">
+                                <div className="text-xs uppercase tracking-wide text-amber-600 mb-1 flex items-center gap-1">
                                   <AlertTriangle className="w-3 h-3" />
                                   Skipped Recipients ({skipped.length})
                                 </div>
@@ -3477,7 +3482,7 @@ function StudentDashboardInner() {
                     ) : (
                       <>
                         <div className="col-span-3">
-                          <div className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1">From</div>
+                          <div className="text-xs uppercase tracking-wide text-muted-foreground mb-1">From</div>
                           <div className="flex flex-wrap gap-1.5">
                             {(successInfo.senders || []).slice(0, 6).map((s, i) => {
                               const isSelf = s.uniqueId === userData.uniqueId
@@ -3504,26 +3509,26 @@ function StudentDashboardInner() {
                         <div className="col-span-3 border-t my-1" />
                         <div className="col-span-3 grid grid-cols-2 gap-4">
                           <div>
-                            <div className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1">To</div>
-                            <div className="text-sm font-medium">{userData.name} ({userData.uniqueId}) (You)</div>
+                            <div className="text-xs uppercase tracking-wide text-muted-foreground mb-1">To</div>
+                            <div className="text-sm font-medium truncate">{userData.name} ({userData.uniqueId}) (You)</div>
                           </div>
                           <div>
-                            <div className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1">Total Size</div>
+                            <div className="text-xs uppercase tracking-wide text-muted-foreground mb-1">Total Size</div>
                             <div className="text-sm font-medium">{successInfo.totalSize}</div>
                           </div>
                           {successInfo.totalCodes ? (
                             <div>
-                              <div className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1">Code</div>
+                              <div className="text-xs uppercase tracking-wide text-muted-foreground mb-1">Code</div>
                               <div className="text-sm font-medium">{successInfo.totalCodes}</div>
                             </div>
                           ) : (
                             <>
                               <div>
-                                <div className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1">Files</div>
+                                <div className="text-xs uppercase tracking-wide text-muted-foreground mb-1">Files</div>
                                 <div className="text-sm font-medium">{successInfo.totalFiles}</div>
                               </div>
                               <div>
-                                <div className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1">Links</div>
+                                <div className="text-xs uppercase tracking-wide text-muted-foreground mb-1">Links</div>
                                 <div className="text-sm font-medium">{successInfo.totalLinks}</div>
                               </div>
                             </>
@@ -3533,7 +3538,7 @@ function StudentDashboardInner() {
                     )}
                   </div>
                   {/* Footer message with outcome-based background */}
-                  <div className={`border-t p-4 text-[11px] text-muted-foreground dark:text-gray-400 ${successInfo.mode === 'received' || successInfo.outcome === 'complete'
+                  <div className={`border-t p-3 sm:p-4 text-xs text-muted-foreground dark:text-gray-400 ${successInfo.mode === 'received' || successInfo.outcome === 'complete'
                     ? 'bg-emerald-50/50 dark:bg-emerald-900/10'
                     : successInfo.outcome === 'partial'
                       ? 'bg-amber-50/50 dark:bg-amber-900/10'
@@ -3556,21 +3561,18 @@ function StudentDashboardInner() {
                 </div>
 
                 {/* Buttons based on outcome */}
-                <div className="mt-4 flex flex-wrap gap-4 justify-center">
+                <div className="mt-3 sm:mt-4 flex flex-wrap gap-2.5 sm:gap-4 justify-center">
                   {successInfo.outcome === 'failed' ? (
-                    // Failed: Only Retry button
-                    <Button onClick={() => setSuccessModalOpen(false)}>Retry</Button>
+                    <Button size="sm" onClick={() => setSuccessModalOpen(false)}>Retry</Button>
                   ) : successInfo.outcome === 'partial' ? (
-                    // Partial: Retry + Open History
                     <>
-                      <Button variant="outline" onClick={() => setSuccessModalOpen(false)}>Retry</Button>
-                      <Button onClick={() => { setActiveTab('history'); setHistorySubTab('sent'); setSuccessModalOpen(false) }}>Open File History</Button>
+                      <Button size="sm" variant="outline" onClick={() => setSuccessModalOpen(false)}>Retry</Button>
+                      <Button size="sm" onClick={() => { setActiveTab('history'); setHistorySubTab('sent'); setSuccessModalOpen(false) }}>Open File History</Button>
                     </>
                   ) : (
-                    // Complete: Open History + Done
                     <>
-                      <Button variant="outline" onClick={() => { setActiveTab('history'); setHistorySubTab(successInfo.mode === 'received' ? 'received' : 'sent'); setSuccessModalOpen(false) }}>Open File History</Button>
-                      <Button onClick={() => setSuccessModalOpen(false)}>Done</Button>
+                      <Button size="sm" variant="outline" onClick={() => { setActiveTab('history'); setHistorySubTab(successInfo.mode === 'received' ? 'received' : 'sent'); setSuccessModalOpen(false) }}>Open File History</Button>
+                      <Button size="sm" onClick={() => setSuccessModalOpen(false)}>Done</Button>
                     </>
                   )}
                 </div>
@@ -3674,7 +3676,7 @@ function StudentDashboardInner() {
                         return <div style={{ width: pct + '%' }} className="h-full bg-emerald-700 transition-[width] duration-300 ease-out" />
                       })()}
                     </div>
-                    <div className="mt-1 text-[11px] text-neutral-600 dark:text-neutral-400 flex justify-between">
+                    <div className="mt-1 text-xs text-neutral-600 dark:text-neutral-400 flex justify-between">
                       {(() => {
                         const pct = p.total ? Math.min(100, Math.round((p.received / p.total) * 100)) : 0
                         return <span>{pct}%</span>
