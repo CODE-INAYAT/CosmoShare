@@ -176,6 +176,7 @@ function OneShareInner() {
     const [selectedFiles, setSelectedFiles] = useState<File[]>([])
     const [linkUrl, setLinkUrl] = useState('')
     const [message, setMessage] = useState('')
+    const [codeShareText, setCodeShareText] = useState('')
     const [shareMode, setShareMode] = useState<'files' | 'links'>('files')
     const [codeShareMode, setCodeShareMode] = useState(false)
     const [multiShareEnabled, setMultiShareEnabled] = useState(false)
@@ -617,7 +618,7 @@ function OneShareInner() {
             return
         }
 
-        if (selectedFiles.length === 0 && !linkUrl && (!message || !codeShareMode)) {
+        if (selectedFiles.length === 0 && !linkUrl && (!codeShareText || !codeShareMode)) {
             setJoinError('Please select files, enter a link, or write code to share')
             return
         }
@@ -719,9 +720,9 @@ function OneShareInner() {
             }
 
             // Send code if in code share mode with no files/links
-            if (codeShareMode && selectedFiles.length === 0 && !linkUrl && message) {
+            if (codeShareMode && selectedFiles.length === 0 && !linkUrl && codeShareText) {
                 setUploadProgress(50)
-                await webrtc.sendMessage(message)
+                await webrtc.sendMessage(codeShareText)
                 setUploadProgress(100)
             }
 
@@ -752,6 +753,7 @@ function OneShareInner() {
         setSelectedFiles([])
         setLinkUrl('')
         setMessage('')
+        setCodeShareText('')
         setCodeShareMode(false)
         setMultiShareEnabled(false)
         setSessionExpiry(null)
@@ -802,7 +804,7 @@ function OneShareInner() {
                 receiverId,
                 selectedFiles,
                 linkUrl || undefined,
-                message || undefined,
+                (codeShareMode ? codeShareText : message) || undefined,
                 codeShareMode,
                 (sent, total) => {
                     // Could track per-receiver progress here if needed
@@ -1065,8 +1067,8 @@ function OneShareInner() {
                                                         <Textarea
                                                             id="code-share-input"
                                                             placeholder="Paste your code here..."
-                                                            value={message}
-                                                            onChange={(e) => setMessage(e.target.value)}
+                                                            value={codeShareText}
+                                                            onChange={(e) => setCodeShareText(e.target.value)}
                                                             rows={8}
                                                             className="max-h-64 overflow-y-auto resize-none bg-slate-800 text-slate-200 border-slate-600 placeholder:text-slate-500"
                                                             style={{ fontFamily: 'Consolas, Monaco, monospace' }}
@@ -1194,7 +1196,7 @@ function OneShareInner() {
                                         {/* Generate Code Button */}
                                         <Button
                                             className="w-full gradient-primary text-white glow-button"
-                                            disabled={!isConnected || (selectedFiles.length === 0 && !linkUrl && (!message || !codeShareMode))}
+                                            disabled={!isConnected || (selectedFiles.length === 0 && !linkUrl && (!codeShareText || !codeShareMode))}
                                             onClick={handleCreateSession}
                                         >
                                             <Hash className="w-4 h-4 mr-2" />
@@ -1387,11 +1389,11 @@ function OneShareInner() {
                                                     </Label>
                                                     <div className="space-y-2 max-h-48 overflow-y-auto">
                                                         {/* Show code for code share mode */}
-                                                        {codeShareMode && selectedFiles.length === 0 && !linkUrl && message && (
+                                                        {codeShareMode && selectedFiles.length === 0 && !linkUrl && codeShareText && (
                                                             <div className="flex items-center gap-3 p-3 bg-slate-800 rounded-xl border border-slate-600">
                                                                 <CodeIcon className="w-5 h-5 text-sky-400 flex-shrink-0" />
                                                                 <div className="min-w-0 flex-1">
-                                                                    <pre className="text-sm font-medium line-clamp-2 text-slate-200" style={{ fontFamily: 'Consolas, Monaco, monospace' }}>{message}</pre>
+                                                                    <pre className="text-sm font-medium line-clamp-2 text-slate-200" style={{ fontFamily: 'Consolas, Monaco, monospace' }}>{codeShareText}</pre>
                                                                 </div>
                                                                 {transferComplete && <CheckCircle2 className="w-4 h-4 text-emerald-500 flex-shrink-0" />}
                                                             </div>

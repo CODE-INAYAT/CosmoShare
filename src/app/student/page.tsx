@@ -115,6 +115,7 @@ function StudentDashboardInner() {
   const [selectedFiles, setSelectedFiles] = useState<File[]>([])
   const [linkUrl, setLinkUrl] = useState('')
   const [message, setMessage] = useState('')
+  const [codeShareText, setCodeShareText] = useState('')
   const [allowReshare, setAllowReshare] = useState(true)
   // Multi-recipient selection
   const [selectedRecipients, setSelectedRecipients] = useState<string[]>([])
@@ -173,7 +174,7 @@ function StudentDashboardInner() {
   const [autoShareActive, setAutoShareActive] = useState(false)
   const autoShareActiveRef = useRef(false)
   useEffect(() => { autoShareActiveRef.current = autoShareActive }, [autoShareActive])
-  const autoShareDataRef = useRef<{ files: File[]; linkUrl: string; message: string; allowReshare: boolean; codeMode: boolean } | null>(null)
+  const autoShareDataRef = useRef<{ files: File[]; linkUrl: string; message: string; codeText: string; allowReshare: boolean; codeMode: boolean } | null>(null)
   const autoShareExpiryRef = useRef(0)
   const [autoShareTimeLeft, setAutoShareTimeLeft] = useState(0)
   const [autoShareSummary, setAutoShareSummary] = useState<{ fileCount: number; hasLink: boolean; hasCode: boolean; totalSize: string } | null>(null)
@@ -1051,6 +1052,7 @@ function StudentDashboardInner() {
       files: [...selectedFiles],
       linkUrl,
       message,
+      codeText: codeShareText,
       allowReshare,
       codeMode: codeShareMode,
     }
@@ -1062,7 +1064,7 @@ function StudentDashboardInner() {
     setAutoShareSummary({
       fileCount: data.files.length,
       hasLink: !!data.linkUrl,
-      hasCode: data.codeMode && !!data.message,
+      hasCode: data.codeMode && !!data.codeText,
       totalSize: formatFileSize(data.files.reduce((s, f) => s + f.size, 0)),
     })
     setOfflineModalOpen(false)
@@ -1070,6 +1072,7 @@ function StudentDashboardInner() {
     setSelectedFiles([])
     setLinkUrl('')
     setMessage('')
+    setCodeShareText('')
     toast({
       title: (
         <div className="flex items-center gap-2">
@@ -1161,6 +1164,7 @@ function StudentDashboardInner() {
     setSelectedFiles(data.files)
     setLinkUrl(data.linkUrl)
     setMessage(data.message)
+    setCodeShareText(data.codeText)
     setAllowReshare(data.allowReshare)
     setCodeShareMode(data.codeMode)
     autoShareDataRef.current = null
@@ -1269,7 +1273,7 @@ function StudentDashboardInner() {
       }
 
       // Handle code share mode
-      if (codeShareMode && selectedFiles.length === 0 && !linkUrl && message.trim()) {
+      if (codeShareMode && selectedFiles.length === 0 && !linkUrl && codeShareText.trim()) {
         // Show progress for code sending
         setUploadProgress(30)
 
@@ -1296,7 +1300,7 @@ function StudentDashboardInner() {
 
           try {
             webrtc.ensureConnection(targetId)
-            await webrtc.sendMessage(targetId, message, { name: userData.name, uniqueId: userData.uniqueId, allowReshare })
+            await webrtc.sendMessage(targetId, codeShareText, { name: userData.name, uniqueId: userData.uniqueId, allowReshare })
           } catch (error) {
             console.error('CodeShare error for recipient:', targetId, error)
             recipientFailed = true
@@ -1375,11 +1379,11 @@ function StudentDashboardInner() {
         if (hasSuccessful) {
           const codeEntry: FileShare = {
             id: Date.now().toString() + Math.random(),
-            fileName: message.slice(0, 50) + (message.length > 50 ? '...' : ''),
-            fileSize: message.length,
+            fileName: codeShareText.slice(0, 50) + (codeShareText.length > 50 ? '...' : ''),
+            fileSize: codeShareText.length,
             fileType: 'code',
             isLink: false,
-            message,
+            message: codeShareText,
             allowReshare,
             senderId: userData.id,
             receiverId: isPrintRequest ? 'admin' : 'multi',
@@ -1390,7 +1394,7 @@ function StudentDashboardInner() {
           setSentFiles(prev => [codeEntry, ...prev])
         }
 
-        setMessage('')
+        setCodeShareText('')
         setSelectedRecipients([])
         setCodeShareMode(false)
 
@@ -1411,7 +1415,7 @@ function StudentDashboardInner() {
             ? codeLocalSuccessful.map(r => `${r.name} (${r.uniqueId})`).join(', ')
             : (isPrintRequest ? `Lab Admin (Room ${adminRoom || userData.roomNumber})` : '—'),
           from: `${userData.name} (${userData.uniqueId}) (You)`,
-          totalSize: formatFileSize(message.length),
+          totalSize: formatFileSize(codeShareText.length),
           totalFiles: 0,
           totalLinks: 0,
           totalCodes: 1,
@@ -1701,7 +1705,7 @@ function StudentDashboardInner() {
     }
     // Allow proceeding if:
     // 1. Has files OR has link OR (codeShareMode is enabled AND has code)
-    if (selectedFiles.length === 0 && !linkUrl && !(codeShareMode && message.trim())) return
+    if (selectedFiles.length === 0 && !linkUrl && !(codeShareMode && codeShareText.trim())) return
 
     // Google Link Check
     if (!bypassGoogleCheck && linkUrl) {
@@ -1787,7 +1791,8 @@ function StudentDashboardInner() {
     // Handle code type reshare
     if (item.fileType === 'code' && item.message) {
       setCodeShareMode(true)
-      setMessage(item.message)
+      setCodeShareText(item.message)
+      setMessage('')
       setSelectedRecipients([])
       return
     }
@@ -1827,6 +1832,7 @@ function StudentDashboardInner() {
     // Clear previous recipients and message to avoid accidental broadcast
     setSelectedRecipients([])
     setMessage('')
+    setCodeShareText('')
   }
 
   const handleLeaveRoom = () => {
@@ -2061,8 +2067,8 @@ function StudentDashboardInner() {
                         <Textarea
                           id="code-share-input"
                           placeholder="// Paste your code here...&#10;function example() {&#10;  return 'Hello World';&#10;}"
-                          value={message}
-                          onChange={(e) => setMessage(e.target.value)}
+                          value={codeShareText}
+                          onChange={(e) => setCodeShareText(e.target.value)}
                           rows={6}
                           className="resize-none font-mono text-xs sm:text-sm bg-slate-800 text-slate-200 dark:bg-slate-900 dark:text-slate-100 border-slate-600 overflow-auto"
                           style={{ fontFamily: 'Consolas, Monaco, monospace', maxHeight: '200px' }}
@@ -2203,7 +2209,7 @@ function StudentDashboardInner() {
                       <div className="flex flex-col sm:flex-row gap-2">
                         <Button
                           onClick={() => preflightAndMaybeShare(false)}
-                          disabled={isUploading || !message.trim() || selectedRecipients.length === 0}
+                          disabled={isUploading || !codeShareText.trim() || selectedRecipients.length === 0}
                           className="flex-1 text-sm"
                         >
                           <Send className="w-4 h-4 mr-2" />
