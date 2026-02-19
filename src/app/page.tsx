@@ -41,7 +41,8 @@ import {
   Files,
   ShieldCheck,
   Rocket,
-  QrCode
+  QrCode,
+  HelpCircle
 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import gsap from 'gsap'
@@ -189,6 +190,7 @@ export default function Home() {
   const [suggestedNames, setSuggestedNames] = useState<string[]>([])
   const [mounted, setMounted] = useState(false)
   const [roomOpen, setRoomOpen] = useState(false)
+  const [supportOpen, setSupportOpen] = useState(false)
   const router = useRouter()
 
   // Refs for GSAP animations
@@ -198,8 +200,27 @@ export default function Home() {
   const featuresRef = useRef<HTMLDivElement>(null)
   const featuresContainerRef = useRef<HTMLDivElement>(null)
   const ctaRef = useRef<HTMLDivElement>(null)
+  const footerRef = useRef<HTMLElement>(null)
+  const [showFab, setShowFab] = useState(false)
 
   useEffect(() => setMounted(true), [])
+
+  // Hide FAB when hero or footer is visible
+  useEffect(() => {
+    if (!mounted) return
+    const targets = [heroRef.current, footerRef.current].filter(Boolean) as Element[]
+    if (targets.length === 0) return
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const anyVisible = entries.some((e) => e.isIntersecting)
+        setShowFab(!anyVisible)
+      },
+      { threshold: 0.15 }
+    )
+    targets.forEach((t) => observer.observe(t))
+    return () => observer.disconnect()
+  }, [mounted])
 
   // GSAP Animations with Enhanced Parallax and Horizontal Scroll
   useEffect(() => {
@@ -1502,8 +1523,28 @@ export default function Home() {
         </div>
       </section>
 
+      {/* Floating Support FAB */}
+      <AnimatePresence>
+        {showFab && (
+          <motion.button
+            id="support-fab"
+            initial={{ scale: 0, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            exit={{ scale: 0, opacity: 0 }}
+            transition={{ type: 'spring', stiffness: 260, damping: 20 }}
+            whileHover={{ scale: 1.1 }}
+            whileTap={{ scale: 0.9 }}
+            onClick={() => setSupportOpen(true)}
+            className="fixed bottom-4 right-4 sm:bottom-6 sm:right-6 z-50 w-11 h-11 sm:w-14 sm:h-14 rounded-full gradient-primary text-white shadow-lg glow-button flex items-center justify-center cursor-pointer"
+            aria-label="Open support"
+          >
+            <HelpCircle className="w-5 h-5 sm:w-6 sm:h-6" />
+          </motion.button>
+        )}
+      </AnimatePresence>
+
       {/* Footer */}
-      <footer className="py-6 md:py-12 px-4 border-t border-border/50">
+      <footer ref={footerRef} className="py-6 md:py-12 px-4 border-t border-border/50">
         <div className="max-w-6xl mx-auto">
           <div className="flex flex-col md:flex-row items-center justify-between gap-4 md:gap-6">
             <div className="flex items-center gap-2">
@@ -1521,7 +1562,7 @@ export default function Home() {
                 </g>
               </svg> By ISK
             </p>
-            <SupportDialog />
+            <SupportDialog externalOpen={supportOpen} onExternalOpenChange={setSupportOpen} />
           </div>
         </div >
       </footer >

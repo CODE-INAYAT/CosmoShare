@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import {
     Dialog,
     DialogContent,
@@ -29,8 +29,25 @@ import {
 
 const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwoSajl1NzWwoPIqGOsUofQoSuwu0yUo06ajR4dUI0Kvvdy3NNwKDV_JRLHLQwiEYmLBA/exec';
 
-export function SupportDialog() {
+interface SupportDialogProps {
+    externalOpen?: boolean
+    onExternalOpenChange?: (open: boolean) => void
+}
+
+export function SupportDialog({ externalOpen, onExternalOpenChange }: SupportDialogProps) {
     const [open, setOpen] = useState(false)
+
+    // Sync external open signal to internal state
+    useEffect(() => {
+        if (externalOpen !== undefined) {
+            setOpen(externalOpen)
+        }
+    }, [externalOpen])
+
+    const handleOpenChange = (val: boolean) => {
+        setOpen(val)
+        onExternalOpenChange?.(val)
+    }
     const [view, setView] = useState<'menu' | 'form' | 'success'>('menu')
     const [selectedCategory, setSelectedCategory] = useState<any>(null)
     const [isSubmitting, setIsSubmitting] = useState(false)
@@ -380,18 +397,21 @@ export function SupportDialog() {
                 open={open}
                 onOpenChange={(val) => {
                     if (!val) resetForm();
-                    setOpen(val);
+                    handleOpenChange(val);
                 }}
             >
                 <div className="flex items-center justify-center gap-2 text-xs md:text-sm text-muted-foreground">
                     <span>Looking For Anything Else ?</span>
                     <DrawerTrigger asChild>
-                        <button className="text-primary hover:underline font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-primary/20 rounded-sm">
+                        <button className="text-primary underline hover:underline font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-primary/20 rounded-sm">
                             Click Here
                         </button>
                     </DrawerTrigger>
                 </div>
-                <DrawerContent className="p-4 !mt-0 !max-h-[100dvh] h-[100dvh] !rounded-none">
+                <DrawerContent
+                    className="p-4 !mt-0 !max-h-[100dvh] h-[100dvh] !rounded-none"
+                    onCloseAutoFocus={(e) => e.preventDefault()}
+                >
                     <div className="overflow-y-auto flex-1">
                         {supportFormContent}
                     </div>
@@ -403,17 +423,20 @@ export function SupportDialog() {
     return (
         <Dialog open={open} onOpenChange={(val) => {
             if (!val) resetForm();
-            setOpen(val);
+            handleOpenChange(val);
         }}>
             <div className="flex items-center justify-center gap-2 text-xs md:text-sm text-muted-foreground">
                 <span>Looking For Anything Else ?</span>
                 <DialogTrigger asChild>
-                    <button className="text-primary hover:underline font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-primary/20 rounded-sm">
+                    <button className="text-primary underline hover:underline font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-primary/20 rounded-sm">
                         Click Here
                     </button>
                 </DialogTrigger>
             </div>
-            <DialogContent className="sm:max-w-md border-0 bg-background/95 backdrop-blur-xl max-h-[85vh] overflow-y-auto p-6 rounded-2xl scrollbar-hide">
+            <DialogContent
+                className="sm:max-w-md border-0 bg-background/95 backdrop-blur-xl max-h-[85vh] overflow-y-auto p-6 rounded-2xl scrollbar-hide"
+                onCloseAutoFocus={(e) => e.preventDefault()}
+            >
                 {supportFormContent}
             </DialogContent>
         </Dialog>
