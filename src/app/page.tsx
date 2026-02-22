@@ -55,13 +55,13 @@ if (typeof window !== 'undefined') {
   gsap.registerPlugin(ScrollTrigger)
 }
 
-// Animation variants
+// Animation variants — GPU-composited transforms only (opacity + translate)
 const fadeUp = {
-  hidden: { opacity: 0, y: 40 },
+  hidden: { opacity: 0, y: 30 },
   visible: {
     opacity: 1,
     y: 0,
-    transition: { duration: 0.7, ease: [0.25, 0.46, 0.45, 0.94] as const }
+    transition: { duration: 0.6, ease: [0.25, 0.46, 0.45, 0.94] as const }
   }
 }
 
@@ -69,16 +69,16 @@ const fadeIn = {
   hidden: { opacity: 0 },
   visible: {
     opacity: 1,
-    transition: { duration: 0.6 }
+    transition: { duration: 0.5, ease: 'easeOut' as const }
   }
 }
 
 const scaleIn = {
-  hidden: { opacity: 0, scale: 0.9 },
+  hidden: { opacity: 0, scale: 0.92 },
   visible: {
     opacity: 1,
     scale: 1,
-    transition: { duration: 0.5, ease: "easeOut" as const }
+    transition: { duration: 0.5, ease: [0.25, 0.46, 0.45, 0.94] as const }
   }
 }
 
@@ -87,18 +87,48 @@ const staggerContainer = {
   visible: {
     opacity: 1,
     transition: {
-      staggerChildren: 0.12,
-      delayChildren: 0.1
+      staggerChildren: 0.1,
+      delayChildren: 0.05
     }
   }
 }
 
-const slideIn = {
-  hidden: { opacity: 0, x: -20 },
+const slideFromLeft = {
+  hidden: { opacity: 0, x: -40 },
   visible: {
     opacity: 1,
     x: 0,
-    transition: { duration: 0.5 }
+    transition: { duration: 0.5, ease: [0.25, 0.46, 0.45, 0.94] as const }
+  }
+}
+
+const slideFromRight = {
+  hidden: { opacity: 0, x: 40 },
+  visible: {
+    opacity: 1,
+    x: 0,
+    transition: { duration: 0.5, ease: [0.25, 0.46, 0.45, 0.94] as const }
+  }
+}
+
+const scaleUp = {
+  hidden: { opacity: 0, scale: 0.85, y: 20 },
+  visible: {
+    opacity: 1,
+    scale: 1,
+    y: 0,
+    transition: { duration: 0.5, ease: [0.25, 0.46, 0.45, 0.94] as const }
+  }
+}
+
+const staggerGrid = {
+  hidden: { opacity: 0 },
+  visible: {
+    opacity: 1,
+    transition: {
+      staggerChildren: 0.15,
+      delayChildren: 0.1
+    }
   }
 }
 
@@ -304,193 +334,13 @@ export default function Home() {
         }
       })
 
-      // ============================================
-      // BACKGROUND ORBS - Multi-layer Parallax
-      // ============================================
-
-      gsap.to('.orb-1', {
-        y: -200,
-        x: 100,
-        scale: 1.2,
-        scrollTrigger: {
-          trigger: 'body',
-          start: 'top top',
-          end: 'bottom bottom',
-          scrub: 3
-        }
-      })
-
-      gsap.to('.orb-2', {
-        y: 250,
-        x: -150,
-        scale: 0.8,
-        scrollTrigger: {
-          trigger: 'body',
-          start: 'top top',
-          end: 'bottom bottom',
-          scrub: 4
-        }
-      })
-
-      gsap.to('.orb-3', {
-        y: -150,
-        x: 80,
-        scrollTrigger: {
-          trigger: 'body',
-          start: 'top top',
-          end: 'bottom bottom',
-          scrub: 2
-        }
-      })
+      // Background orbs are handled purely by CSS animations
+      // (no GSAP parallax — combining scroll-driven transforms with blur is expensive)
 
       // ============================================
-      // PORTAL SECTION - Slide & Reveal
+      // PORTAL, HOW IT WORKS, CTA — animated by framer-motion whileInView in JSX
+      // (IntersectionObserver-based, no scroll listeners needed)
       // ============================================
-
-      if (portalRef.current) {
-        // Section heading text animation
-        const portalHeading = portalRef.current.querySelector('h2')
-        if (portalHeading) {
-          gsap.fromTo(portalHeading,
-            { opacity: 0, y: 80, scale: 0.9 },
-            {
-              opacity: 1, y: 0, scale: 1,
-              duration: 0.8,
-              ease: 'power3.out',
-              scrollTrigger: {
-                trigger: portalRef.current,
-                start: 'top 85%',
-                toggleActions: 'play none none reverse'
-              }
-            }
-          )
-        }
-
-        // Portal cards with 3D slide effect
-        gsap.fromTo(portalRef.current.querySelectorAll('.portal-card'),
-          {
-            opacity: 0,
-            x: (i) => i % 2 === 0 ? -150 : 150,
-            rotateY: (i) => i % 2 === 0 ? 25 : -25,
-            scale: 0.8
-          },
-          {
-            opacity: 1,
-            x: 0,
-            rotateY: 0,
-            scale: 1,
-            duration: 1,
-            ease: 'power3.out',
-            stagger: 0.2,
-            scrollTrigger: {
-              trigger: portalRef.current,
-              start: 'top 75%',
-              end: 'top 25%',
-              toggleActions: 'play none none reverse'
-            }
-          }
-        )
-
-        // Parallax effect on portal section background
-        gsap.to(portalRef.current, {
-          backgroundPositionY: '30%',
-          scrollTrigger: {
-            trigger: portalRef.current,
-            start: 'top bottom',
-            end: 'bottom top',
-            scrub: 1
-          }
-        })
-      }
-
-      // ============================================
-      // HOW IT WORKS - Timeline Animation
-      // ============================================
-
-      if (howItWorksRef.current) {
-        // Section heading with word reveal
-        const howHeading = howItWorksRef.current.querySelector('h2')
-        if (howHeading) {
-          gsap.fromTo(howHeading,
-            { opacity: 0, y: 60, clipPath: 'inset(100% 0% 0% 0%)' },
-            {
-              opacity: 1,
-              y: 0,
-              clipPath: 'inset(0% 0% 0% 0%)',
-              duration: 1,
-              ease: 'power4.out',
-              scrollTrigger: {
-                trigger: howItWorksRef.current,
-                start: 'top 80%',
-                toggleActions: 'play none none reverse'
-              }
-            }
-          )
-        }
-
-        // Steps with staggered 3D reveal
-        const stepItems = howItWorksRef.current.querySelectorAll('.step-item')
-        gsap.fromTo(stepItems,
-          {
-            opacity: 0,
-            y: 120,
-            rotateX: 45,
-            scale: 0.7,
-            transformOrigin: 'bottom center'
-          },
-          {
-            opacity: 1,
-            y: 0,
-            rotateX: 0,
-            scale: 1,
-            duration: 0.9,
-            ease: 'back.out(1.4)',
-            stagger: 0.25,
-            scrollTrigger: {
-              trigger: howItWorksRef.current,
-              start: 'top 70%',
-              toggleActions: 'play none none reverse'
-            }
-          }
-        )
-
-        // Step numbers with spin-in effect
-        gsap.fromTo(howItWorksRef.current.querySelectorAll('.step-number'),
-          { scale: 0, rotation: -360, opacity: 0 },
-          {
-            scale: 1,
-            rotation: 12, // Final rotation angle
-            opacity: 1,
-            duration: 0.8,
-            ease: 'elastic.out(1, 0.4)',
-            stagger: 0.25,
-            delay: 0.3,
-            scrollTrigger: {
-              trigger: howItWorksRef.current,
-              start: 'top 70%',
-              toggleActions: 'play none none reverse'
-            }
-          }
-        )
-
-        // Connector lines draw animation
-        const connectors = howItWorksRef.current.querySelectorAll('.step-connector')
-        connectors.forEach(connector => {
-          gsap.fromTo(connector,
-            { scaleX: 0, transformOrigin: 'left center' },
-            {
-              scaleX: 1,
-              duration: 0.6,
-              ease: 'power2.out',
-              scrollTrigger: {
-                trigger: connector,
-                start: 'top 75%',
-                toggleActions: 'play none none reverse'
-              }
-            }
-          )
-        })
-      }
 
       // ============================================
       // FEATURES SECTION - Horizontal Scroll Carousel
@@ -504,58 +354,26 @@ export default function Home() {
         const numCards = cards.length
 
         if (numCards > 0 && cardsContainer && scrollWrapper) {
-          // ========================================
-          // DYNAMIC CENTERING CALCULATION
-          // ========================================
-
-          // Card dimensions - responsive based on screen size
           const firstCard = cards[0]
           const cardWidth = firstCard ? firstCard.offsetWidth : (window.innerWidth < 768 ? 320 : 400)
           const cardGap = window.innerWidth < 768 ? 16 : 32
           const navbarHeight = 80
           const viewportHeight = window.innerHeight
-          const viewportWidth = window.innerWidth
-
-          // Get actual card height from DOM (or use fallback)
           const cardHeight = firstCard ? firstCard.offsetHeight : 280
-
-          // Container has py-6 (24px top padding)
           const containerPaddingTop = 24
-
-          // Total visible area = card height + container padding on top
           const totalCardsAreaHeight = cardHeight + containerPaddingTop
-
-          // Calculate available space below navbar
           const availableHeight = viewportHeight - navbarHeight
-
-          // Calculate the perfect gap (equal spacing above and below card area)
-          // This centers the card area vertically in the available space
           const perfectGap = Math.max(0, (availableHeight - totalCardsAreaHeight) / 2)
-
-          // Calculate the start position from viewport top
-          // This is where the wrapper should be when pinned (navbar + gap)
           const perfectStartPosition = navbarHeight + perfectGap
-
-          // Calculate total width of all cards
           const totalCardsWidth = (cardWidth + cardGap) * numCards - cardGap
-
-          // Calculate scroll distance so last card ends up centered
-          // Initial state: first card centered at viewport center
-          // Final state: last card centered at viewport center
-          // Distance = (total cards width) - (cardWidth) = distance from first card center to last card center
           const scrollDistance = Math.max(0, totalCardsWidth - cardWidth)
 
-          // Horizontal scroll animation
-          // START: When wrapper top reaches the perfect centered position
-          // END: After scrolling through entire distance
           gsap.to(cardsContainer, {
             x: -scrollDistance,
             ease: 'none',
             scrollTrigger: {
               trigger: scrollWrapper,
-              // Start when wrapper top reaches perfect center position
               start: `top ${perfectStartPosition}px`,
-              // End after scrolling through all cards
               end: () => `+=${scrollDistance + 100}`,
               pin: true,
               pinSpacing: true,
@@ -565,7 +383,7 @@ export default function Home() {
             }
           })
 
-          // Subtle hover effects only
+          // Subtle hover effects
           cards.forEach((card) => {
             card.addEventListener('mouseenter', () => {
               gsap.to(card, {
@@ -584,74 +402,7 @@ export default function Home() {
               })
             })
           })
-
         }
-
-        // Section heading animation
-        const featuresHeading = section.querySelector('.features-heading')
-        if (featuresHeading) {
-          gsap.fromTo(featuresHeading,
-            { opacity: 0, y: 30 },
-            {
-              opacity: 1,
-              y: 0,
-              duration: 0.6,
-              ease: 'power3.out',
-              scrollTrigger: {
-                trigger: section,
-                start: 'top 80%',
-                toggleActions: 'play none none reverse'
-              }
-            }
-          )
-        }
-      }
-
-      // ============================================
-      // CTA SECTION - Entrance & Glow Animation
-      // ============================================
-
-      if (ctaRef.current) {
-        // CTA card entrance with scale and fade
-        gsap.fromTo(ctaRef.current,
-          { opacity: 0, scale: 0.85, y: 80 },
-          {
-            opacity: 1,
-            scale: 1,
-            y: 0,
-            duration: 1,
-            ease: 'power3.out',
-            scrollTrigger: {
-              trigger: ctaRef.current,
-              start: 'top 85%',
-              toggleActions: 'play none none reverse'
-            }
-          }
-        )
-
-        // Pulsing glow effect intensifies on scroll proximity
-        const ctaGlow = ctaRef.current.querySelector('.cta-glow')
-        if (ctaGlow) {
-          gsap.to(ctaGlow, {
-            boxShadow: '0 0 80px rgba(0, 134, 124, 0.5), 0 0 120px rgba(0, 134, 124, 0.3)',
-            duration: 2,
-            repeat: -1,
-            yoyo: true,
-            ease: 'power1.inOut'
-          })
-        }
-
-        // CTA decorative elements parallax
-        gsap.to(ctaRef.current.querySelectorAll('.cta-decoration'), {
-          y: -30,
-          scale: 1.1,
-          scrollTrigger: {
-            trigger: ctaRef.current,
-            start: 'top bottom',
-            end: 'bottom top',
-            scrub: 1
-          }
-        })
       }
 
       // ============================================
@@ -1083,23 +834,36 @@ export default function Home() {
             </button>
           </motion.div>
 
-          <div className="flex items-center gap-4 max-w-2xl mx-auto mb-6">
+          <motion.div
+            initial="hidden"
+            whileInView="visible"
+            viewport={{ once: true, amount: 0.3 }}
+            variants={fadeIn}
+            className="flex items-center gap-4 max-w-2xl mx-auto mb-6"
+          >
             <div className="flex-1 h-px bg-border" />
             <span className="text-sm text-muted-foreground">or join a lab room</span>
             <div className="flex-1 h-px bg-border" />
-          </div>
+          </motion.div>
 
-          {/* Role Selection */}
-          <div className="grid md:grid-cols-2 gap-6 mb-10 max-w-2xl mx-auto">
-            <button
-              className={`portal-card w-full glass-card rounded-2xl p-4 md:p-6 text-left transition-all duration-300 ${userType === 'student'
+          {/* Role Selection — staggered slide-in */}
+          <motion.div
+            initial="hidden"
+            whileInView="visible"
+            viewport={{ once: true, amount: 0.3 }}
+            variants={staggerContainer}
+            className="grid md:grid-cols-2 gap-6 mb-10 max-w-2xl mx-auto"
+          >
+            <motion.button
+              variants={slideFromLeft}
+              className={`portal-card w-full glass-card rounded-2xl p-4 md:p-6 text-left transition-shadow duration-300 ${userType === 'student'
                 ? 'ring-2 ring-primary shadow-lg shadow-primary/20'
                 : 'hover:shadow-lg'
                 }`}
               onClick={() => setUserType('student')}
             >
               <div className="flex items-center gap-4">
-                <div className={`w-14 h-14 rounded-xl flex items-center justify-center transition-all duration-300 ${userType === 'student'
+                <div className={`w-14 h-14 rounded-xl flex items-center justify-center transition-colors duration-300 ${userType === 'student'
                   ? 'gradient-primary glow-sm'
                   : 'bg-secondary'
                   }`}>
@@ -1110,17 +874,18 @@ export default function Home() {
                   <p className="text-sm text-muted-foreground">Share files and print</p>
                 </div>
               </div>
-            </button>
+            </motion.button>
 
-            <button
-              className={`portal-card w-full glass-card rounded-2xl p-4 md:p-6 text-left transition-all duration-300 ${userType === 'admin'
+            <motion.button
+              variants={slideFromRight}
+              className={`portal-card w-full glass-card rounded-2xl p-4 md:p-6 text-left transition-shadow duration-300 ${userType === 'admin'
                 ? 'ring-2 ring-primary shadow-lg shadow-primary/20'
                 : 'hover:shadow-lg'
                 }`}
               onClick={() => setUserType('admin')}
             >
               <div className="flex items-center gap-4">
-                <div className={`w-14 h-14 rounded-xl flex items-center justify-center transition-all duration-300 ${userType === 'admin'
+                <div className={`w-14 h-14 rounded-xl flex items-center justify-center transition-colors duration-300 ${userType === 'admin'
                   ? 'gradient-primary glow-sm'
                   : 'bg-secondary'
                   }`}>
@@ -1131,11 +896,17 @@ export default function Home() {
                   <p className="text-sm text-muted-foreground">Manage print queue</p>
                 </div>
               </div>
-            </button>
-          </div>
+            </motion.button>
+          </motion.div>
 
-          {/* Login Form */}
-          <div className="portal-card">
+          {/* Login Form — scale-in reveal */}
+          <motion.div
+            initial="hidden"
+            whileInView="visible"
+            viewport={{ once: true, amount: 0.2 }}
+            variants={scaleIn}
+            className="portal-card"
+          >
             <Card className="glass-card border-0 rounded-3xl max-w-md mx-auto overflow-hidden shimmer-border">
               <CardHeader className="text-center pt-8 pb-4">
                 <motion.div
@@ -1367,7 +1138,7 @@ export default function Home() {
                 </form>
               </CardContent>
             </Card>
-          </div>
+          </motion.div>
         </div>
       </section>
 
@@ -1394,15 +1165,23 @@ export default function Home() {
             </p>
           </motion.div>
 
-          <div className="grid md:grid-cols-3 gap-8">
+          {/* Steps Grid — staggered reveal */}
+          <motion.div
+            initial="hidden"
+            whileInView="visible"
+            viewport={{ once: true, amount: 0.2 }}
+            variants={staggerGrid}
+            className="grid md:grid-cols-3 gap-8"
+          >
             {howItWorksSteps.map((item, index) => (
-              <div
+              <motion.div
                 key={item.step}
-                className="step-item relative"
+                variants={scaleUp}
+                className="relative"
               >
                 <div className="glass-card rounded-3xl p-5 md:p-8 text-center relative overflow-hidden group">
                   {/* Step Number */}
-                  <div className="step-number absolute -top-4 -right-4 w-16 h-16 gradient-primary rounded-2xl flex items-center justify-center text-2xl font-bold text-white glow-sm rotate-12 group-hover:rotate-0 transition-transform duration-300">
+                  <div className="absolute -top-4 -right-4 w-16 h-16 gradient-primary rounded-2xl flex items-center justify-center text-2xl font-bold text-white glow-sm rotate-12 group-hover:rotate-0 transition-transform duration-300">
                     {item.step}
                   </div>
 
@@ -1419,9 +1198,9 @@ export default function Home() {
                 {index < howItWorksSteps.length - 1 && (
                   <div className="hidden md:block absolute top-1/2 -right-4 w-8 h-0.5 bg-gradient-to-r from-primary/50 to-transparent" />
                 )}
-              </div>
+              </motion.div>
             ))}
-          </div>
+          </motion.div>
         </div>
       </section>
 
@@ -1483,10 +1262,16 @@ export default function Home() {
         </div>
       </section>
 
-      {/* CTA Section */}
+      {/* CTA Section — staggered entrance */}
       <section ref={ctaRef} className="py-16 md:py-24 px-4 relative">
         <div className="max-w-4xl mx-auto">
-          <div className="cta-glow glass-card rounded-3xl p-6 md:p-12 text-center relative overflow-hidden shimmer-border bg-gradient-to-br from-primary/5 via-transparent to-accent/5">
+          <motion.div
+            initial="hidden"
+            whileInView="visible"
+            viewport={{ once: true, amount: 0.2 }}
+            variants={staggerContainer}
+            className="cta-glow glass-card rounded-3xl p-6 md:p-12 text-center relative overflow-hidden shimmer-border bg-gradient-to-br from-primary/5 via-transparent to-accent/5"
+          >
             {/* Decorative elements */}
             <div className="absolute top-0 left-0 w-full h-full overflow-hidden pointer-events-none">
               <div className="absolute -top-24 -left-24 w-48 h-48 bg-primary/10 rounded-full blur-3xl" />
@@ -1494,32 +1279,32 @@ export default function Home() {
             </div>
 
             {/* Rocket Icon */}
-            <motion.div
-              animate={{ scale: [1, 1.1, 1] }}
-              transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
-              className="w-12 h-12 md:w-16 md:h-16 mx-auto mb-6 md:mb-8 rounded-2xl gradient-primary flex items-center justify-center glow-md"
-            >
-              <Rocket className="w-6 h-6 md:w-8 md:h-8 text-white" />
+            <motion.div variants={scaleIn} className="relative">
+              <div className="w-12 h-12 md:w-16 md:h-16 mx-auto mb-6 md:mb-8 rounded-2xl gradient-primary flex items-center justify-center glow-md animate-pulse-glow">
+                <Rocket className="w-6 h-6 md:w-8 md:h-8 text-white" />
+              </div>
             </motion.div>
 
-            <h2 className="text-xl sm:text-2xl md:text-4xl font-bold mb-3 md:mb-4 relative leading-tight">
+            <motion.h2 variants={fadeUp} className="text-xl sm:text-2xl md:text-4xl font-bold mb-3 md:mb-4 relative leading-tight">
               Ready to Transform Your <span className="gradient-text">Lab Experience?</span>
-            </h2>
+            </motion.h2>
 
-            <p className="text-muted-foreground text-sm sm:text-base md:text-lg mb-6 md:mb-8 max-w-xl mx-auto relative px-2">
+            <motion.p variants={fadeUp} className="text-muted-foreground text-sm sm:text-base md:text-lg mb-6 md:mb-8 max-w-xl mx-auto relative px-2">
               Join thousands of students and lab admins who are already sharing files faster than ever.
-            </p>
+            </motion.p>
 
-            <Button
-              size="lg"
-              className="gradient-primary text-white px-6 md:px-8 py-4 md:py-6 text-base md:text-lg rounded-xl glow-button hover:opacity-90 transition-all group relative"
-              onClick={() => document.getElementById('portal')?.scrollIntoView({ behavior: 'smooth' })}
-            >
-              <Share2 className="w-5 h-5 mr-2" />
-              Start Sharing Now
-              <ArrowRight className="w-5 h-5 ml-2 group-hover:translate-x-1 transition-transform" />
-            </Button>
-          </div>
+            <motion.div variants={fadeUp}>
+              <Button
+                size="lg"
+                className="gradient-primary text-white px-6 md:px-8 py-4 md:py-6 text-base md:text-lg rounded-xl glow-button hover:opacity-90 transition-opacity group relative"
+                onClick={() => document.getElementById('portal')?.scrollIntoView({ behavior: 'smooth' })}
+              >
+                <Share2 className="w-5 h-5 mr-2" />
+                Start Sharing Now
+                <ArrowRight className="w-5 h-5 ml-2 group-hover:translate-x-1 transition-transform" />
+              </Button>
+            </motion.div>
+          </motion.div>
         </div>
       </section>
 
