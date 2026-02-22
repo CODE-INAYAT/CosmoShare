@@ -216,6 +216,7 @@ export default function Home() {
   const [name, setName] = useState('')
   const [password, setPassword] = useState('')
   const [isLoading, setIsLoading] = useState(false)
+  const [isOneShareLoading, setIsOneShareLoading] = useState(false)
   const [error, setError] = useState('')
   const [suggestedNames, setSuggestedNames] = useState<string[]>([])
   const [mounted, setMounted] = useState(false)
@@ -234,6 +235,13 @@ export default function Home() {
   const [showFab, setShowFab] = useState(false)
 
   useEffect(() => setMounted(true), [])
+
+  // Prefetch destination routes so bundles are cached before user clicks
+  useEffect(() => {
+    router.prefetch('/oneshare')
+    router.prefetch('/student')
+    router.prefetch('/admin')
+  }, [router])
 
   // Hide FAB when hero or footer is visible
   useEffect(() => {
@@ -487,7 +495,6 @@ export default function Home() {
       router.push(`/student?room=${roomNumber}&user=${encodeURIComponent(JSON.stringify(userData))}`)
     } catch (error) {
       setError('Failed to join room. Please try again.')
-    } finally {
       setIsLoading(false)
     }
   }
@@ -512,7 +519,6 @@ export default function Home() {
       router.push(`/admin?room=${roomNumber}`)
     } catch (error) {
       setError('Failed to authenticate. Please try again.')
-    } finally {
       setIsLoading(false)
     }
   }
@@ -818,18 +824,32 @@ export default function Home() {
             className="mb-10"
           >
             <button
-              onClick={() => router.push('/oneshare')}
-              className="portal-card w-full glass-card rounded-2xl p-4 md:p-6 text-center transition-all duration-300 hover:ring-2 hover:ring-primary hover:shadow-lg hover:shadow-primary/20 group"
+              onClick={() => {
+                setIsOneShareLoading(true)
+                router.push('/oneshare')
+              }}
+              disabled={isOneShareLoading}
+              className="portal-card w-full glass-card rounded-2xl p-4 md:p-6 text-center transition-all duration-300 hover:ring-2 hover:ring-primary hover:shadow-lg hover:shadow-primary/20 group disabled:opacity-80 disabled:pointer-events-none"
             >
               <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
                 <div className="w-16 h-16 rounded-2xl gradient-primary flex items-center justify-center glow-sm group-hover:scale-110 transition-transform">
-                  <QrCode className="w-8 h-8 text-white" />
+                  {isOneShareLoading ? (
+                    <Loader2 className="w-8 h-8 text-white animate-spin" />
+                  ) : (
+                    <QrCode className="w-8 h-8 text-white" />
+                  )}
                 </div>
                 <div className="text-center sm:text-left">
-                  <h3 className="text-xl font-bold text-foreground mb-1">OneShare</h3>
-                  <p className="text-sm text-muted-foreground">Quick share without joining a room — just scan or enter a code</p>
+                  <h3 className="text-xl font-bold text-foreground mb-1">
+                    {isOneShareLoading ? 'Loading OneShare...' : 'OneShare'}
+                  </h3>
+                  <p className="text-sm text-muted-foreground">
+                    {isOneShareLoading ? 'Please wait' : 'Quick share without joining a room — just scan or enter a code'}
+                  </p>
                 </div>
-                <ArrowRight className="w-6 h-6 text-primary hidden sm:block group-hover:translate-x-1 transition-transform" />
+                {!isOneShareLoading && (
+                  <ArrowRight className="w-6 h-6 text-primary hidden sm:block group-hover:translate-x-1 transition-transform" />
+                )}
               </div>
             </button>
           </motion.div>
