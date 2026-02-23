@@ -3,6 +3,7 @@ export const runtime = 'edge'
 import { NextApiRequest, NextApiResponse } from 'next'
 import { NextApiResponseSocketIO } from '@/lib/socket'
 import { Server as ServerIO } from 'socket.io'
+import { AUTO_LOGIN_PASSWORD } from '@/config/autoLogin'
 
 export default function SocketHandler(req: NextApiRequest, res: NextApiResponseSocketIO) {
   if (res.socket.server.io) {
@@ -169,7 +170,7 @@ export default function SocketHandler(req: NextApiRequest, res: NextApiResponseS
       // Admin authentication
       socket.on('admin-auth', (data: any) => {
         const { roomNumber, password } = data
-        if (password === 'admin123') {
+        if (password === AUTO_LOGIN_PASSWORD) {
           socket.join(`admin-${roomNumber}`)
           socket.emit('admin-auth-success', { roomNumber })
         } else {

@@ -2,6 +2,7 @@ import { Server as NetServer } from 'http'
 import { NextApiRequest, NextApiResponse } from 'next'
 import { Server as ServerIO } from 'socket.io'
 import { z } from 'zod'
+import { AUTO_LOGIN_PASSWORD } from '@/config/autoLogin'
 
 export type NextApiResponseSocketIO = NextApiResponse & {
   socket: {
@@ -207,7 +208,7 @@ export const setupSocket = (io: ServerIO) => {
     // Admin authentication and presence
     socket.on('admin-auth', (data: { roomNumber: string; password: string; admin?: any }) => {
       const { roomNumber, password, admin } = data
-      if (password === 'admin123') {
+      if (password === AUTO_LOGIN_PASSWORD) {
         socket.join(`admin-${roomNumber}`)
         // Track admin for room
         adminByRoom.set(roomNumber, socket.id)

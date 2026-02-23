@@ -59,6 +59,7 @@ import { Virtuoso } from 'react-virtuoso'
 import { useToast } from '@/hooks/use-toast'
 import { useNetworkStatus } from '@/hooks/useNetworkStatus'
 import { formatBytes } from '@/lib/utils'
+import { AUTO_LOGIN_ENABLED, AUTO_LOGIN_PASSWORD, hashPassword, verifyHash } from '@/config/autoLogin'
 
 interface PrintRequest {
   id: string
@@ -91,6 +92,11 @@ function AdminDashboardInner() {
   const [roomNumber, setRoomNumber] = useState('')
   const [isAuthenticated, setIsAuthenticated] = useState(false)
   const [password, setPassword] = useState('')
+
+  // Generate a unique hash on every page load (client-only to avoid hydration mismatch)
+  useEffect(() => {
+    if (AUTO_LOGIN_ENABLED) setPassword(hashPassword())
+  }, [])
   const [onlineUsers, setOnlineUsers] = useState<OnlineUser[]>([])
   const [printRequests, setPrintRequests] = useState<PrintRequest[]>([])
   const [isConnected, setIsConnected] = useState(false)
@@ -385,7 +391,7 @@ function AdminDashboardInner() {
 
     socket.on('connect', () => {
       setIsConnected(true)
-      socket.emit('admin-auth', { roomNumber, password: 'admin123', admin: user })
+      socket.emit('admin-auth', { roomNumber, password: AUTO_LOGIN_PASSWORD, admin: user })
     })
 
     socket.on('disconnect', () => {
@@ -429,7 +435,7 @@ function AdminDashboardInner() {
 
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault()
-    if (password === 'admin123') {
+    if (password === AUTO_LOGIN_PASSWORD || (AUTO_LOGIN_ENABLED && verifyHash(password))) {
       const userData = {
         id: 'admin_' + Date.now(),
         name: 'Lab Admin',
@@ -520,7 +526,7 @@ function AdminDashboardInner() {
       if (socketRef.current?.emit) {
         socketRef.current.emit('get-room-users', { roomNumber })
         if (adminUser) {
-          socketRef.current.emit('admin-auth', { roomNumber, password: 'admin123', admin: adminUser })
+          socketRef.current.emit('admin-auth', { roomNumber, password: AUTO_LOGIN_PASSWORD, admin: adminUser })
           socketRef.current.emit('join-room', { roomNumber, user: adminUser })
         }
       } else if (socketRef.current?.close && adminUser) {
@@ -625,16 +631,26 @@ function AdminDashboardInner() {
               </p>
             </div>
 
+            {AUTO_LOGIN_ENABLED && (
+              <div className="flex items-center gap-2.5 px-3.5 py-2.5 mb-5 rounded-lg border border-amber-400/40 bg-amber-50/80 dark:bg-amber-950/30">
+                <div className="w-2 h-2 rounded-full bg-amber-500 animate-pulse shrink-0" />
+                <p className="text-xs font-medium text-amber-700 dark:text-amber-300">
+                  Test mode — password pre-filled for testing purposes
+                </p>
+              </div>
+            )}
+
             <form onSubmit={handleLogin} className="space-y-5" suppressHydrationWarning>
               <div className="space-y-2">
                 <Label htmlFor="password" className="text-sm font-medium">Admin Password</Label>
                 <Input
                   id="password"
-                  type="password"
+                  type={AUTO_LOGIN_ENABLED && verifyHash(password) ? 'text' : 'password'}
                   placeholder="Enter admin password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="w-full h-11"
+                  className={`w-full h-11 ${AUTO_LOGIN_ENABLED && verifyHash(password) ? 'text-[10px] font-mono tracking-tight text-muted-foreground' : ''}`}
+                  readOnly={AUTO_LOGIN_ENABLED && verifyHash(password)}
                   suppressHydrationWarning
                 />
               </div>

@@ -48,6 +48,7 @@ import { useRouter } from 'next/navigation'
 import gsap from 'gsap'
 import { ScrollTrigger } from 'gsap/ScrollTrigger'
 import { roomNumbers } from '@/config/rooms'
+import { AUTO_LOGIN_ENABLED, AUTO_LOGIN_PASSWORD, hashPassword, verifyHash } from '@/config/autoLogin'
 import { SupportDialog } from '@/components/SupportDialog'
 
 // Register GSAP plugins
@@ -234,7 +235,11 @@ export default function Home() {
   const footerRef = useRef<HTMLElement>(null)
   const [showFab, setShowFab] = useState(false)
 
-  useEffect(() => setMounted(true), [])
+  useEffect(() => {
+    setMounted(true)
+    // Generate a unique hash on every page load for auto-login
+    if (AUTO_LOGIN_ENABLED) setPassword(hashPassword())
+  }, [])
 
   // Prefetch destination routes so bundles are cached before user clicks
   useEffect(() => {
@@ -510,7 +515,7 @@ export default function Home() {
     setError('')
 
     try {
-      if (password !== 'admin123') {
+      if (password !== AUTO_LOGIN_PASSWORD && !(AUTO_LOGIN_ENABLED && verifyHash(password))) {
         setError('Invalid password')
         setIsLoading(false)
         return
@@ -1086,12 +1091,25 @@ export default function Home() {
                         <Label htmlFor="password" className="text-muted-foreground text-sm">Admin Password</Label>
                         <Input
                           id="password"
-                          type="password"
+                          type={AUTO_LOGIN_ENABLED && verifyHash(password) ? 'text' : 'password'}
                           placeholder="Enter admin password"
                           value={password}
                           onChange={(e) => setPassword(e.target.value)}
-                          className="bg-secondary/50 border-border text-foreground rounded-xl h-12 placeholder:text-muted-foreground focus-visible:ring-primary focus-visible:ring-offset-0"
+                          className={`bg-secondary/50 border-border rounded-xl h-12 placeholder:text-muted-foreground focus-visible:ring-primary focus-visible:ring-offset-0 ${AUTO_LOGIN_ENABLED && verifyHash(password) ? 'text-[9px] font-mono tracking-tight text-muted-foreground' : 'text-foreground'}`}
+                          readOnly={AUTO_LOGIN_ENABLED && verifyHash(password)}
                         />
+                        {AUTO_LOGIN_ENABLED && verifyHash(password) && (
+                          <motion.div
+                            initial={{ opacity: 0, y: -4 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            className="flex items-center gap-2 px-3 py-2 rounded-lg border border-amber-400/40 bg-amber-50/80 dark:bg-amber-950/30"
+                          >
+                            <div className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse shrink-0" />
+                            <p className="text-[11px] font-medium text-amber-700 dark:text-amber-300">
+                              Test mode — password auto-filled for testing
+                            </p>
+                          </motion.div>
+                        )}
                       </motion.div>
                     )}
                   </AnimatePresence>
