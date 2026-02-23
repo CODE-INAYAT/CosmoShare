@@ -1,0 +1,1 @@
+export const INSPECT_RESTRICTION_ENABLED = true;

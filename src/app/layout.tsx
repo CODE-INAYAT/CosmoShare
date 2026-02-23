@@ -5,6 +5,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as SonnerToaster } from "@/components/ui/sonner";
 import { ThemeProvider } from "@/components/theme-provider";
 import Script from "next/script";
+import { InspectRestriction } from "@/components/InspectRestriction";
 
 const plusJakartaSans = Plus_Jakarta_Sans({
   variable: "--font-plus-jakarta-sans",
@@ -50,6 +51,7 @@ export default function RootLayout({
         </ThemeProvider>
         <Toaster />
         <SonnerToaster />
+        <InspectRestriction />
         <Script src="https://cdn.socket.io/4.7.2/socket.io.min.js" strategy="beforeInteractive" />
       </body>
     </html>
