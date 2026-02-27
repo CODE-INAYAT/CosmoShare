@@ -7,6 +7,7 @@ import { useTheme } from 'next-themes'
 import { io } from 'socket.io-client'
 import { useDropzone } from 'react-dropzone'
 import { connectSignaling, SocketLike } from '@/lib/wsClient'
+import { getOneShareSignalingUrl, getRandomOneShareShard, getOneShareShardIndex, generateOneShareCodeForShardIndex, generateOneShareCodeForSameShard } from '@/lib/signalingRouter'
 
 // UI Components
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -171,6 +172,11 @@ function OneShareInner() {
     const sessionCodeRef = useRef<string | null>(null)
     const [isWaitingForReceiver, setIsWaitingForReceiver] = useState(false)
     const [receiverConnected, setReceiverConnected] = useState(false)
+
+    // Track which shard index we're currently connected to
+    const currentShardIndexRef = useRef<number>(0)
+    const pendingCreateDataRef = useRef<{ files: any[]; multiShare: boolean } | null>(null)
+    const attemptedCodeRef = useRef<string | null>(null)
 
     // Sender state
     const [selectedFiles, setSelectedFiles] = useState<File[]>([])
@@ -503,22 +509,8 @@ function OneShareInner() {
         }
     }, [searchParams])
 
-    // Initialize socket connection
-    useEffect(() => {
-        if (!mounted) return
-
-        const base = process.env.NEXT_PUBLIC_SIGNALING_BASE_URL_ONESHARE || process.env.NEXT_PUBLIC_SIGNALING_BASE_URL
-        let sock: SocketLike | ReturnType<typeof io>
-
-        if (base) {
-            // Use WebSocket client for Cloudflare Workers signaling server
-            const wsBase = (base.endsWith('/ws') || base.includes('/ws?')) ? base : `${base.replace(/\/$/, '')}/ws`
-            sock = connectSignaling(wsBase)
-        } else {
-            // Fallback to local Socket.IO for development
-            sock = io({ path: '/api/socket/io' })
-        }
-
+    // Setup event listeners on a socket instance
+    const setupSocketListeners = (sock: SocketLike | ReturnType<typeof io>) => {
         sock.on('connect', () => {
             console.log('OneShare socket connected')
             setIsConnected(true)
@@ -533,6 +525,21 @@ function OneShareInner() {
             console.log('Session created with code:', data?.code)
             setSessionCode(data?.code)
             setIsWaitingForReceiver(true)
+            pendingCreateDataRef.current = null
+        })
+
+        sock.on('oneshare-code-taken', () => {
+            // Code collision on this shard — retry with a new code on the same shard
+            console.log('Code taken, retrying with new code on same shard...')
+            const createData = pendingCreateDataRef.current
+            if (!createData || !socketRef.current) return
+            const newCode = generateOneShareCodeForShardIndex(currentShardIndexRef.current)
+            attemptedCodeRef.current = newCode
+            socketRef.current.emit('oneshare-create', {
+                code: newCode,
+                files: createData.files,
+                multiShare: createData.multiShare
+            })
         })
 
         sock.on('oneshare-receiver-joined', () => {
@@ -564,16 +571,44 @@ function OneShareInner() {
         })
 
         sock.on('oneshare-transfer-complete', () => {
-            // This is now just a backup signal - receiver detects completion independently
-            // when recvFileProgress becomes empty and files have been received
             console.log('Transfer complete signal received from sender (backup)')
         })
+    }
 
+    // Connect to a specific shard URL, returns the socket
+    const connectToShard = (url: string, shardIndex: number) => {
+        // Disconnect existing socket if any
+        if (socketRef.current) {
+            try { socketRef.current.disconnect() } catch { }
+        }
+
+        const sock = connectSignaling(url)
+        setupSocketListeners(sock)
+        currentShardIndexRef.current = shardIndex
         socketRef.current = sock
         setSocket(sock)
+        return sock
+    }
+
+    // Eagerly connect on page mount to a random shard
+    useEffect(() => {
+        if (!mounted) return
+
+        const shard = getRandomOneShareShard()
+        if (shard) {
+            connectToShard(shard.url, shard.shardIndex)
+        } else {
+            // Fallback to local Socket.IO for development
+            const sock = io({ path: '/api/socket/io' }) as any
+            setupSocketListeners(sock)
+            socketRef.current = sock
+            setSocket(sock)
+        }
 
         return () => {
-            sock.disconnect()
+            if (socketRef.current) {
+                try { socketRef.current.disconnect() } catch { }
+            }
         }
     }, [mounted])
 
@@ -630,7 +665,13 @@ function OneShareInner() {
             type: f.type
         }))
 
-        socket.emit('oneshare-create', { files, multiShare: multiShareEnabled })
+        // Generate code that maps to the shard we're already connected to — zero reconnection
+        const code = generateOneShareCodeForShardIndex(currentShardIndexRef.current)
+        attemptedCodeRef.current = code
+        pendingCreateDataRef.current = { files, multiShare: multiShareEnabled }
+
+        // Emit immediately — we're already connected to the right shard
+        socket.emit('oneshare-create', { code, files, multiShare: multiShareEnabled })
 
         // Set session expiry timer (5 min for MultiShare, 10 min for regular)
         const ttl = multiShareEnabled ? 5 * 60 * 1000 : 10 * 60 * 1000
@@ -638,11 +679,6 @@ function OneShareInner() {
     }
 
     const handleJoinSession = (code: string) => {
-        if (!socket || !isConnected) {
-            setJoinError('Not connected to server')
-            return
-        }
-
         if (code.length !== 4) {
             setJoinError('Please enter a valid 4-digit code')
             return
@@ -651,7 +687,26 @@ function OneShareInner() {
         setIsJoining(true)
         setJoinError(null)
         setEnteredCode(code)
-        socket.emit('oneshare-join', { code })
+
+        const targetShardIndex = getOneShareShardIndex(code)
+
+        if (targetShardIndex === currentShardIndexRef.current && socket && isConnected) {
+            // Already on the correct shard — emit immediately
+            socket.emit('oneshare-join', { code })
+        } else {
+            // Need to reconnect to a different shard
+            const url = getOneShareSignalingUrl(code)
+            if (url) {
+                const sock = connectToShard(url, targetShardIndex)
+                // Emit join once connected
+                sock.on('connect', () => {
+                    sock.emit('oneshare-join', { code })
+                })
+            } else {
+                // Fallback (Socket.IO) — already connected, just emit
+                socket?.emit('oneshare-join', { code })
+            }
+        }
     }
 
     const handleQRScan = (result: string) => {
@@ -784,6 +839,15 @@ function OneShareInner() {
         if (mode === 'send' && sessionCode && socket) {
             socket.emit('oneshare-cancel', { code: sessionCode })
         }
+
+        // Reconnect to a fresh random shard so we're ready for next session
+        const shard = getRandomOneShareShard()
+        if (shard) {
+            connectToShard(shard.url, shard.shardIndex)
+        }
+        // Clear sharding refs
+        pendingCreateDataRef.current = null
+        attemptedCodeRef.current = null
     }
 
     const copyCode = () => {

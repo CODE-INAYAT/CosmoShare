@@ -56,24 +56,26 @@ export const useOneShareWebRTC = (
 
     // ICE servers config
     const getIceServers = () => {
-        const stunDefaults = [
+        const iceServers: any[] = [
             { urls: 'stun:stun.l.google.com:19302' },
             { urls: 'stun:stun1.l.google.com:19302' },
-            { urls: 'stun:stun2.l.google.com:19302' }
-        ] as any[]
+        ]
 
         const turnUrls = (process.env.NEXT_PUBLIC_TURN_URLS || '')
             .split(',')
             .map((s) => s.trim())
             .filter(Boolean)
+            // Filter out invalid TURNS-over-UDP (TURNS is TLS, always TCP)
+            .filter((u) => !(u.startsWith('turns:') && u.includes('transport=udp')))
         const turnUser = process.env.NEXT_PUBLIC_TURN_USERNAME
         const turnCred = process.env.NEXT_PUBLIC_TURN_CREDENTIAL
 
-        if (turnUrls.length > 0) {
-            stunDefaults.push({ urls: turnUrls, username: turnUser, credential: turnCred })
+        // Each TURN URL as its own entry — mobile browsers resolve separate entries more reliably
+        for (const url of turnUrls) {
+            iceServers.push({ urls: url, username: turnUser, credential: turnCred })
         }
 
-        return stunDefaults
+        return iceServers
     }
 
     // Setup data handler for a peer (receiver side or individual peer)
@@ -209,6 +211,8 @@ export const useOneShareWebRTC = (
             trickle: true,
             config: {
                 iceServers: getIceServers(),
+                iceCandidatePoolSize: 4,
+                bundlePolicy: 'max-bundle',
             }
         })
 
@@ -231,7 +235,7 @@ export const useOneShareWebRTC = (
                 const ch: any = (newPeer as any)?._channel || (newPeer as any)?.channel
                 if (ch) {
                     try { ch.binaryType = 'arraybuffer' } catch { }
-                    try { ch.bufferedAmountLowThreshold = 64 * 1024 } catch { }
+                    try { ch.bufferedAmountLowThreshold = 256 * 1024 } catch { }
                 }
             } catch { }
 
@@ -364,6 +368,38 @@ export const useOneShareWebRTC = (
         setTargetId(tid)
     }
 
+    // Detect connection type from peer stats for adaptive chunk sizing
+    const detectConnectionType = async (p: SimplePeer.Instance): Promise<'host' | 'srflx' | 'relay' | 'unknown'> => {
+        try {
+            const pc: RTCPeerConnection | undefined = (p as any)?._pc || (p as any)?.peerConnection || (p as any)?.pc
+            if (!pc || pc.signalingState === 'closed') return 'unknown'
+            const stats = await pc.getStats()
+            const candidates: Record<string, any> = {}
+            let selectedPairId: string | undefined
+            stats.forEach((report: any) => {
+                if (report.type === 'local-candidate' || report.type === 'remote-candidate') {
+                    candidates[report.id] = report
+                }
+                if (report.type === 'transport' && report.selectedCandidatePairId) {
+                    selectedPairId = report.selectedCandidatePairId
+                }
+                if (report.type === 'candidate-pair' && (report.selected || report.nominated)) {
+                    selectedPairId = report.id
+                }
+            })
+            if (selectedPairId) {
+                const pair: any = Array.from(stats.values()).find((r: any) => r.id === selectedPairId)
+                const local = candidates[pair?.localCandidateId]
+                const remote = candidates[pair?.remoteCandidateId]
+                const types = [local?.candidateType, remote?.candidateType].filter(Boolean)
+                if (types.includes('relay')) return 'relay'
+                if (types.includes('srflx') || types.includes('prflx')) return 'srflx'
+                if (types.includes('host')) return 'host'
+            }
+            return 'unknown'
+        } catch { return 'unknown' }
+    }
+
     // Send file to a specific peer (for MultiShare)
     const sendFileToPeer = async (p: SimplePeer.Instance, file: File, metadata?: { message?: string; fileId?: string }, progressCb?: (sent: number, total: number) => void) => {
         if (!p || p.destroyed || !(p as any).connected) {
@@ -383,7 +419,13 @@ export const useOneShareWebRTC = (
             p.send(JSON.stringify(meta))
         } catch { return false }
 
-        const chunkSize = 32 * 1024
+        // Detect connection type for optimal chunk sizing
+        const connType = await detectConnectionType(p)
+        // Host can use large chunks; TURN relay benefits from 64KB (was 32KB flat,
+        // which bottlenecked cross-network transfers)
+        let chunkSize = 64 * 1024 // default (srflx / unknown)
+        if (connType === 'host') chunkSize = 128 * 1024
+        else if (connType === 'relay') chunkSize = 64 * 1024
         let offset = 0
 
         while (offset < file.size) {
@@ -408,8 +450,9 @@ export const useOneShareWebRTC = (
             try {
                 const ch: any = (p as any)?._channel || (p as any)?.channel
                 if (ch && typeof ch.bufferedAmount === 'number') {
-                    const MAX_BUFFER = 512 * 1024
-                    const LOW_WATER = 256 * 1024
+                    // Larger buffer for relay keeps the pipe full despite higher RTT
+                    const MAX_BUFFER = connType === 'relay' ? 1024 * 1024 : 512 * 1024
+                    const LOW_WATER = connType === 'relay' ? 512 * 1024 : 256 * 1024
                     if (ch.bufferedAmount > MAX_BUFFER) {
                         await new Promise<void>((resolve) => {
                             let done = false

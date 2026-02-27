@@ -50,6 +50,7 @@ import {
 import { useSearchParams } from 'next/navigation'
 import { io } from 'socket.io-client'
 import { connectSignaling } from '@/lib/wsClient'
+import { getLabSignalingUrl } from '@/lib/signalingRouter'
 import { useWebRTC } from '@/hooks/useWebRTC'
 import FilePreview from '@/components/FilePreview'
 import { ConnectionStatusBadge } from '@/components/ConnectionStatusBadge'
@@ -374,13 +375,11 @@ function AdminDashboardInner() {
   }, [searchParams])
 
   const initializeSocket = (user: any, roomNumber: string) => {
-    // Initialize socket connection
-    const base = process.env.NEXT_PUBLIC_SIGNALING_BASE_URL
+    // Initialize socket connection using sharded signaling router
+    const signalingUrl = getLabSignalingUrl(roomNumber)
     let socket: any
-    if (base) {
-      const wsBase = (base.endsWith('/ws') || base.includes('/ws?')) ? base : `${base.replace(/\/$/, '')}/ws`
-      const url = `${wsBase}?room=${encodeURIComponent(roomNumber)}`
-      socket = connectSignaling(url)
+    if (signalingUrl) {
+      socket = connectSignaling(signalingUrl)
     } else {
       // Fallback to Next.js Socket.IO route when no signaling Worker URL is set
       // Note: Pages build exposes this at /api/socket/io

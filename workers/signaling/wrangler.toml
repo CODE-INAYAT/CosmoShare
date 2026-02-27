@@ -1,4 +1,4 @@
-name = "sharekaro-signal"
+name = "main-signal"
 main = "src/index.ts"
 compatibility_date = "2024-10-01"
 
@@ -10,3 +10,8 @@ bindings = [
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["RoomDurableObject"]
+
+# Cron trigger: 3:00 AM IST daily = 21:30 UTC (IST is UTC+5:30)
+# Clears SQLite Durable Object storage for a fresh start every day
+[triggers]
+crons = ["30 21 * * *"]

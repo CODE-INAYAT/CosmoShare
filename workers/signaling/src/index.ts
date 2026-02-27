@@ -21,6 +21,16 @@ export default {
 
     // Basic health
     return new Response('OK', { status: 200 })
+  },
+
+  // Cron trigger: runs daily at 3:00 AM IST (21:30 UTC)
+  // Clears all Durable Object SQLite storage for a fresh start
+  async scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext): Promise<void> {
+    // Send cleanup request to the well-known __oneshare__ DO
+    const oneshareId = env.ROOMS.idFromName('__oneshare__')
+    const oneshareStub = env.ROOMS.get(oneshareId)
+    await oneshareStub.fetch(new Request('https://internal/cleanup'))
+    console.log('Scheduled cleanup triggered at 3:00 AM IST')
   }
 }
 
@@ -50,6 +60,46 @@ export class RoomDurableObject implements DurableObject {
 
   constructor(state: DurableObjectState, _env: Env) {
     this.state = state
+    // Schedule the next 3 AM IST alarm on construction
+    this.scheduleNextCleanupAlarm()
+  }
+
+  // Schedule an alarm for the next 3:00 AM IST (21:30 UTC previous day)
+  async scheduleNextCleanupAlarm(): Promise<void> {
+    const existing = await this.state.storage.getAlarm()
+    if (existing) return // Alarm already scheduled
+
+    const now = new Date()
+    // 3:00 AM IST = 21:30 UTC (previous day)
+    const next = new Date(now)
+    next.setUTCHours(21, 30, 0, 0)
+    // If that time already passed today, schedule for tomorrow
+    if (next.getTime() <= now.getTime()) {
+      next.setUTCDate(next.getUTCDate() + 1)
+    }
+    await this.state.storage.setAlarm(next.getTime())
+    console.log(`Cleanup alarm scheduled for ${next.toISOString()}`)
+  }
+
+  // Alarm handler: clears all SQLite storage for a fresh start
+  async alarm(): Promise<void> {
+    console.log('3 AM IST cleanup alarm fired — clearing all Durable Object storage')
+    // Close all active WebSocket connections
+    for (const [id, ws] of this.sockets) {
+      try { ws.close(1000, 'Daily cleanup — reconnect for a fresh session') } catch { }
+    }
+    // Clear all in-memory state
+    this.sockets.clear()
+    this.users.clear()
+    this.adminId = null
+    this.sessionByUserKey.clear()
+    this.userDataByKey.clear()
+    this.lastSeen.clear()
+    this.oneShareSessions.clear()
+    // Wipe all persisted SQLite storage
+    await this.state.storage.deleteAll()
+    // Schedule the next cleanup alarm for tomorrow
+    await this.scheduleNextCleanupAlarm()
   }
 
   // Generate unique 4-digit code for OneShare
@@ -87,8 +137,14 @@ export class RoomDurableObject implements DurableObject {
     }
   }
 
-  fetch(request: Request): Response {
+  fetch(request: Request): Response | Promise<Response> {
     const url = new URL(request.url)
+
+    // Handle internal cleanup request from cron trigger
+    if (url.pathname === '/cleanup') {
+      return this.alarm().then(() => new Response('Cleaned up', { status: 200 }))
+    }
+
     const upgrade = request.headers.get('Upgrade')
     if (upgrade !== 'websocket') {
       return new Response('Expected WebSocket', { status: 426 })
@@ -296,13 +352,23 @@ export class RoomDurableObject implements DurableObject {
           return
         }
 
-        // ============================================
-        // OneShare Events: Room-less file sharing
-        // ============================================
-
+        // OneShare Event
+        
         case 'oneshare-create': {
           // Sender creates a OneShare session
-          const code = this.generateOneShareCode()
+          // Accept client-generated code if provided, otherwise generate server-side (backward compat)
+          let code: string
+          if (data.code && typeof data.code === 'string' && /^\d{4}$/.test(data.code)) {
+            // Client-provided code — check if already in use on this worker
+            if (this.oneShareSessions.has(data.code)) {
+              send(server, 'oneshare-code-taken', { code: data.code })
+              return
+            }
+            code = data.code
+          } else {
+            // Legacy: server generates code
+            code = this.generateOneShareCode()
+          }
           this.oneShareSessions.set(code, {
             senderId: socketId,
             createdAt: Date.now(),

@@ -120,26 +120,30 @@ export const useWebRTC = (socket: any, roomNumber: string, callbacks: ReceiveCal
 
   const createPeer = (targetId: string, initiator: boolean = false): SimplePeer.Instance => {
     // Build ICE servers with optional TURN from env for cross-network connectivity
-    const stunDefaults = [
+    const iceServers: any[] = [
       { urls: 'stun:stun.l.google.com:19302' },
       { urls: 'stun:stun1.l.google.com:19302' },
-      { urls: 'stun:stun2.l.google.com:19302' }
-    ] as any[]
+    ]
     const turnUrls = (process.env.NEXT_PUBLIC_TURN_URLS || '')
       .split(',')
       .map((s) => s.trim())
       .filter(Boolean)
+      // Filter out invalid TURNS-over-UDP (TURNS is TLS, always TCP)
+      .filter((u) => !(u.startsWith('turns:') && u.includes('transport=udp')))
     const turnUser = process.env.NEXT_PUBLIC_TURN_USERNAME
     const turnCred = process.env.NEXT_PUBLIC_TURN_CREDENTIAL
-    if (turnUrls.length > 0) {
-      stunDefaults.push({ urls: turnUrls, username: turnUser, credential: turnCred })
+    // Each TURN URL as its own entry — mobile browsers resolve separate entries more reliably
+    for (const url of turnUrls) {
+      iceServers.push({ urls: url, username: turnUser, credential: turnCred })
     }
 
     const peer = new SimplePeer({
       initiator,
       trickle: true,
       config: {
-        iceServers: stunDefaults,
+        iceServers,
+        iceCandidatePoolSize: 4,
+        bundlePolicy: 'max-bundle',
       }
     })
 
@@ -167,9 +171,8 @@ export const useWebRTC = (socket: any, roomNumber: string, callbacks: ReceiveCal
         if (ch) {
           // Prefer ArrayBuffer to avoid Blob/TypedArray conversions
           try { ch.binaryType = 'arraybuffer' } catch { }
-          // Set a reasonable low threshold so 'bufferedamountlow' fires earlier
-          // Mobile browsers benefit from smaller thresholds
-          try { ch.bufferedAmountLowThreshold = 64 * 1024 } catch { }
+          // Set threshold high enough to keep the pipe full on relay connections
+          try { ch.bufferedAmountLowThreshold = 256 * 1024 } catch { }
         }
       } catch { }
     })
@@ -485,9 +488,11 @@ export const useWebRTC = (socket: any, roomNumber: string, callbacks: ReceiveCal
       } catch { cleanup(); return }
 
       // Adaptive chunk size per connection type
-      let chunkSize = 32 * 1024
-      if (method === 'PW-RTC') chunkSize = 60 * 1024
-      if (method === 'TW-RTC') chunkSize = 16 * 1024
+      // TURN relay can handle 64KB well; 16KB was far too conservative and the primary
+      // cause of slow cross-network transfers (LAN↔mobile-data, different Wi-Fi, etc.)
+      let chunkSize = 64 * 1024            // SW-RTC default
+      if (method === 'PW-RTC') chunkSize = 128 * 1024  // direct / same-network
+      if (method === 'TW-RTC') chunkSize = 64 * 1024   // TURN relay
       let offset = 0
       callbacks.onSendStart?.(currentTargetId, file.name, file.size)
       sendState.current.set(currentTargetId, { fileName: file.name, total: file.size, sent: 0 })
@@ -533,8 +538,9 @@ export const useWebRTC = (socket: any, roomNumber: string, callbacks: ReceiveCal
         try {
           const ch: any = (peer as any)?._channel || (peer as any)?.channel || (peer as any)?.dataChannel
           if (ch && typeof ch.bufferedAmount === 'number') {
-            const MAX_BUFFER = 512 * 1024
-            const LOW_WATER = 256 * 1024
+            // Larger buffer for TURN keeps the relay pipe full despite higher RTT
+            const MAX_BUFFER = method === 'TW-RTC' ? 1024 * 1024 : 512 * 1024
+            const LOW_WATER = method === 'TW-RTC' ? 512 * 1024 : 256 * 1024
 
             // Check cancellation before potentially waiting
             if (isCancelled?.()) break
