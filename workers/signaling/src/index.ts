@@ -3,9 +3,26 @@ export interface Env {
   ROOMS: DurableObjectNamespace
 }
 
+/** CORS headers for non-WebSocket error responses */
+const CORS_HEADERS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'GET, OPTIONS',
+  'Access-Control-Allow-Headers': '*',
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url)
+
+    // CORS preflight
+    if (request.method === 'OPTIONS') {
+      return new Response(null, { status: 204, headers: CORS_HEADERS })
+    }
+
+    // Lightweight health-check (does NOT touch Durable Objects)
+    if (url.pathname === '/ping') {
+      return new Response('OK', { status: 200, headers: CORS_HEADERS })
+    }
 
     if (url.pathname === '/ws') {
       // Check if this is a OneShare connection (no room param) or regular room connection
@@ -16,11 +33,29 @@ export default {
       const roomName = room || '__oneshare__'
       const id = env.ROOMS.idFromName(roomName)
       const stub = env.ROOMS.get(id)
-      return stub.fetch(request)
+
+      try {
+        return await stub.fetch(request)
+      } catch (e: any) {
+        // Gracefully handle Durable Object errors (e.g. free-tier duration exceeded)
+        const msg = (e?.message || '').toLowerCase()
+        const isOverloaded = msg.includes('exceeded') || msg.includes('duration') || msg.includes('free tier') || msg.includes('limit')
+        console.error(`DO fetch error: ${e?.message}`)
+        return new Response(
+          JSON.stringify({
+            error: isOverloaded ? 'worker-overloaded' : 'internal-error',
+            message: e?.message || 'Unknown error',
+          }),
+          {
+            status: 503,
+            headers: { 'Content-Type': 'application/json', ...CORS_HEADERS },
+          }
+        )
+      }
     }
 
     // Basic health
-    return new Response('OK', { status: 200 })
+    return new Response('OK', { status: 200, headers: CORS_HEADERS })
   },
 
   // Cron trigger: runs daily at 3:00 AM IST (21:30 UTC)
@@ -55,13 +90,141 @@ export class RoomDurableObject implements DurableObject {
   userDataByKey: Map<string, User> = new Map()
   lastSeen: Map<string, number> = new Map()
 
+  // Tracks last REAL user activity per socket (excludes heartbeats & auto-polls).
+  // Used for 1-hour idle disconnect to save DO duration.
+  lastActive: Map<string, number> = new Map()
+
   // OneShare sessions: 4-digit code -> session data
   oneShareSessions: Map<string, OneShareSession> = new Map()
+
+  // Proactive zombie sweep: detects dead connections even when no messages arrive.
+  // Without this, if ALL clients die simultaneously (e.g. laptop lid closed + router off),
+  // no messages arrive → reactive sweepStale never runs → DO holds zombie sockets
+  // indefinitely → burns account DO duration quota until exhausted.
+  private sweepIntervalId: any = null
+  private static readonly SWEEP_INTERVAL_MS = 30_000 // Check every 30 seconds
+  private static readonly IDLE_DISCONNECT_MS = 60 * 60 * 1000 // 1 hour of no real activity
+
+  // Events that count as REAL user activity (reset the idle timer).
+  // Everything else (heartbeat, get-room-users) is automated and does NOT reset it.
+  private static readonly ACTIVE_EVENTS = new Set([
+    'join-room', 'admin-auth',
+    'webrtc-offer', 'webrtc-answer', 'webrtc-ice-candidate',
+    'transfer-cancelled',
+    'oneshare-create', 'oneshare-join',
+    'oneshare-offer', 'oneshare-answer', 'oneshare-ice-candidate',
+    'oneshare-complete', 'oneshare-cancel',
+  ])
 
   constructor(state: DurableObjectState, _env: Env) {
     this.state = state
     // Schedule the next 3 AM IST alarm on construction
     this.scheduleNextCleanupAlarm()
+  }
+
+  // ---- Class-level helpers for proactive sweep ----
+
+  /** Send a JSON event to a single WebSocket (class-level) */
+  private sendToWs(ws: WebSocket, event: string, data?: any): void {
+    try { ws.send(JSON.stringify({ event, data })) } catch { }
+  }
+
+  /** Broadcast a JSON event to all connected sockets (class-level) */
+  private broadcastAll(event: string, data?: any, exceptId?: string): void {
+    this.sockets.forEach((ws, id) => {
+      if (id !== exceptId) this.sendToWs(ws, event, data)
+    })
+  }
+
+  /**
+   * Start the proactive sweep interval. Safe to call multiple times.
+   * Runs every 30s while there are active connections. Once all zombie
+   * sockets are cleaned up, stops itself so the DO can hibernate.
+   */
+  private startSweepInterval(): void {
+    if (this.sweepIntervalId) return
+    this.sweepIntervalId = setInterval(() => {
+      this.proactiveSweepStale()
+      this.cleanupExpiredOneShareSessions()
+      // If no connections remain after sweep, stop interval → DO hibernates
+      if (this.sockets.size === 0) {
+        clearInterval(this.sweepIntervalId)
+        this.sweepIntervalId = null
+        console.log('All connections closed — sweep stopped, DO will hibernate')
+      }
+    }, RoomDurableObject.SWEEP_INTERVAL_MS)
+  }
+
+  /**
+   * Proactive server-side sweep: closes zombie WebSocket connections whose
+   * lastSeen exceeds STALE_MS, even when no client messages are arriving.
+   *
+   * This is the class-level counterpart of the inline sweepStale() that runs
+   * reactively on each message. It additionally handles admin cleanup which
+   * the inline version doesn't cover.
+   */
+  /**
+   * Full cleanup of a socket: removes user/admin/OneShare state and notifies others.
+   * Used by both proactive sweep and the inline cleanupSocket on WS close.
+   */
+  private evictSocket(sid: string, reason: string): void {
+    const ws = this.sockets.get(sid)
+    // Clean up user state
+    const user = this.users.get(sid)
+    if (user) {
+      this.users.delete(sid)
+      if ((user as any).logicalId) {
+        const key = `${user.roomNumber}:${(user as any).logicalId}`
+        const active = this.sessionByUserKey.get(key)
+        if (active === sid) {
+          this.sessionByUserKey.delete(key)
+          this.userDataByKey.delete(key)
+        }
+      }
+      this.broadcastAll('user-left', user, sid)
+    }
+    // Clean up admin state
+    if (this.adminId === sid) {
+      this.adminId = null
+      if (this.roomNumber) this.broadcastAll('admin-offline', { roomNumber: this.roomNumber })
+    }
+    // Clean up OneShare sessions owned by this socket
+    for (const [code, session] of Array.from(this.oneShareSessions.entries())) {
+      if (session.senderId === sid) {
+        for (const recvId of session.receivers) {
+          const recvWs = this.sockets.get(recvId)
+          if (recvWs) this.sendToWs(recvWs, 'oneshare-cancelled', { code, reason: 'Sender disconnected' })
+        }
+        this.oneShareSessions.delete(code)
+      }
+    }
+    this.lastSeen.delete(sid)
+    this.lastActive.delete(sid)
+    this.sockets.delete(sid)
+    try { ws?.close?.(4001, reason) } catch { }
+  }
+
+  private proactiveSweepStale(): void {
+    const now = Date.now()
+    const STALE_MS = 35_000
+
+    for (const [sid] of Array.from(this.sockets.entries())) {
+      const seen = this.lastSeen.get(sid) ?? 0
+      const active = this.lastActive.get(sid) ?? 0
+
+      // Priority 1: Zombie detection — no messages at all for 35s (dead connection)
+      if (now - seen > STALE_MS) {
+        this.evictSocket(sid, 'Stale connection')
+        continue
+      }
+
+      // Priority 2: Idle disconnect — connected but no real activity for 1 hour
+      if (now - active > RoomDurableObject.IDLE_DISCONNECT_MS) {
+        console.log(`Socket ${sid} idle for >${Math.round((now - active) / 60000)}min — disconnecting`)
+        this.evictSocket(sid, 'Idle for 1 hour')
+        continue
+      }
+    }
   }
 
   // Schedule an alarm for the next 3:00 AM IST (21:30 UTC previous day)
@@ -95,6 +258,7 @@ export class RoomDurableObject implements DurableObject {
     this.sessionByUserKey.clear()
     this.userDataByKey.clear()
     this.lastSeen.clear()
+    this.lastActive.clear()
     this.oneShareSessions.clear()
     // Wipe all persisted SQLite storage
     await this.state.storage.deleteAll()
@@ -145,6 +309,11 @@ export class RoomDurableObject implements DurableObject {
       return this.alarm().then(() => new Response('Cleaned up', { status: 200 }))
     }
 
+    // Handle internal ping for health checks
+    if (url.pathname === '/ping') {
+      return new Response('OK', { status: 200 })
+    }
+
     const upgrade = request.headers.get('Upgrade')
     if (upgrade !== 'websocket') {
       return new Response('Expected WebSocket', { status: 426 })
@@ -160,6 +329,10 @@ export class RoomDurableObject implements DurableObject {
       ; (server as any).accept()
 
     this.sockets.set(socketId, server)
+    const now = Date.now()
+    this.lastSeen.set(socketId, now)    // Track from connection start
+    this.lastActive.set(socketId, now)  // Connecting counts as activity
+    this.startSweepInterval()           // Ensure proactive sweep is running
 
     const send = (ws: WebSocket, event: string, data?: any) => {
       try { ws.send(JSON.stringify({ event, data })) } catch { }
@@ -204,6 +377,7 @@ export class RoomDurableObject implements DurableObject {
             }
           }
           this.lastSeen.delete(sid)
+          this.lastActive.delete(sid)
           this.sockets.delete(sid)
           try { (ws as any)?.close?.() } catch { }
         }
@@ -257,6 +431,7 @@ export class RoomDurableObject implements DurableObject {
       }
 
       this.sockets.delete(socketId)
+      this.lastActive.delete(socketId)
     }
 
     server.addEventListener('message', (ev: MessageEvent) => {
@@ -267,7 +442,12 @@ export class RoomDurableObject implements DurableObject {
       const roomNumber = data?.roomNumber || this.roomNumber || 'default'
 
       // Update last-seen and sweep stale on every message
-      this.lastSeen.set(socketId, Date.now())
+      const now = Date.now()
+      this.lastSeen.set(socketId, now)
+      // Update last-active only for real user actions (not heartbeats/auto-polls)
+      if (RoomDurableObject.ACTIVE_EVENTS.has(event)) {
+        this.lastActive.set(socketId, now)
+      }
       sweepStale()
 
       // Also cleanup expired OneShare sessions periodically

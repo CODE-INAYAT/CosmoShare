@@ -17,6 +17,7 @@ import { Bug, Lightbulb, Monitor, Mail, ArrowRight, ArrowLeft, Upload, Loader2, 
 import { motion, AnimatePresence } from 'framer-motion'
 import { toast } from 'sonner'
 import { roomNumbers } from '@/config/rooms'
+import { trackEvent, AnalyticsEvent } from '@/config/analytics'
 import { useIsMobile } from "@/hooks/use-mobile"
 import {
     Drawer,
@@ -47,6 +48,8 @@ export function SupportDialog({ externalOpen, onExternalOpenChange }: SupportDia
     const handleOpenChange = (val: boolean) => {
         setOpen(val)
         onExternalOpenChange?.(val)
+        // Track when user closes the dialog (= one complete open→close interaction)
+        if (!val) trackEvent(AnalyticsEvent.SUPPORT_DIALOG)
     }
     const [view, setView] = useState<'menu' | 'form' | 'success'>('menu')
     const [selectedCategory, setSelectedCategory] = useState<any>(null)

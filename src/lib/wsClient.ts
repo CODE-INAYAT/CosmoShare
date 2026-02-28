@@ -10,6 +10,10 @@ export interface SocketLike {
   disconnect: () => void
   connect: () => void
   connected: boolean
+  /** The WebSocket URL currently connected (or being attempted). */
+  readonly currentUrl: string
+  /** Index in the fallback URL list of the current/attempted URL. */
+  readonly currentUrlIndex: number
 }
 
 function toWsUrl(base: string): string {
@@ -19,8 +23,18 @@ function toWsUrl(base: string): string {
   return base
 }
 
-export function connectSignaling(baseUrl: string): SocketLike {
-  const url = toWsUrl(baseUrl)
+/**
+ * Create a signaling WebSocket connection with automatic failover.
+ *
+ * Accepts a single URL **or an ordered list** of URLs.
+ * When connection to the current URL fails after MAX_RECONNECT_ATTEMPTS_PER_URL,
+ * it automatically fails over to the next URL in the list — ensuring the client
+ * reaches a healthy worker even when one worker's Durable-Object quota is exhausted.
+ */
+export function connectSignaling(urlOrUrls: string | string[]): SocketLike {
+  const urls = (Array.isArray(urlOrUrls) ? urlOrUrls : [urlOrUrls]).map(toWsUrl)
+  let currentUrlIdx = 0
+
   const handlers = new Map<string, Set<Handler>>()
   const onceHandlers = new Map<string, Set<Handler>>()
 
@@ -31,9 +45,10 @@ export function connectSignaling(baseUrl: string): SocketLike {
   let reconnectTimer: any = null
   let intentionalDisconnect = false
 
-  const MAX_RECONNECT_ATTEMPTS = 5
+  // Per-URL retry limit (low because we have fallbacks)
+  const MAX_RECONNECT_ATTEMPTS_PER_URL = urls.length > 1 ? 2 : 5
   const RECONNECT_BASE_DELAY = 1000 // 1 second base delay
-  const MAX_RECONNECT_DELAY = 30000 // 30 seconds max delay
+  const MAX_RECONNECT_DELAY = urls.length > 1 ? 10000 : 30000
 
   const dispatch = (event: string, ...args: any[]) => {
     const hs = handlers.get(event)
@@ -66,9 +81,23 @@ export function connectSignaling(baseUrl: string): SocketLike {
   }
 
   const scheduleReconnect = () => {
-    if (intentionalDisconnect || reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
-      console.log('[wsClient] Max reconnect attempts reached or intentional disconnect')
+    if (intentionalDisconnect) {
+      console.log('[wsClient] Intentional disconnect — skipping reconnect')
       return
+    }
+
+    // If retries exhausted for current URL, fail over to next URL in the list
+    if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS_PER_URL) {
+      if (currentUrlIdx < urls.length - 1) {
+        currentUrlIdx++
+        reconnectAttempts = 0
+        console.log(`[wsClient] Failing over to URL ${currentUrlIdx + 1}/${urls.length}: ${urls[currentUrlIdx]}`)
+        dispatch('failover', { url: urls[currentUrlIdx], index: currentUrlIdx })
+      } else {
+        console.log('[wsClient] All signaling URLs exhausted — giving up')
+        dispatch('all_urls_failed')
+        return
+      }
     }
 
     // Exponential backoff with jitter
@@ -77,7 +106,7 @@ export function connectSignaling(baseUrl: string): SocketLike {
       MAX_RECONNECT_DELAY
     )
 
-    console.log(`[wsClient] Scheduling reconnect attempt ${reconnectAttempts + 1} in ${delay}ms`)
+    console.log(`[wsClient] Reconnect to URL ${currentUrlIdx + 1}/${urls.length} attempt ${reconnectAttempts + 1} in ${Math.round(delay)}ms`)
 
     reconnectTimer = setTimeout(() => {
       reconnectAttempts++
@@ -92,7 +121,8 @@ export function connectSignaling(baseUrl: string): SocketLike {
       ws = null
     }
 
-    console.log(`[wsClient] Creating new WebSocket connection to ${url}`)
+    const url = urls[currentUrlIdx]
+    console.log(`[wsClient] Connecting to ${url} (URL ${currentUrlIdx + 1}/${urls.length})`)
 
     try {
       ws = new WebSocket(url)
@@ -180,6 +210,8 @@ export function connectSignaling(baseUrl: string): SocketLike {
       console.log('[wsClient] Manual connect called')
       intentionalDisconnect = false
       reconnectAttempts = 0
+      // Reset to first URL on manual connect
+      currentUrlIdx = 0
       clearTimers()
 
       // If already connected, do nothing
@@ -199,6 +231,12 @@ export function connectSignaling(baseUrl: string): SocketLike {
     },
     get connected() {
       return isConnected && ws !== null && ws.readyState === WebSocket.OPEN
+    },
+    get currentUrl() {
+      return urls[currentUrlIdx]
+    },
+    get currentUrlIndex() {
+      return currentUrlIdx
     }
   }
 

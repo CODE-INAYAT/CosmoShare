@@ -4,6 +4,12 @@
  * Lab Share:  hash(roomNumber) % N  → deterministic worker per room
  * OneShare:   hash(code)       % N  → deterministic worker per code (client-generated)
  *
+ * Failover:   When a worker is unreachable (e.g. Durable-Object free-tier quota
+ *             exceeded), clients deterministically rotate through the remaining
+ *             workers in the same ring order.  Both sender and receiver compute
+ *             the same fallback sequence for a given room/code, so they always
+ *             converge on the same healthy worker.
+ *
  * Scaling: Just add URLs to the comma-separated env vars. No code changes needed.
  *
  * Env vars:
@@ -33,6 +39,12 @@ function parseUrls(envValue: string | undefined): string[] {
   return envValue.split(',').map(u => u.trim()).filter(Boolean)
 }
 
+/** Normalise a base URL into ws(s) format ending with /ws */
+function normaliseWs(base: string): string {
+  const clean = base.replace(/\/$/, '')
+  return (clean.endsWith('/ws') || clean.includes('/ws?')) ? clean : `${clean}/ws`
+}
+
 // ---------------------------------------------------------------------------
 // Lab Share
 // ---------------------------------------------------------------------------
@@ -58,11 +70,29 @@ export function getLabSignalingUrl(roomNumber: string): string | null {
   if (urls.length === 0) return null
 
   const index = djb2Hash(roomNumber) % urls.length
-  const base = urls[index].replace(/\/$/, '')
-  const wsBase = (base.endsWith('/ws') || base.includes('/ws?'))
-    ? base
-    : `${base}/ws`
+  const wsBase = normaliseWs(urls[index])
   return `${wsBase}?room=${encodeURIComponent(roomNumber)}`
+}
+
+/**
+ * Returns an **ordered list** of WebSocket URLs for a Lab Share room.
+ * The primary URL comes first, followed by the remaining workers in
+ * deterministic ring order so every client computes the same failover sequence.
+ *
+ * Returns an empty array if no signaling URLs are configured.
+ */
+export function getLabSignalingUrls(roomNumber: string): string[] {
+  const urls = getLabUrls()
+  if (urls.length === 0) return []
+
+  const primary = djb2Hash(roomNumber) % urls.length
+  const result: string[] = []
+  for (let i = 0; i < urls.length; i++) {
+    const idx = (primary + i) % urls.length
+    const wsBase = normaliseWs(urls[idx])
+    result.push(`${wsBase}?room=${encodeURIComponent(roomNumber)}`)
+  }
+  return result
 }
 
 // ---------------------------------------------------------------------------
@@ -101,11 +131,27 @@ export function getOneShareSignalingUrl(code: string): string | null {
   if (urls.length === 0) return null
 
   const index = djb2Hash(code) % urls.length
-  const base = urls[index].replace(/\/$/, '')
-  const wsBase = (base.endsWith('/ws') || base.includes('/ws?'))
-    ? base
-    : `${base}/ws`
-  return wsBase
+  return normaliseWs(urls[index])
+}
+
+/**
+ * Returns an **ordered list** of WebSocket URLs for a OneShare code.
+ * The primary URL comes first, followed by the remaining workers in
+ * deterministic ring order for failover.
+ *
+ * Returns an empty array if no signaling URLs are configured.
+ */
+export function getOneShareSignalingUrls(code: string): string[] {
+  const urls = getOneShareUrls()
+  if (urls.length === 0) return []
+
+  const primary = djb2Hash(code) % urls.length
+  const result: string[] = []
+  for (let i = 0; i < urls.length; i++) {
+    const idx = (primary + i) % urls.length
+    result.push(normaliseWs(urls[idx]))
+  }
+  return result
 }
 
 /**
@@ -119,11 +165,26 @@ export function getRandomOneShareShard(): { url: string; shardIndex: number } | 
   if (urls.length === 0) return null
 
   const shardIndex = Math.floor(Math.random() * urls.length)
-  const base = urls[shardIndex].replace(/\/$/, '')
-  const wsBase = (base.endsWith('/ws') || base.includes('/ws?'))
-    ? base
-    : `${base}/ws`
-  return { url: wsBase, shardIndex }
+  return { url: normaliseWs(urls[shardIndex]), shardIndex }
+}
+
+/**
+ * Returns all OneShare worker URLs starting from a random shard, suitable
+ * for eager connection with automatic failover.
+ *
+ * Returns `{ urls, startShardIndex }` or `null` if no URLs configured.
+ */
+export function getRandomOneShareShardWithFallbacks(): { urls: string[]; startShardIndex: number } | null {
+  const urls = getOneShareUrls()
+  if (urls.length === 0) return null
+
+  const start = Math.floor(Math.random() * urls.length)
+  const ordered: string[] = []
+  for (let i = 0; i < urls.length; i++) {
+    const idx = (start + i) % urls.length
+    ordered.push(normaliseWs(urls[idx]))
+  }
+  return { urls: ordered, startShardIndex: start }
 }
 
 /**
@@ -140,6 +201,18 @@ export function getOneShareShardIndex(code: string): number {
  */
 export function getOneShareShardCount(): number {
   return getOneShareUrls().length
+}
+
+/**
+ * Returns the shard index for a given WebSocket URL.
+ * Used to determine which shard a connection is actually on after failover.
+ */
+export function getShardIndexForUrl(url: string): number {
+  const urls = getOneShareUrls()
+  if (urls.length === 0) return 0
+  const normalised = normaliseWs(url)
+  const idx = urls.findIndex(u => normaliseWs(u) === normalised)
+  return idx >= 0 ? idx : 0
 }
 
 // ---------------------------------------------------------------------------

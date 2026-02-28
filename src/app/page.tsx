@@ -50,6 +50,7 @@ import { ScrollTrigger } from 'gsap/ScrollTrigger'
 import { roomNumbers } from '@/config/rooms'
 import { AUTO_LOGIN_ENABLED, AUTO_LOGIN_PASSWORD, hashPassword, verifyHash } from '@/config/autoLogin'
 import { SupportDialog } from '@/components/SupportDialog'
+import { trackVisitor } from '@/config/analytics'
 
 // Register GSAP plugins
 if (typeof window !== 'undefined') {
@@ -239,6 +240,8 @@ export default function Home() {
     setMounted(true)
     // Generate a unique hash on every page load for auto-login
     if (AUTO_LOGIN_ENABLED) setPassword(hashPassword())
+    // Track unique visitor per session
+    trackVisitor()
   }, [])
 
   // Prefetch destination routes so bundles are cached before user clicks

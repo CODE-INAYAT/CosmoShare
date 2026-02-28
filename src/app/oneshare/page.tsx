@@ -7,7 +7,7 @@ import { useTheme } from 'next-themes'
 import { io } from 'socket.io-client'
 import { useDropzone } from 'react-dropzone'
 import { connectSignaling, SocketLike } from '@/lib/wsClient'
-import { getOneShareSignalingUrl, getRandomOneShareShard, getOneShareShardIndex, generateOneShareCodeForShardIndex, generateOneShareCodeForSameShard } from '@/lib/signalingRouter'
+import { getOneShareSignalingUrl, getOneShareSignalingUrls, getRandomOneShareShard, getRandomOneShareShardWithFallbacks, getOneShareShardIndex, getShardIndexForUrl, generateOneShareCodeForShardIndex, generateOneShareCodeForSameShard } from '@/lib/signalingRouter'
 
 // UI Components
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -33,6 +33,7 @@ import FullPageLoader from '@/components/FullPageLoader'
 // Hooks
 import { useOneShareWebRTC } from '@/hooks/useOneShareWebRTC'
 import { useNetworkStatus } from '@/hooks/useNetworkStatus'
+import { trackEvent, AnalyticsEvent, trackFileSize } from '@/config/analytics'
 
 // Icons
 import {
@@ -220,14 +221,25 @@ function OneShareInner() {
     const [uiReceiveProgress, setUiReceiveProgress] = useState(0)
     const uiUploadProgressRef = useRef(0)
     const uiReceiveProgressRef = useRef(0)
+    // Refs for rAF target values — avoids re-creating the animation loop on every progress tick
+    const uploadProgressTargetRef = useRef(0)
+    const receiveProgressTargetRef = useRef(0)
     useEffect(() => { uiUploadProgressRef.current = uiUploadProgress }, [uiUploadProgress])
     useEffect(() => { uiReceiveProgressRef.current = uiReceiveProgress }, [uiReceiveProgress])
 
     // Force progress flags for smooth 100% completion
     const [forceUploadProgress, setForceUploadProgress] = useState(false)
     const [forceReceiveProgress, setForceReceiveProgress] = useState(false)
+    const forceUploadProgressRef = useRef(false)
+    const forceReceiveProgressRef = useRef(false)
+    useEffect(() => { forceUploadProgressRef.current = forceUploadProgress }, [forceUploadProgress])
+    useEffect(() => { forceReceiveProgressRef.current = forceReceiveProgress }, [forceReceiveProgress])
     const uploadStartAtRef = useRef<number | null>(null)
     const receiveStartAtRef = useRef<number | null>(null)
+
+    // Throttle refs for onFileChunk — avoids hammering React state on every 48KB chunk
+    const recvChunkThrottleRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+    const recvChunkPendingRef = useRef<Record<string, { fileName: string; received: number; total: number }>>({})
 
     // Cumulative byte tracking for accurate multi-file progress
     const totalBytesToSendRef = useRef(0)
@@ -242,6 +254,7 @@ function OneShareInner() {
         const startedAt = uploadStartAtRef.current || performance.now()
         setForceUploadProgress(true)
         setIsUploading(true)
+        uploadProgressTargetRef.current = 100
         setUploadProgress(100)
         return new Promise<void>((resolve) => {
             const check = () => {
@@ -329,17 +342,26 @@ function OneShareInner() {
                 }
             },
             onFileChunk: (fileName, received, total) => {
-                // Update the file that matches this total size - Logic matches Lab Room
-                setRecvFileProgress(prev => {
-                    const next = { ...prev }
-                    const keys = Object.keys(next)
-                    for (const k of keys) {
-                        if (next[k].fileName === fileName && next[k].total === total) {
-                            next[k] = { ...next[k], received }
-                        }
-                    }
-                    return next
-                })
+                // Buffer updates and flush at most every 80ms to avoid React re-render storms
+                recvChunkPendingRef.current[`${fileName}:${total}`] = { fileName, received, total }
+                if (!recvChunkThrottleRef.current) {
+                    recvChunkThrottleRef.current = setTimeout(() => {
+                        recvChunkThrottleRef.current = null
+                        const pending = { ...recvChunkPendingRef.current }
+                        recvChunkPendingRef.current = {}
+                        setRecvFileProgress(prev => {
+                            const next = { ...prev }
+                            for (const entry of Object.values(pending)) {
+                                for (const k of Object.keys(next)) {
+                                    if (next[k].fileName === entry.fileName && next[k].total === entry.total) {
+                                        next[k] = { ...next[k], received: entry.received }
+                                    }
+                                }
+                            }
+                            return next
+                        })
+                    }, 80)
+                }
             },
             onFileComplete: (fileUrl, meta) => {
                 console.log('File received:', meta.fileName)
@@ -368,6 +390,10 @@ function OneShareInner() {
                     document.body.removeChild(a)
                 }
                 // Don't set receiveComplete here - detected by useEffect
+
+                // Analytics: track file shared + file size (receiver side)
+                trackEvent(AnalyticsEvent.FILE_SHARED)
+                trackFileSize(meta.fileSize)
             },
             onLink: (linkUrl, msg) => {
                 console.log('Link received:', linkUrl)
@@ -382,6 +408,9 @@ function OneShareInner() {
                     setReceivedMessage(msg)
                 }
                 // Don't set receiveComplete here - wait for sender signal
+
+                // Analytics: track link shared
+                trackEvent(AnalyticsEvent.LINK_SHARED)
             },
             onMessage: (msg) => {
                 console.log('Message received:', msg)
@@ -391,6 +420,9 @@ function OneShareInner() {
                 // Mark as complete for message-only transfers
                 setIsReceiving(false)
                 setReceiveComplete(true)
+
+                // Analytics: track code shared
+                trackEvent(AnalyticsEvent.CODE_SHARED)
             },
             onSendStart: (fileName, total) => {
                 // Track the current file size for cumulative calculation  
@@ -403,7 +435,9 @@ function OneShareInner() {
                 const totalBytes = totalBytesToSendRef.current
                 if (totalBytes > 0) {
                     const progress = Math.round((cumulativeSent / totalBytes) * 100)
-                    setUploadProgress(Math.min(100, progress))
+                    const clamped = Math.min(100, progress)
+                    uploadProgressTargetRef.current = clamped
+                    setUploadProgress(clamped)
                 }
             },
             onSendComplete: (fileName) => {
@@ -426,63 +460,56 @@ function OneShareInner() {
         sessionCodeRef.current = sessionCode
     }, [sessionCode])
 
-    // Smooth progress animation for upload (matching Lab Room exactly)
+    // Smooth progress animation for upload — reads targets from refs so
+    // the rAF loop is created only once per upload (not restarted 100+ times).
     useEffect(() => {
-        // Only run when uploading or forcing progress to 100
         if (!isUploading && !forceUploadProgress) return
         let raf: number
         let running = true
         let last = performance.now()
         const tick = (now?: number) => {
             const t = now ?? performance.now()
-            const dt = Math.min(100, Math.max(0, t - last)) // cap dt to avoid jumps
+            const dt = Math.min(100, Math.max(0, t - last))
             last = t
             setUiUploadProgress(prev => {
-                // Never go backwards - target is 100 when forcing, otherwise max of current and actual progress
-                const target = forceUploadProgress ? 100 : Math.max(prev, uploadProgress)
+                const target = forceUploadProgressRef.current ? 100 : Math.max(prev, uploadProgressTargetRef.current)
                 const diff = target - prev
                 if (diff <= 0.05) return target
-                // Time-based easing: base speed + proportional gain
-                const basePerSec = 22 // minimum 22% per second
-                const gain = 3.0      // accelerates when far from target
+                const basePerSec = 22
+                const gain = 3.0
                 const step = (basePerSec * (dt / 1000)) + diff * gain * (dt / 1000)
-                const next = Math.min(prev + step, target)
-                return Math.min(100, next)
+                return Math.min(100, prev + step)
             })
             if (running) raf = requestAnimationFrame(tick)
         }
         raf = requestAnimationFrame(tick)
         return () => { running = false; try { cancelAnimationFrame(raf) } catch { } }
-    }, [isUploading, uploadProgress, forceUploadProgress])
+    }, [isUploading, forceUploadProgress]) // uploadProgress intentionally excluded — read from ref
 
-    // Smooth progress animation for receive (matching Lab Room exactly)
+    // Smooth progress animation for receive — same ref-based approach.
     useEffect(() => {
-        // Only run when receiving or forcing progress to 100
         if (!isReceiving && !forceReceiveProgress) return
         let raf: number
         let running = true
         let last = performance.now()
         const tick = (now?: number) => {
             const t = now ?? performance.now()
-            const dt = Math.min(100, Math.max(0, t - last)) // cap dt to avoid jumps
+            const dt = Math.min(100, Math.max(0, t - last))
             last = t
             setUiReceiveProgress(prev => {
-                // Never go backwards - target is 100 when forcing, otherwise max of current and actual progress
-                const target = forceReceiveProgress ? 100 : Math.max(prev, receiveProgress)
+                const target = forceReceiveProgressRef.current ? 100 : Math.max(prev, receiveProgressTargetRef.current)
                 const diff = target - prev
                 if (diff <= 0.05) return target
-                // Time-based easing: base speed + proportional gain
-                const basePerSec = 22 // minimum 22% per second
-                const gain = 3.0      // accelerates when far from target
+                const basePerSec = 22
+                const gain = 3.0
                 const step = (basePerSec * (dt / 1000)) + diff * gain * (dt / 1000)
-                const next = Math.min(prev + step, target)
-                return Math.min(100, next)
+                return Math.min(100, prev + step)
             })
             if (running) raf = requestAnimationFrame(tick)
         }
         raf = requestAnimationFrame(tick)
         return () => { running = false; try { cancelAnimationFrame(raf) } catch { } }
-    }, [isReceiving, receiveProgress, forceReceiveProgress])
+    }, [isReceiving, forceReceiveProgress]) // receiveProgress intentionally excluded — read from ref
 
     // Detect receiver completion independently - when all files finish receiving
     // This removes dependency on sender's completion signal
@@ -575,28 +602,39 @@ function OneShareInner() {
         })
     }
 
-    // Connect to a specific shard URL, returns the socket
-    const connectToShard = (url: string, shardIndex: number) => {
+    // Connect to a shard with fallback URL list, returns the socket.
+    // Accepts a single URL or an ordered list of URLs for automatic failover.
+    const connectToShard = (urlOrUrls: string | string[], shardIndex: number) => {
         // Disconnect existing socket if any
         if (socketRef.current) {
             try { socketRef.current.disconnect() } catch { }
         }
 
-        const sock = connectSignaling(url)
+        const sock = connectSignaling(urlOrUrls)
         setupSocketListeners(sock)
         currentShardIndexRef.current = shardIndex
+
+        // Track failover: if wsClient falls over to a different URL, update shard index
+        sock.on('failover' as any, (data: any) => {
+            if (data?.url) {
+                const newIdx = getShardIndexForUrl(data.url)
+                currentShardIndexRef.current = newIdx
+                console.log(`[OneShare] Failover detected — now on shard ${newIdx}`)
+            }
+        })
+
         socketRef.current = sock
         setSocket(sock)
         return sock
     }
 
-    // Eagerly connect on page mount to a random shard
+    // Eagerly connect on page mount to a random shard (with fallbacks)
     useEffect(() => {
         if (!mounted) return
 
-        const shard = getRandomOneShareShard()
-        if (shard) {
-            connectToShard(shard.url, shard.shardIndex)
+        const shardInfo = getRandomOneShareShardWithFallbacks()
+        if (shardInfo) {
+            connectToShard(shardInfo.urls, shardInfo.startShardIndex)
         } else {
             // Fallback to local Socket.IO for development
             const sock = io({ path: '/api/socket/io' }) as any
@@ -676,6 +714,10 @@ function OneShareInner() {
         // Set session expiry timer (5 min for MultiShare, 10 min for regular)
         const ttl = multiShareEnabled ? 5 * 60 * 1000 : 10 * 60 * 1000
         setSessionExpiry(Date.now() + ttl)
+
+        // Analytics: track OneShare user + MultiShare if enabled
+        trackEvent(AnalyticsEvent.ONESHARE_USER)
+        if (multiShareEnabled) trackEvent(AnalyticsEvent.ONESHARE_MULTISHARE)
     }
 
     const handleJoinSession = (code: string) => {
@@ -694,10 +736,10 @@ function OneShareInner() {
             // Already on the correct shard — emit immediately
             socket.emit('oneshare-join', { code })
         } else {
-            // Need to reconnect to a different shard
-            const url = getOneShareSignalingUrl(code)
-            if (url) {
-                const sock = connectToShard(url, targetShardIndex)
+            // Need to reconnect to the code's shard (with failover list)
+            const urls = getOneShareSignalingUrls(code)
+            if (urls.length > 0) {
+                const sock = connectToShard(urls, targetShardIndex)
                 // Emit join once connected
                 sock.on('connect', () => {
                     sock.emit('oneshare-join', { code })
@@ -751,6 +793,7 @@ function OneShareInner() {
         uploadStartAtRef.current = performance.now()
 
         setIsUploading(true)
+        uploadProgressTargetRef.current = 5
         setUploadProgress(5) // Start at 5% so animation begins immediately
         setUiUploadProgress(0)
         setTransferComplete(false)
@@ -766,18 +809,22 @@ function OneShareInner() {
             if (linkUrl) {
                 // For links, set progress to show activity
                 if (selectedFiles.length === 0) {
+                    uploadProgressTargetRef.current = 50
                     setUploadProgress(50) // Links-only: set midway progress
                 }
                 await webrtc.sendLink(linkUrl, message)
                 if (selectedFiles.length === 0) {
+                    uploadProgressTargetRef.current = 90
                     setUploadProgress(90) // Links completed
                 }
             }
 
             // Send code if in code share mode with no files/links
             if (codeShareMode && selectedFiles.length === 0 && !linkUrl && codeShareText) {
+                uploadProgressTargetRef.current = 50
                 setUploadProgress(50)
                 await webrtc.sendMessage(codeShareText)
+                uploadProgressTargetRef.current = 100
                 setUploadProgress(100)
             }
 
@@ -815,11 +862,13 @@ function OneShareInner() {
         setSessionTimeLeft('')
         setMultiShareReceivers([])
         setIsUploading(false)
+        uploadProgressTargetRef.current = 0
         setUploadProgress(0)
         setUiUploadProgress(0)
         setForceUploadProgress(false)
         setTransferComplete(false)
         setIsReceiving(false)
+        receiveProgressTargetRef.current = 0
         setReceiveProgress(0)
         setUiReceiveProgress(0)
         setForceReceiveProgress(false)
@@ -827,12 +876,14 @@ function OneShareInner() {
         setRecvFileProgress({})
         setReceiveComplete(false)
         setJoinError(null)
-        // Reset cumulative byte tracking and timing
+        // Reset cumulative byte tracking, timing, and throttles
         totalBytesToSendRef.current = 0
         bytesSentSoFarRef.current = 0
         currentFileSizeRef.current = 0
         uploadStartAtRef.current = null
         receiveStartAtRef.current = null
+        if (recvChunkThrottleRef.current) { clearTimeout(recvChunkThrottleRef.current); recvChunkThrottleRef.current = null }
+        recvChunkPendingRef.current = {}
         webrtc.cleanup()
 
         // Only the sender should cancel the session on the server
@@ -840,10 +891,10 @@ function OneShareInner() {
             socket.emit('oneshare-cancel', { code: sessionCode })
         }
 
-        // Reconnect to a fresh random shard so we're ready for next session
-        const shard = getRandomOneShareShard()
-        if (shard) {
-            connectToShard(shard.url, shard.shardIndex)
+        // Reconnect to a fresh random shard (with failover) so we're ready for next session
+        const shardInfo = getRandomOneShareShardWithFallbacks()
+        if (shardInfo) {
+            connectToShard(shardInfo.urls, shardInfo.startShardIndex)
         }
         // Clear sharding refs
         pendingCreateDataRef.current = null
@@ -1422,7 +1473,7 @@ function OneShareInner() {
                                                                         cx="50"
                                                                         cy="50"
                                                                         r="46"
-                                                                        className="stroke-primary transition-all duration-300"
+                                                                        className="stroke-primary"
                                                                         strokeWidth="6"
                                                                         strokeLinecap="round"
                                                                         fill="none"
@@ -1672,16 +1723,14 @@ function OneShareInner() {
                                                             : 'The sender included this message with the shared content'}
                                                     </DialogDescription>
                                                 </DialogHeader>
-                                                <div className={`mt-4 p-4 rounded-xl border max-h-80 overflow-y-auto ${
-                                                    receivedFiles.length === 0
+                                                <div className={`mt-4 p-4 rounded-xl border max-h-80 overflow-y-auto ${receivedFiles.length === 0
                                                         ? 'bg-slate-800 border-slate-600'
                                                         : 'bg-secondary/50 border-border'
-                                                }`}>
-                                                    <pre className={`whitespace-pre-wrap leading-relaxed text-sm ${
-                                                        receivedFiles.length === 0
+                                                    }`}>
+                                                    <pre className={`whitespace-pre-wrap leading-relaxed text-sm ${receivedFiles.length === 0
                                                             ? 'text-slate-200'
                                                             : 'text-foreground'
-                                                    }`} style={{ fontFamily: receivedFiles.length === 0 ? 'Consolas, Monaco, monospace' : 'inherit' }}>
+                                                        }`} style={{ fontFamily: receivedFiles.length === 0 ? 'Consolas, Monaco, monospace' : 'inherit' }}>
                                                         {receivedMessage}
                                                     </pre>
                                                 </div>
@@ -1722,7 +1771,7 @@ function OneShareInner() {
                                                                     <div className="mt-2 h-2 w-full rounded-full bg-neutral-200 dark:bg-neutral-700 overflow-hidden">
                                                                         {(() => {
                                                                             const pct = p.total ? Math.min(100, (p.received / p.total) * 100) : 0
-                                                                            return <div style={{ width: pct + '%' }} className="h-full bg-[var(--primary)] transition-[width] duration-200 ease-out" />
+                                                                            return <div style={{ width: pct + '%' }} className="h-full bg-[var(--primary)] transition-[width] duration-300 ease-out" />
                                                                         })()}
                                                                     </div>
                                                                     <div className="mt-1 text-[11px] text-muted-foreground flex justify-between">

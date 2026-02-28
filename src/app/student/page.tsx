@@ -51,7 +51,7 @@ import {
 import { useSearchParams } from 'next/navigation'
 import { io } from 'socket.io-client'
 import { connectSignaling } from '@/lib/wsClient'
-import { getLabSignalingUrl } from '@/lib/signalingRouter'
+import { getLabSignalingUrls } from '@/lib/signalingRouter'
 import { useWebRTC } from '@/hooks/useWebRTC'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 import { GoogleDocsIcon, GoogleSheetsIcon, GoogleSlidesIcon, GoogleDriveIcon } from '@/components/GoogleIcons'
@@ -77,6 +77,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog'
+import { trackEvent, AnalyticsEvent, trackFileSize } from '@/config/analytics'
 
 interface User {
   id: string
@@ -225,6 +226,8 @@ function StudentDashboardInner() {
   const [leaveRoomDialogOpen, setLeaveRoomDialogOpen] = useState(false)
   // Receiving counters for badge (received/total)
   const [recvCounter, setRecvCounter] = useState<{ total: number; received: number }>({ total: 0, received: 0 })
+  // Guard to deduplicate cancel tracking (fires from both socket + data channel)
+  const lastCancelTrackedRef = useRef<number>(0)
   // Track current receive batch items & senders
   const receiveBatchItemsRef = useRef<any[]>([])
   const receiveBatchSendersRef = useRef<Map<string, { name: string; uniqueId: string }>>(new Map())
@@ -513,6 +516,10 @@ function StudentDashboardInner() {
         timestamp: new Date()
       }, ...prev])
 
+      // Analytics: track file shared + file size
+      trackEvent(AnalyticsEvent.FILE_SHARED)
+      trackFileSize(meta.fileSize)
+
       // Auto-download if enabled
       if (autoDownloadRef.current && fileUrl) {
         try {
@@ -568,6 +575,9 @@ function StudentDashboardInner() {
         method: (senderInfo as any)?.method,
         timestamp: new Date()
       }, ...prev])
+
+      // Analytics: track link shared
+      trackEvent(AnalyticsEvent.LINK_SHARED)
 
       // Treat link as an instant progress item so the speed dial and dialog appear
       const key = `${fromId}:link:${Date.now()}:${Math.random()}`
@@ -682,6 +692,9 @@ function StudentDashboardInner() {
         timestamp: new Date()
       }, ...prev])
 
+      // Analytics: track code shared
+      trackEvent(AnalyticsEvent.CODE_SHARED)
+
       // Track for batch summary
       setRecvCounter(prev => {
         if (prev.total === 0 && prev.received === 0) {
@@ -729,6 +742,13 @@ function StudentDashboardInner() {
 
       // Hide speed dial by resetting received counter
       setRecvCounter({ total: 0, received: 0 })
+
+      // Analytics: track canceled transfer (deduplicate — fires from both socket + data channel)
+      const now = Date.now()
+      if (now - lastCancelTrackedRef.current > 5000) {
+        lastCancelTrackedRef.current = now
+        trackEvent(AnalyticsEvent.CANCELED_TRANSFER)
+      }
 
       // Show permanent toast instead of dialog
       const senderName = sender?.name || 'Sender'
@@ -889,11 +909,11 @@ function StudentDashboardInner() {
   }
 
   const initializeSocket = (user: any, roomNumber: string) => {
-    // Initialize socket connection using sharded signaling router
-    const signalingUrl = getLabSignalingUrl(roomNumber)
+    // Initialize socket connection using sharded signaling router (with auto-failover)
+    const signalingUrls = getLabSignalingUrls(roomNumber)
     let socket: any
-    if (signalingUrl) {
-      socket = connectSignaling(signalingUrl)
+    if (signalingUrls.length > 0) {
+      socket = connectSignaling(signalingUrls)
     } else {
       // Fallback to Next.js Socket.IO route when no signaling Worker URL is set
       // Note: Pages build exposes this at /api/socket/io
@@ -907,6 +927,9 @@ function StudentDashboardInner() {
     socket.on('connect', () => {
       setIsConnected(true)
       socket.emit('join-room', { roomNumber, user })
+      // Analytics: track student join + room join
+      trackEvent(AnalyticsEvent.STUDENT_JOIN, 1, roomNumber)
+      trackEvent(AnalyticsEvent.ROOM_JOIN)
       // Periodically request fresh roster to purge stale users server-side
       try { if (presenceTimer) clearInterval(presenceTimer) } catch { }
       presenceTimer = setInterval(() => {
@@ -1185,6 +1208,8 @@ function StudentDashboardInner() {
     setTimeout(() => {
       sendingTargetsCountRef.current = 1
       performShareRef.current?.([capturedAdminId], true)
+      // Analytics: track auto-share performed
+      trackEvent(AnalyticsEvent.AUTO_SHARE)
     }, 200)
   }, [adminId, autoShareActive])
 

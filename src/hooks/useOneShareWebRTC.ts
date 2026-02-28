@@ -235,7 +235,7 @@ export const useOneShareWebRTC = (
                 const ch: any = (newPeer as any)?._channel || (newPeer as any)?.channel
                 if (ch) {
                     try { ch.binaryType = 'arraybuffer' } catch { }
-                    try { ch.bufferedAmountLowThreshold = 256 * 1024 } catch { }
+                    try { ch.bufferedAmountLowThreshold = 64 * 1024 } catch { }
                 }
             } catch { }
 
@@ -421,11 +421,11 @@ export const useOneShareWebRTC = (
 
         // Detect connection type for optimal chunk sizing
         const connType = await detectConnectionType(p)
-        // Host can use large chunks; TURN relay benefits from 64KB (was 32KB flat,
-        // which bottlenecked cross-network transfers)
+        // Max 64KB — Safari/mobile WebKit SCTP caps single-message at 64KB;
+        // exceeding it silently kills the data channel.
         let chunkSize = 64 * 1024 // default (srflx / unknown)
-        if (connType === 'host') chunkSize = 128 * 1024
-        else if (connType === 'relay') chunkSize = 64 * 1024
+        if (connType === 'host') chunkSize = 64 * 1024
+        else if (connType === 'relay') chunkSize = 48 * 1024
         let offset = 0
 
         while (offset < file.size) {
@@ -450,9 +450,8 @@ export const useOneShareWebRTC = (
             try {
                 const ch: any = (p as any)?._channel || (p as any)?.channel
                 if (ch && typeof ch.bufferedAmount === 'number') {
-                    // Larger buffer for relay keeps the pipe full despite higher RTT
-                    const MAX_BUFFER = connType === 'relay' ? 1024 * 1024 : 512 * 1024
-                    const LOW_WATER = connType === 'relay' ? 512 * 1024 : 256 * 1024
+                    const MAX_BUFFER = 512 * 1024
+                    const LOW_WATER = 256 * 1024
                     if (ch.bufferedAmount > MAX_BUFFER) {
                         await new Promise<void>((resolve) => {
                             let done = false

@@ -50,7 +50,7 @@ import {
 import { useSearchParams } from 'next/navigation'
 import { io } from 'socket.io-client'
 import { connectSignaling } from '@/lib/wsClient'
-import { getLabSignalingUrl } from '@/lib/signalingRouter'
+import { getLabSignalingUrls } from '@/lib/signalingRouter'
 import { useWebRTC } from '@/hooks/useWebRTC'
 import FilePreview from '@/components/FilePreview'
 import { ConnectionStatusBadge } from '@/components/ConnectionStatusBadge'
@@ -61,6 +61,7 @@ import { useToast } from '@/hooks/use-toast'
 import { useNetworkStatus } from '@/hooks/useNetworkStatus'
 import { formatBytes } from '@/lib/utils'
 import { AUTO_LOGIN_ENABLED, AUTO_LOGIN_PASSWORD, hashPassword, verifyHash } from '@/config/autoLogin'
+import { trackEvent, AnalyticsEvent, trackFileSize } from '@/config/analytics'
 
 interface PrintRequest {
   id: string
@@ -251,6 +252,10 @@ function AdminDashboardInner() {
       try { if (typeof fileUrl === 'string' && fileUrl.startsWith('blob:')) blobUrlsRef.current.add(fileUrl) } catch { }
       setPrintRequests(prev => [req, ...prev])
 
+      // Analytics: track file shared + file size
+      trackEvent(AnalyticsEvent.FILE_SHARED)
+      trackFileSize(meta.fileSize)
+
       // Auto-download if enabled
       if (autoDownloadRef.current && fileUrl) {
         try {
@@ -302,6 +307,9 @@ function AdminDashboardInner() {
         fileId: senderInfo?.fileId || makeFileId(true, linkUrl),
       }
       setPrintRequests(prev => [req, ...prev])
+
+      // Analytics: track link shared
+      trackEvent(AnalyticsEvent.LINK_SHARED)
       // Create transient progress entry so receiving dial appears
       const key = `${fromId}:link:${Date.now()}:${Math.random()}`
       setRecvProgress(prev => ({
@@ -375,11 +383,11 @@ function AdminDashboardInner() {
   }, [searchParams])
 
   const initializeSocket = (user: any, roomNumber: string) => {
-    // Initialize socket connection using sharded signaling router
-    const signalingUrl = getLabSignalingUrl(roomNumber)
+    // Initialize socket connection using sharded signaling router (with auto-failover)
+    const signalingUrls = getLabSignalingUrls(roomNumber)
     let socket: any
-    if (signalingUrl) {
-      socket = connectSignaling(signalingUrl)
+    if (signalingUrls.length > 0) {
+      socket = connectSignaling(signalingUrls)
     } else {
       // Fallback to Next.js Socket.IO route when no signaling Worker URL is set
       // Note: Pages build exposes this at /api/socket/io
@@ -400,6 +408,9 @@ function AdminDashboardInner() {
     socket.on('admin-auth-success', (data: any) => {
       setIsAuthenticated(true)
       socket.emit('join-room', { roomNumber, user })
+      // Analytics: track admin join + room join
+      trackEvent(AnalyticsEvent.ADMIN_JOIN, 1, roomNumber)
+      trackEvent(AnalyticsEvent.ROOM_JOIN)
     })
 
     socket.on('admin-auth-failed', () => {
