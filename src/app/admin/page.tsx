@@ -62,6 +62,7 @@ import { useNetworkStatus } from '@/hooks/useNetworkStatus'
 import { formatBytes } from '@/lib/utils'
 import { AUTO_LOGIN_ENABLED, AUTO_LOGIN_PASSWORD, hashPassword, verifyHash } from '@/config/autoLogin'
 import { trackEvent, AnalyticsEvent, trackFileSize } from '@/config/analytics'
+import { installConsoleMask } from '@/config/urlObfuscation'
 
 interface PrintRequest {
   id: string
@@ -97,6 +98,7 @@ function AdminDashboardInner() {
 
   // Generate a unique hash on every page load (client-only to avoid hydration mismatch)
   useEffect(() => {
+    installConsoleMask()
     if (AUTO_LOGIN_ENABLED) setPassword(hashPassword())
   }, [])
   const [onlineUsers, setOnlineUsers] = useState<OnlineUser[]>([])

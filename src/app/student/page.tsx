@@ -78,6 +78,7 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog'
 import { trackEvent, AnalyticsEvent, trackFileSize } from '@/config/analytics'
+import { URL_OBFUSCATION_ENABLED, encodeUrlData, decodeUrlData, installConsoleMask } from '@/config/urlObfuscation'
 
 interface User {
   id: string
@@ -814,16 +815,46 @@ function StudentDashboardInner() {
     return () => { if (receivedBatchCompleteTimerRef.current) clearTimeout(receivedBatchCompleteTimerRef.current) }
   }, [])
 
+  // Install console mask on mount (hides wss:// URLs from DevTools Console)
   useEffect(() => {
+    installConsoleMask()
+  }, [])
+
+  useEffect(() => {
+    // Obfuscated URL: single `s` param containing encoded room + user
+    const obfuscatedParam = searchParams?.get('s')
+    if (URL_OBFUSCATION_ENABLED && obfuscatedParam) {
+      try {
+        const decoded = decodeUrlData(obfuscatedParam) as { room: string; user: any }
+        setUserData(decoded.user)
+        initializeSocket(decoded.user, decoded.room)
+
+        // Replace address bar with the opaque hash (strip any readable fallback params)
+        if (typeof window !== 'undefined') {
+          window.history.replaceState({}, '', `/student?s=${obfuscatedParam}`)
+        }
+      } catch (error) {
+        console.error('Failed to decode session data:', error)
+      }
+      return
+    }
+
+    // Legacy / obfuscation-off fallback: plain room + user params
     const userParam = searchParams?.get('user')
     const roomParam = searchParams?.get('room')
-
-    // Use only URL params (no browser storage)
     if (userParam && roomParam) {
       try {
         const user = JSON.parse(decodeURIComponent(userParam))
         setUserData(user)
         initializeSocket(user, roomParam)
+
+        // Root-level fix: if obfuscation is enabled but we received plain params
+        // (e.g. homepage bundle was cached), re-encode the URL now so the address
+        // bar never shows readable data.
+        if (URL_OBFUSCATION_ENABLED && typeof window !== 'undefined') {
+          const token = encodeUrlData({ room: roomParam, user })
+          window.history.replaceState({}, '', `/student?s=${token}`)
+        }
       } catch (error) {
         console.error('Failed to parse user data:', error)
       }

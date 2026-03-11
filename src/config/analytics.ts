@@ -1,23 +1,4 @@
-/**
- * ShareMe Analytics — Client-Side Tracking
- *
- * Fire-and-forget analytics that sends events to a Google Apps Script Web App.
- * All calls are completely silent on failure — no UI impact whatsoever.
- *
- * Features:
- *   - Pre-aggregates duplicate events before sending (e.g. 5 FILE_SHARED → one call with value 5)
- *   - Sends all events in a single batch request to reduce network overhead
- *   - Flushes pending events on page unload / visibility change
- *   - Retries once on failure after 3 seconds
- *
- * Usage:
- *   import { trackEvent, trackVisitor, trackFileSize } from '@/config/analytics'
- *   trackEvent('FILE_SHARED')
- *   trackFileSize(fileBytes)
- *   trackVisitor()
- */
 
-// ── Google Apps Script Web App URL ────────────────────────────────
 const ANALYTICS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbydOho5SkvFewC6eXjOAheFcYBCrOneqxRy1aDHekSDFIQKb2e7YsBcnjmwhF6UnYVD/exec'
 
 // ── Event Types ───────────────────────────────────────────────────

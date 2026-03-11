@@ -34,6 +34,7 @@ import FullPageLoader from '@/components/FullPageLoader'
 import { useOneShareWebRTC } from '@/hooks/useOneShareWebRTC'
 import { useNetworkStatus } from '@/hooks/useNetworkStatus'
 import { trackEvent, AnalyticsEvent, trackFileSize } from '@/config/analytics'
+import { installConsoleMask } from '@/config/urlObfuscation'
 
 // Icons
 import {
@@ -153,6 +154,7 @@ function OneShareInner() {
 
     // Show loading screen for minimum 1 second
     useEffect(() => {
+        installConsoleMask()
         const timer = setTimeout(() => {
             setIsPageLoading(false)
         }, 3000)

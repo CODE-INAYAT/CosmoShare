@@ -49,6 +49,7 @@ import gsap from 'gsap'
 import { ScrollTrigger } from 'gsap/ScrollTrigger'
 import { roomNumbers } from '@/config/rooms'
 import { AUTO_LOGIN_ENABLED, AUTO_LOGIN_PASSWORD, hashPassword, verifyHash } from '@/config/autoLogin'
+import { URL_OBFUSCATION_ENABLED, encodeUrlData } from '@/config/urlObfuscation'
 import { SupportDialog } from '@/components/SupportDialog'
 import { trackVisitor } from '@/config/analytics'
 
@@ -500,7 +501,12 @@ export default function Home() {
         userType: 'student'
       }
 
-      router.push(`/student?room=${roomNumber}&user=${encodeURIComponent(JSON.stringify(userData))}`)
+      if (URL_OBFUSCATION_ENABLED) {
+        const token = encodeUrlData({ room: roomNumber, user: userData })
+        router.push(`/student?s=${token}`)
+      } else {
+        router.push(`/student?room=${roomNumber}&user=${encodeURIComponent(JSON.stringify(userData))}`)
+      }
     } catch (error) {
       setError('Failed to join room. Please try again.')
       setIsLoading(false)
