@@ -1235,7 +1235,7 @@ function AdminDashboardInner() {
           </div>
         )}
         <Dialog open={receiveDialogOpen} onOpenChange={setReceiveDialogOpen}>
-          <DialogContent className="glass border-white/10">
+          <DialogContent className="bg-card border-border shadow-2xl">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
                 Receiving files
@@ -1277,7 +1277,7 @@ function AdminDashboardInner() {
         </Dialog>
         {/* Download selection dialog */}
         <Dialog open={downloadDialogOpen} onOpenChange={setDownloadDialogOpen}>
-          <DialogContent className="glass border-white/10">
+          <DialogContent className="bg-card border-border shadow-2xl">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
                 <Download className="w-5 h-5" />
