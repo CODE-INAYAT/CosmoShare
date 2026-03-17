@@ -332,6 +332,49 @@ function AdminDashboardInner() {
           return rest
         })
       }, 700)
+    },
+    onTransferCancelled: (fromId, sender) => {
+      // Clear any in-progress receive state for this sender
+      setRecvProgress(prev => {
+        const next = { ...prev }
+        for (const key of Object.keys(next)) {
+          if (next[key].fromId === fromId) {
+            delete next[key]
+          }
+        }
+        return next
+      })
+
+      // Hide speed dial by resetting received counter
+      setRecvCounter({ total: 0, received: 0 })
+
+      // Show persistent toast notification
+      const senderName = sender?.name || 'Student'
+      const senderUniqueId = sender?.uniqueId || ''
+      toast({
+        title: (
+          <div className="flex items-center gap-2 text-red-600">
+            <X className="w-4 h-4" />
+            <span className="font-semibold">Transfer Cancelled</span>
+          </div>
+        ) as any,
+        description: (
+          <div className="mt-1.5 space-y-2">
+            <div className="text-sm text-foreground">
+              <span className="font-medium">{senderName}</span> {senderUniqueId ? `(${senderUniqueId})` : ''} stopped the transfer.
+            </div>
+            <div className="text-xs text-muted-foreground bg-muted/50 p-2.5 rounded-md border border-border/50 flex items-start gap-2">
+              <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5 text-amber-500" />
+              <span>Any files fully received before cancellation are still available in your received list.</span>
+            </div>
+          </div>
+        ) as any,
+        variant: 'default',
+        duration: Infinity,
+      })
+
+      // Analytics: track canceled transfer
+      trackEvent(AnalyticsEvent.CANCELED_TRANSFER)
     }
   })
 
