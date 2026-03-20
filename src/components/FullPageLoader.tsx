@@ -123,7 +123,7 @@ export default function FullPageLoader({ variant = 'oneshare' }: FullPageLoaderP
                 className="absolute bottom-8 left-1/2 -translate-x-1/2"
             >
                 <p className="text-xs text-muted-foreground/50 font-medium tracking-widest uppercase">
-                    ShareMe
+                    ShareBytes
                 </p>
             </motion.div>
         </div>

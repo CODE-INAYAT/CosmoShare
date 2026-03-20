@@ -651,7 +651,7 @@ export default function Home() {
               >
                 <Share2 className="w-5 h-5 text-white" />
               </motion.div>
-              <span className="text-xl font-bold gradient-text">ShareMe</span>
+              <span className="text-xl font-bold gradient-text">ShareBytes</span>
             </div>
 
             <div className="hidden md:flex items-center gap-8">
@@ -1383,7 +1383,7 @@ export default function Home() {
               <div className="w-8 h-8 md:w-10 md:h-10 rounded-xl gradient-primary flex items-center justify-center">
                 <Share2 className="w-4 h-4 md:w-5 md:h-5 text-white" />
               </div>
-              <span className="text-base md:text-lg font-bold gradient-text">ShareMe</span>
+              <span className="text-base md:text-lg font-bold gradient-text">ShareBytes</span>
             </div>
             <p className="text-muted-foreground text-sm md:text-sm text-center" style={{ fontFamily: 'Consolas, monospace' }}>
               Made With <svg className="mx-1 inline-block" style={{ height: '18px', width: '18px' }} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">

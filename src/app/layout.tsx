@@ -14,21 +14,21 @@ const plusJakartaSans = Plus_Jakarta_Sans({
 });
 
 export const metadata: Metadata = {
-  title: "ShareMe - P2P File Sharing for Labs",
+  title: "ShareBytes - P2P File Sharing for Labs",
   description: "Peer-to-peer file sharing system for lab environments. Share files instantly with friends and submit print requests to lab admin.",
-  keywords: ["ShareMe", "WebRTC", "P2P", "File Sharing", "Lab", "Education", "Print", "Next.js"],
-  authors: [{ name: "ShareMe Team" }],
+  keywords: ["ShareBytes", "WebRTC", "P2P", "File Sharing", "Lab", "Education", "Print", "Next.js"],
+  authors: [{ name: "ShareBytes Team" }],
   icons: {
     icon: ".\\favicon.ico",
   },
   openGraph: {
-    title: "ShareMe - P2P File Sharing",
+    title: "ShareBytes - P2P File Sharing",
     description: "Peer-to-peer file sharing system for lab environments",
     type: "website",
   },
   twitter: {
     card: "summary_large_image",
-    title: "ShareMe - P2P File Sharing",
+    title: "ShareBytes - P2P File Sharing",
     description: "Peer-to-peer file sharing system for lab environments",
   },
 };
