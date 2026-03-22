@@ -179,7 +179,7 @@ export function SupportDialog({ externalOpen, onExternalOpenChange }: SupportDia
 
     const options = [
         { icon: Bug, title: 'Report Bug', description: 'Something not working properly?', color: 'text-red-500 bg-red-500/10 hover:bg-red-500/20' },
-        { icon: Lightbulb, title: 'Feedback / Suggestion', description: 'Help me improve ShareBytes', color: 'text-amber-500 bg-amber-500/10 hover:bg-amber-500/20' },
+        { icon: Lightbulb, title: 'Feedback / Suggestion', description: 'Help me improve Droptio', color: 'text-amber-500 bg-amber-500/10 hover:bg-amber-500/20' },
         { icon: Monitor, title: 'Lab Add Request', description: 'Want to add your lab room?', color: 'text-emerald-500 bg-emerald-500/10 hover:bg-emerald-500/20' },
         { icon: Mail, title: 'Contact Support', description: 'Get in touch with me directly', color: 'text-blue-500 bg-blue-500/10 hover:bg-blue-500/20' }
     ]

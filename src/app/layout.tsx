@@ -14,21 +14,21 @@ const plusJakartaSans = Plus_Jakarta_Sans({
 });
 
 export const metadata: Metadata = {
-  title: "ShareBytes - P2P File Sharing for Labs",
+  title: "Droptio - P2P File Sharing for Labs",
   description: "Peer-to-peer file sharing system for lab environments. Share files instantly with friends and submit print requests to lab admin.",
-  keywords: ["ShareBytes", "WebRTC", "P2P", "File Sharing", "Lab", "Education", "Print", "Next.js"],
-  authors: [{ name: "ShareBytes Team" }],
+  keywords: ["Droptio", "WebRTC", "P2P", "File Sharing", "Lab", "Education", "Print", "Next.js"],
+  authors: [{ name: "Droptio Team" }],
   icons: {
     icon: ".\\favicon.ico",
   },
   openGraph: {
-    title: "ShareBytes - P2P File Sharing",
+    title: "Droptio - P2P File Sharing",
     description: "Peer-to-peer file sharing system for lab environments",
     type: "website",
   },
   twitter: {
     card: "summary_large_image",
-    title: "ShareBytes - P2P File Sharing",
+    title: "Droptio - P2P File Sharing",
     description: "Peer-to-peer file sharing system for lab environments",
   },
 };

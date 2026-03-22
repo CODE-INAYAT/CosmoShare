@@ -1,5 +1,5 @@
 /**
- * ShareBytes Analytics — Google Apps Script Backend
+ * Droptio Analytics — Google Apps Script Backend
  *
  * Deploy as a Web App (Execute as "Me", Access "Anyone").
  * Receives analytics events via POST and updates "Day Stats"
@@ -222,7 +222,7 @@ function doPost(e) {
 function doGet(e) {
   return ContentService.createTextOutput(
     JSON.stringify({
-      status: 'ShareBytes Analytics endpoint is active',
+      status: 'Droptio Analytics endpoint is active',
       columns: HEADERS,
       supportsBatch: true
     })
