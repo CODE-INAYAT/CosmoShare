@@ -28,7 +28,7 @@ import {
     DrawerTrigger,
 } from "@/components/ui/drawer"
 
-const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzXzZMATtnpnKATqAFeoIdK5B0SwK-dvsom-QNSc4rBV4ngx2XxrDvk1bKl9zOZQUHaPA/exec';
+const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxhCS7omBCoZnNU6XJJ_aUvwWVIwiDI0qkoLNsKHixnhQLSLMN4YaDdnfqBX7iXiCXM3A/exec';
 
 interface SupportDialogProps {
     externalOpen?: boolean

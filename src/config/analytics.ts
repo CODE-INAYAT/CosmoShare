@@ -1,5 +1,4 @@
-
-const ANALYTICS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbydOho5SkvFewC6eXjOAheFcYBCrOneqxRy1aDHekSDFIQKb2e7YsBcnjmwhF6UnYVD/exec'
+const ANALYTICS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycby2PP93XjqmRjM3N-MePn1SJFCgioCNqPHRbtyoP0SI2y8afpEoBTMzeoEnqJBoTdeMXw/exec'
 
 // ── Event Types ───────────────────────────────────────────────────
 export const AnalyticsEvent = {
