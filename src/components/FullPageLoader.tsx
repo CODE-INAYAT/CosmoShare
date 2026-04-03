@@ -120,10 +120,12 @@ export default function FullPageLoader({ variant = 'oneshare' }: FullPageLoaderP
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 transition={{ delay: 0.8, duration: 0.6 }}
-                className="absolute bottom-8 left-1/2 -translate-x-1/2"
+                className="absolute bottom-8 left-1/2 -translate-x-1/2 flex items-center gap-3"
             >
-                <p className="text-xs text-muted-foreground/50 font-medium tracking-widest uppercase">
-                    Droptio
+                <img src="/logo.svg" alt="CosmoShare Logo" className="block dark:hidden h-6 md:h-8 w-auto transition-transform hover:scale-105" />
+                <img src="/logoDark.svg" alt="CosmoShare Logo" className="hidden dark:block h-6 md:h-8 w-auto transition-transform hover:scale-105" />
+                <p className="text-sm md:text-base font-bold tracking-widest uppercase gradient-text">
+                    CosmoShare
                 </p>
             </motion.div>
         </div>

@@ -14,21 +14,19 @@ const plusJakartaSans = Plus_Jakarta_Sans({
 });
 
 export const metadata: Metadata = {
-  title: "Droptio - P2P File Sharing for Labs",
+  title: "CosmoShare - P2P File Sharing for Labs",
   description: "Peer-to-peer file sharing system for lab environments. Share files instantly with friends and submit print requests to lab admin.",
-  keywords: ["Droptio", "WebRTC", "P2P", "File Sharing", "Lab", "Education", "Print", "Next.js"],
-  authors: [{ name: "Droptio Team" }],
-  icons: {
-    icon: ".\\favicon.ico",
-  },
+  keywords: ["CosmoShare", "WebRTC", "P2P", "File Sharing", "Lab", "Education", "Print", "Next.js"],
+  authors: [{ name: "CosmoShare Team" }],
+  manifest: "/manifest.webmanifest",
   openGraph: {
-    title: "Droptio - P2P File Sharing",
+    title: "CosmoShare - P2P File Sharing",
     description: "Peer-to-peer file sharing system for lab environments",
     type: "website",
   },
   twitter: {
     card: "summary_large_image",
-    title: "Droptio - P2P File Sharing",
+    title: "CosmoShare - P2P File Sharing",
     description: "Peer-to-peer file sharing system for lab environments",
   },
 };

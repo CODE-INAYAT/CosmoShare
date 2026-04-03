@@ -644,14 +644,9 @@ export default function Home() {
         <div className="max-w-7xl mx-auto">
           <div className="glass rounded-2xl px-6 py-3 flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <motion.div
-                whileHover={{ rotate: 180, scale: 1.1 }}
-                transition={{ duration: 0.4 }}
-                className="w-10 h-10 rounded-xl gradient-primary flex items-center justify-center glow-sm"
-              >
-                <Share2 className="w-5 h-5 text-white" />
-              </motion.div>
-              <span className="text-xl font-bold gradient-text">Droptio</span>
+              <img src="/logo.svg" alt="CosmoShare Logo" className="block dark:hidden h-8 sm:h-10 w-auto" />
+              <img src="/logoDark.svg" alt="CosmoShare Logo" className="hidden dark:block h-8 sm:h-10 w-auto" />
+              <span className="text-xl font-bold gradient-text">CosmoShare</span>
             </div>
 
             <div className="hidden md:flex items-center gap-8">
@@ -1380,10 +1375,9 @@ export default function Home() {
         <div className="max-w-6xl mx-auto">
           <div className="flex flex-col md:flex-row items-center justify-between gap-4 md:gap-6">
             <div className="flex items-center gap-2">
-              <div className="w-8 h-8 md:w-10 md:h-10 rounded-xl gradient-primary flex items-center justify-center">
-                <Share2 className="w-4 h-4 md:w-5 md:h-5 text-white" />
-              </div>
-              <span className="text-base md:text-lg font-bold gradient-text">Droptio</span>
+              <img src="/logo.svg" alt="CosmoShare Logo" className="block dark:hidden w-auto h-8 md:h-10" />
+              <img src="/logoDark.svg" alt="CosmoShare Logo" className="hidden dark:block w-auto h-8 md:h-10" />
+              <span className="text-base md:text-lg font-bold gradient-text">CosmoShare</span>
             </div>
             <p className="text-muted-foreground text-sm md:text-sm text-center" style={{ fontFamily: 'Consolas, monospace' }}>
               Made With <svg className="mx-1 inline-block" style={{ height: '18px', width: '18px' }} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">

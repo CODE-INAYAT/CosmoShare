@@ -6,7 +6,7 @@ function doPost(e) {
     const ss = SpreadsheetApp.getActiveSpreadsheet();
 
     // Determine Sheet based on Type
-    let sheetName = "Droptio Support Responses";
+    let sheetName = "CosmoShare Support Responses";
     if (data.type === "Lab Add Request") {
       sheetName = "Lab Add Request";
     }
