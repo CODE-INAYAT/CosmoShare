@@ -61,7 +61,7 @@ import { useToast } from '@/hooks/use-toast'
 import { useNetworkStatus } from '@/hooks/useNetworkStatus'
 import { formatBytes } from '@/lib/utils'
 import { AUTO_LOGIN_ENABLED, AUTO_LOGIN_PASSWORD, hashPassword, verifyHash } from '@/config/autoLogin'
-import { trackEvent, AnalyticsEvent, trackFileSize } from '@/config/analytics'
+import { trackEvent, AnalyticsEvent, trackFileSize, setAnalyticsContext } from '@/config/analytics'
 import { installConsoleMask } from '@/config/urlObfuscation'
 
 interface PrintRequest {
@@ -453,6 +453,8 @@ function AdminDashboardInner() {
     socket.on('admin-auth-success', (data: any) => {
       setIsAuthenticated(true)
       socket.emit('join-room', { roomNumber, user })
+      // Set analytics context for this session
+      setAnalyticsContext({ roomNumber, userName: 'Lab Admin', isAdmin: true })
       // Analytics: track admin join + room join
       trackEvent(AnalyticsEvent.ADMIN_JOIN, 1, roomNumber)
       trackEvent(AnalyticsEvent.ROOM_JOIN)

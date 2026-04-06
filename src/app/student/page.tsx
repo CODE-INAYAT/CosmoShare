@@ -77,7 +77,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog'
-import { trackEvent, AnalyticsEvent, trackFileSize } from '@/config/analytics'
+import { trackEvent, AnalyticsEvent, trackFileSize, setAnalyticsContext } from '@/config/analytics'
 import { URL_OBFUSCATION_ENABLED, encodeUrlData, decodeUrlData, installConsoleMask } from '@/config/urlObfuscation'
 
 interface User {
@@ -958,6 +958,8 @@ function StudentDashboardInner() {
     socket.on('connect', () => {
       setIsConnected(true)
       socket.emit('join-room', { roomNumber, user })
+      // Set analytics context for this session
+      setAnalyticsContext({ roomNumber, userName: user.name || '', isAdmin: false })
       // Analytics: track student join + room join
       trackEvent(AnalyticsEvent.STUDENT_JOIN, 1, roomNumber)
       trackEvent(AnalyticsEvent.ROOM_JOIN)

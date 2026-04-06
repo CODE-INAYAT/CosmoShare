@@ -1,4 +1,4 @@
-const ANALYTICS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycby2PP93XjqmRjM3N-MePn1SJFCgioCNqPHRbtyoP0SI2y8afpEoBTMzeoEnqJBoTdeMXw/exec'
+const ANALYTICS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycby9a2TDUNVcSnQRWOG5huQa_fZsB9tHwgYekS-SNT9EX_gG64nnltuCYcQ40qe6Hu-lGg/exec'
 
 // ── Event Types ───────────────────────────────────────────────────
 export const AnalyticsEvent = {
@@ -19,30 +19,57 @@ export const AnalyticsEvent = {
 
 export type AnalyticsEventType = (typeof AnalyticsEvent)[keyof typeof AnalyticsEvent]
 
-// ── Internal: Queue & Flush ───────────────────────────────────────
+// ── Session Context ───────────────────────────────────────────────
+
+interface AnalyticsContext {
+    roomNumber: string
+    userName: string
+    isAdmin: boolean
+}
+
+let _ctx: AnalyticsContext | null = null
+
+export function setAnalyticsContext(ctx: AnalyticsContext) {
+    _ctx = ctx
+}
+
+export function clearAnalyticsContext() {
+    _ctx = null
+}
+
+// ── Types ─────────────────────────────────────────────────────────
 
 interface QueuedEvent {
     event: string
     value: number
     roomNumber?: string
+    userName?: string
+    isAdmin?: boolean
 }
+
+// ── In-Memory Queue ──────────────────────────────────────────────
+// Simple in-memory queue. No localStorage = no double-counting.
+// Events are aggregated before sending to minimize requests.
 
 let eventQueue: QueuedEvent[] = []
 let flushTimer: ReturnType<typeof setTimeout> | null = null
-const FLUSH_DELAY = 2000 // batch window: 2 seconds
+let isFlushing = false
 
-/**
- * Pre-aggregate events: combine duplicates by summing their values.
- * E.g. [{event:'FILE_SHARED', value:1}, {event:'FILE_SHARED', value:1}]
- *   → [{event:'FILE_SHARED', value:2}]
- *
- * FILE_SIZE values are summed (total MB per flush).
- * Events with roomNumber are kept separate per room.
- */
+const FLUSH_DELAY = 2000
+const MAX_RETRIES = 3
+const BASE_RETRY_MS = 1500
+
+// ── Aggregation ──────────────────────────────────────────────────
+
 function aggregateQueue(queue: QueuedEvent[]): QueuedEvent[] {
     const map = new Map<string, QueuedEvent>()
     for (const item of queue) {
-        const key = item.roomNumber ? `${item.event}::${item.roomNumber}` : item.event
+        const key = [
+            item.event,
+            item.roomNumber || '',
+            item.userName || '',
+            item.isAdmin ? '1' : '0'
+        ].join('::')
         const existing = map.get(key)
         if (existing) {
             existing.value += item.value
@@ -53,86 +80,134 @@ function aggregateQueue(queue: QueuedEvent[]): QueuedEvent[] {
     return Array.from(map.values())
 }
 
-function flushQueue() {
-    if (eventQueue.length === 0) return
-    const raw = [...eventQueue]
-    eventQueue = []
-    flushTimer = null
+// ── Payload Builder ──────────────────────────────────────────────
 
-    // Aggregate duplicates to reduce the payload
-    const batch = aggregateQueue(raw)
-
-    // Send entire batch in one request
-    sendBatch(batch)
+function buildPayload(batch: QueuedEvent[]): string {
+    const clean = batch.map(({ event, value, roomNumber, userName, isAdmin }) => {
+        const obj: Record<string, unknown> = { event, value }
+        if (roomNumber) obj.roomNumber = roomNumber
+        if (userName) obj.userName = userName
+        if (isAdmin) obj.isAdmin = true
+        return obj
+    })
+    return JSON.stringify(clean.length === 1 ? clean[0] : { batch: clean })
 }
 
-/**
- * Send a batch of analytics events in a single POST request.
- * The Apps Script accepts both { event, value } and { batch: [...] }.
- *
- * Includes a single retry on failure (3 second delay).
- */
-function sendBatch(batch: QueuedEvent[], isRetry = false) {
-    if (typeof window === 'undefined') return
-    if (!ANALYTICS_SCRIPT_URL || batch.length === 0) return
+// ── Send via fetch (with retry) ──────────────────────────────────
 
+async function sendViaFetch(payload: string, attempt = 0): Promise<boolean> {
     try {
-        const body = JSON.stringify(batch.length === 1 ? batch[0] : { batch })
-
-        fetch(ANALYTICS_SCRIPT_URL, {
+        const res = await fetch(ANALYTICS_SCRIPT_URL, {
             method: 'POST',
             headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-            body,
+            body: payload,
             keepalive: true,
             redirect: 'follow',
-        }).then(res => {
-            // Retry once on server error (5xx) or network issues
-            if (!res.ok && !isRetry) {
-                setTimeout(() => sendBatch(batch, true), 3000)
-            }
-        }).catch(() => {
-            // Retry once on network failure
-            if (!isRetry) {
-                setTimeout(() => sendBatch(batch, true), 3000)
-            }
         })
+
+        if (res.ok) return true
+
+        // Server error — retry with backoff
+        if (attempt < MAX_RETRIES) {
+            await new Promise(r => setTimeout(r, BASE_RETRY_MS * Math.pow(2, attempt)))
+            return sendViaFetch(payload, attempt + 1)
+        }
+        return false
     } catch {
-        // Completely silent
+        if (attempt < MAX_RETRIES) {
+            await new Promise(r => setTimeout(r, BASE_RETRY_MS * Math.pow(2, attempt)))
+            return sendViaFetch(payload, attempt + 1)
+        }
+        return false
     }
 }
 
-// ── Page Lifecycle: Flush on Unload ───────────────────────────────
-// Ensures no events are lost when the user navigates away or closes the tab.
+// ── Send via sendBeacon (page unload only) ───────────────────────
+
+function sendViaBeacon(payload: string): boolean {
+    if (typeof navigator === 'undefined' || !navigator.sendBeacon) return false
+    try {
+        return navigator.sendBeacon(
+            ANALYTICS_SCRIPT_URL,
+            new Blob([payload], { type: 'text/plain;charset=utf-8' })
+        )
+    } catch {
+        return false
+    }
+}
+
+// ── Flush Logic ──────────────────────────────────────────────────
+// Drains the in-memory queue, aggregates, and sends ONCE.
+// The queue is cleared BEFORE sending — this is intentional:
+//   • Prevents any other flush path from re-sending the same events
+//   • Trade-off: if the send fails after all retries, those events are lost
+//   • This is acceptable because double-counting is far worse than
+//     occasionally missing one event
+
+function flush(useBeacon = false) {
+    if (eventQueue.length === 0) return
+
+    // Drain the queue atomically (prevents double-send)
+    const raw = eventQueue.splice(0, eventQueue.length)
+    flushTimer = null
+
+    const aggregated = aggregateQueue(raw)
+    const payload = buildPayload(aggregated)
+
+    if (useBeacon) {
+        // Page is unloading — use sendBeacon (fire-and-forget)
+        sendViaBeacon(payload)
+    } else {
+        // Normal flush — use fetch with retry
+        if (!isFlushing) {
+            isFlushing = true
+            sendViaFetch(payload).finally(() => {
+                isFlushing = false
+            })
+        } else {
+            // Another fetch is in flight — use sendBeacon as fallback
+            sendViaBeacon(payload)
+        }
+    }
+}
+
+// ── Page Lifecycle ───────────────────────────────────────────────
 
 let lifecycleRegistered = false
+let unloadFlushed = false
 
-function registerLifecycleFlush() {
+function registerLifecycle() {
     if (lifecycleRegistered || typeof window === 'undefined') return
     lifecycleRegistered = true
 
-    // visibilitychange fires reliably on tab switch/close on mobile
+    // Single unload handler — only fires ONCE per page lifecycle
+    const onUnload = () => {
+        if (unloadFlushed) return
+        unloadFlushed = true
+        flush(true)
+    }
+
     document.addEventListener('visibilitychange', () => {
-        if (document.visibilityState === 'hidden') {
-            flushQueue()
-        }
+        if (document.visibilityState === 'hidden') onUnload()
     })
 
-    // pagehide fires on navigation/close (more reliable than beforeunload)
-    window.addEventListener('pagehide', () => {
-        flushQueue()
-    })
+    window.addEventListener('pagehide', onUnload)
+    window.addEventListener('beforeunload', onUnload)
 }
 
 // ── Public API ────────────────────────────────────────────────────
 
 /**
- * Track an analytics event. Fire-and-forget.
- * Events are batched within a 2-second window, pre-aggregated, and sent
- * in a single network request. Silently retries once on failure.
+ * Track an analytics event.
  *
- * @param event - Event type from AnalyticsEvent
- * @param value - Numeric value to increment (default: 1)
- * @param roomNumber - Optional room number for room-wise tracking
+ * Events are:
+ *   1. Queued in memory
+ *   2. Batched within a 2s window and pre-aggregated
+ *   3. Sent via fetch with retry (up to 3 attempts)
+ *   4. On page unload: sent via sendBeacon (once only)
+ *
+ * The queue is drained BEFORE sending to prevent any
+ * double-counting from concurrent flush paths.
  */
 export function trackEvent(
     event: AnalyticsEventType | string,
@@ -141,13 +216,19 @@ export function trackEvent(
 ) {
     if (typeof window === 'undefined') return
 
-    // Lazy-register lifecycle handlers on first call
-    registerLifecycleFlush()
+    registerLifecycle()
 
-    eventQueue.push({ event, value, roomNumber })
+    eventQueue.push({
+        event,
+        value,
+        roomNumber: roomNumber || _ctx?.roomNumber || undefined,
+        userName: _ctx?.userName || undefined,
+        isAdmin: _ctx?.isAdmin || undefined,
+    })
 
+    // Schedule a batched flush (coalesces multiple trackEvent calls)
     if (!flushTimer) {
-        flushTimer = setTimeout(flushQueue, FLUSH_DELAY)
+        flushTimer = setTimeout(() => flush(false), FLUSH_DELAY)
     }
 }
 
@@ -156,24 +237,22 @@ export function trackEvent(
  */
 export function trackFileSize(bytes: number) {
     if (!bytes || bytes <= 0) return
-    const mb = Math.round((bytes / (1024 * 1024)) * 100) / 100 // 2 decimal places
+    const mb = Math.round((bytes / (1024 * 1024)) * 100) / 100
     trackEvent(AnalyticsEvent.FILE_SIZE, mb)
 }
 
 /**
  * Track a unique visitor (deduplicated per browser session).
- * Uses sessionStorage so each tab/session is counted only once.
  */
 export function trackVisitor() {
     if (typeof window === 'undefined') return
 
     try {
-        const key = '__sharme_visitor_tracked'
+        const key = '__cosmoshare_visitor_tracked'
         if (sessionStorage.getItem(key)) return
         sessionStorage.setItem(key, '1')
         trackEvent(AnalyticsEvent.VISITOR)
     } catch {
-        // sessionStorage may be unavailable (private browsing etc.)
         trackEvent(AnalyticsEvent.VISITOR)
     }
 }
