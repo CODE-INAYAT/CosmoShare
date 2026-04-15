@@ -1,14 +1,17 @@
 {
-  "name": "CosmoShare",
+  "name": "CosmoShare — P2P File Sharing",
   "short_name": "CosmoShare",
-  "description": "Peer-to-peer file sharing system for lab environments",
+  "description": "Instant peer-to-peer file sharing for lab environments. Share files, links, and code with peers using WebRTC — no uploads, no size limits.",
+  "id": "/",
   "dir": "auto",
   "lang": "en-US",
   "display": "standalone",
   "orientation": "any",
-  "start_url": "/?homescreen=1",
-  "background_color": "#ffffff",
-  "theme_color": "#000000",
+  "start_url": "/",
+  "scope": "/",
+  "background_color": "#09090b",
+  "theme_color": "#10b981",
+  "categories": ["productivity", "utilities", "education"],
   "icons": [
     {
       "src": "/android-chrome-36x36.png",
@@ -44,7 +47,7 @@
       "src": "/android-chrome-192x192.png",
       "sizes": "192x192",
       "type": "image/png",
-      "purpose": "any"
+      "purpose": "any maskable"
     },
     {
       "src": "/android-chrome-256x256.png",
@@ -62,7 +65,7 @@
       "src": "/android-chrome-512x512.png",
       "sizes": "512x512",
       "type": "image/png",
-      "purpose": "any"
+      "purpose": "any maskable"
     }
   ]
 }

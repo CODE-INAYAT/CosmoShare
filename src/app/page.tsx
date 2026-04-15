@@ -44,6 +44,7 @@ import {
   QrCode,
   HelpCircle
 } from 'lucide-react'
+import Image from 'next/image'
 import { useRouter } from 'next/navigation'
 import gsap from 'gsap'
 import { ScrollTrigger } from 'gsap/ScrollTrigger'
@@ -644,8 +645,8 @@ export default function Home() {
         <div className="max-w-7xl mx-auto">
           <div className="glass rounded-2xl px-6 py-3 flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <img src="/logo.svg" alt="CosmoShare Logo" className="block dark:hidden h-8 sm:h-10 w-auto" />
-              <img src="/logoDark.svg" alt="CosmoShare Logo" className="hidden dark:block h-8 sm:h-10 w-auto" />
+              <Image src="/logo.svg" alt="CosmoShare Logo" width={120} height={40} className="block dark:hidden h-8 sm:h-10 w-auto" priority />
+              <Image src="/logoDark.svg" alt="CosmoShare Logo" width={120} height={40} className="hidden dark:block h-8 sm:h-10 w-auto" priority />
               <span className="text-xl font-bold gradient-text">CosmoShare</span>
             </div>
 
@@ -1375,8 +1376,8 @@ export default function Home() {
         <div className="max-w-6xl mx-auto">
           <div className="flex flex-col md:flex-row items-center justify-between gap-4 md:gap-6">
             <div className="flex items-center gap-2">
-              <img src="/logo.svg" alt="CosmoShare Logo" className="block dark:hidden w-auto h-8 md:h-10" />
-              <img src="/logoDark.svg" alt="CosmoShare Logo" className="hidden dark:block w-auto h-8 md:h-10" />
+              <Image src="/logo.svg" alt="CosmoShare Logo" width={120} height={40} className="block dark:hidden w-auto h-8 md:h-10" />
+              <Image src="/logoDark.svg" alt="CosmoShare Logo" width={120} height={40} className="hidden dark:block w-auto h-8 md:h-10" />
               <span className="text-base md:text-lg font-bold gradient-text">CosmoShare</span>
             </div>
             <p className="text-muted-foreground text-sm md:text-sm text-center" style={{ fontFamily: 'Consolas, monospace' }}>

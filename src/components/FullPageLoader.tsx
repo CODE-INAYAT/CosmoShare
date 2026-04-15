@@ -1,5 +1,6 @@
 'use client'
 
+import Image from 'next/image'
 import { motion } from 'framer-motion'
 import { Share2, Users, Printer } from 'lucide-react'
 
@@ -122,8 +123,8 @@ export default function FullPageLoader({ variant = 'oneshare' }: FullPageLoaderP
                 transition={{ delay: 0.8, duration: 0.6 }}
                 className="absolute bottom-8 left-1/2 -translate-x-1/2 flex items-center gap-3"
             >
-                <img src="/logo.svg" alt="CosmoShare Logo" className="block dark:hidden h-6 md:h-8 w-auto transition-transform hover:scale-105" />
-                <img src="/logoDark.svg" alt="CosmoShare Logo" className="hidden dark:block h-6 md:h-8 w-auto transition-transform hover:scale-105" />
+                <Image src="/logo.svg" alt="CosmoShare Logo" width={96} height={32} className="block dark:hidden h-6 md:h-8 w-auto transition-transform hover:scale-105" priority />
+                <Image src="/logoDark.svg" alt="CosmoShare Logo" width={96} height={32} className="hidden dark:block h-6 md:h-8 w-auto transition-transform hover:scale-105" priority />
                 <p className="text-sm md:text-base font-bold tracking-widest uppercase gradient-text">
                     CosmoShare
                 </p>
