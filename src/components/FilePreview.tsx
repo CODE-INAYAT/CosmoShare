@@ -39,7 +39,10 @@ import {
   MessageSquare,
   Copy,
   Clipboard,
-  MoreHorizontal
+  MoreHorizontal,
+  MapPin,
+  User,
+  Phone
 } from 'lucide-react'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
@@ -60,6 +63,8 @@ interface FilePreviewProps {
     allowReshare?: boolean
     method?: 'PW-RTC' | 'SW-RTC' | 'TW-RTC' | 'PW-RTC-F'
     fileId?: string
+    location?: { latitude: number; longitude: number; name: string; address: string }
+    contact?: { name: string; phone: string }
   }
   senderName?: string
   senderUniqueId?: string
@@ -74,6 +79,8 @@ interface FilePreviewProps {
 }
 
 const getFileIcon = (fileType: string, fileName: string) => {
+  if (fileType === 'contact') return User
+  if (fileType === 'location') return MapPin
   if (fileType === 'code') return FileCode
   if (fileType.startsWith('image/')) return Image
   if (fileType.startsWith('video/')) return Video
@@ -203,6 +210,8 @@ const getExtensionFromMime = (mime?: string): string | null => {
 }
 
 const getDisplayExtension = (fileType: string, fileName: string, isLink: boolean): string => {
+  if (fileType === 'contact') return 'CONTACT'
+  if (fileType === 'location') return 'LOCATION'
   if (fileType === 'code') return 'CODE'
   if (isLink) return 'URL'
   const fromName = getExtensionFromName(fileName)
@@ -290,6 +299,13 @@ function FilePreviewInner({ file, senderName, senderUniqueId, recipients, timest
   }, [isPreviewOpen, file])
 
   const handleDownload = () => {
+    if (file.fileType === 'contact' || file.fileType === 'location') {
+      const url = file.fileUrl || file.linkUrl
+      if (url) {
+        window.open(url, '_blank')
+      }
+      return
+    }
     if (file.isLink && file.linkUrl) {
       const href = ensureAbsoluteUrl(file.linkUrl)
       if (href) window.open(href, '_blank')
@@ -411,7 +427,7 @@ function FilePreviewInner({ file, senderName, senderUniqueId, recipients, timest
         <div className="p-3 sm:p-4 ms-4 sm:ms-8 mr-1 sm:mr-4 bg-card border border-border rounded-lg shadow-lg dark:bg-card dark:border-border relative group cursor-default min-h-fit" style={{ borderRadius: 25, paddingBottom: 10, paddingTop: 10 }}>
           <div className="flex items-center justify-between mb-3">
             <div className="text-sm font-normal text-muted-foreground dark:text-gray-300 min-w-0">
-              {file.fileId && <span className="italic text-muted-foreground dark:text-white ml-[5px]">{file.fileType === 'code' ? 'Code ID' : 'File ID'} : {highlight(file.fileId)}</span>}
+              {file.fileId && <span className="italic text-muted-foreground dark:text-white ml-[5px]">{file.fileType === 'code' ? 'Code ID' : (file.isLink || file.fileType === 'link' ? 'Link ID' : 'File ID')} : {highlight(file.fileId)}</span>}
             </div>
             <div className="flex items-center gap-2 shrink-0">
               {onMarkPrinted && !isPrinted && (
@@ -531,11 +547,22 @@ function FilePreviewInner({ file, senderName, senderUniqueId, recipients, timest
                             </Tooltip>
                           </TooltipProvider>
                         </span>
-                        <span className="flex text-xs font-normal text-muted-foreground dark:text-muted-foreground gap-2">
-                          <span className="file-size">{formatFileSize(file.fileSize)}</span>
-                          <svg xmlns="http://www.w3.org/2000/svg" aria-hidden="true" className="self-center" width="3" height="4" viewBox="0 0 3 4" fill="none"><circle cx="1.5" cy="2" r="1.5" fill="#6B7280" /></svg>
-                          <span className="file-type">{getDisplayExtension(file.fileType, file.fileName, file.isLink)}</span>
-                        </span>
+                        {file.fileType === 'contact' ? (
+                          <span className="flex text-xs font-normal text-muted-foreground dark:text-muted-foreground gap-1 items-center">
+                            <Phone className="w-3.5 h-3.5 shrink-0" />
+                            <span className="file-size">{file.contact?.phone || (file.fileUrl && file.fileUrl.startsWith('tel:') ? file.fileUrl.replace('tel:', '') : '')}</span>
+                          </span>
+                        ) : file.fileType === 'location' ? (
+                          <span className="flex text-xs font-normal text-muted-foreground dark:text-muted-foreground gap-2">
+                            <span className="file-size">{file.location?.address || 'Google Maps Location'}</span>
+                          </span>
+                        ) : (
+                          <span className="flex text-xs font-normal text-muted-foreground dark:text-muted-foreground gap-2">
+                            <span className="file-size">{formatFileSize(file.fileSize)}</span>
+                            <svg xmlns="http://www.w3.org/2000/svg" aria-hidden="true" className="self-center" width="3" height="4" viewBox="0 0 3 4" fill="none"><circle cx="1.5" cy="2" r="1.5" fill="#6B7280" /></svg>
+                            <span className="file-type">{getDisplayExtension(file.fileType, file.fileName, file.isLink)}</span>
+                          </span>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -561,13 +588,13 @@ function FilePreviewInner({ file, senderName, senderUniqueId, recipients, timest
                       <TooltipTrigger asChild>
                         <button
                           onClick={handleDownload}
-                          aria-label={file.isLink ? 'Open link' : 'Download'}
+                          aria-label={file.fileType === 'contact' ? 'Call' : (file.fileType === 'location' ? 'Open Map' : (file.isLink ? 'Open link' : 'Download'))}
                           className="cursor-pointer inline-flex items-center justify-center h-7 w-7 sm:h-9 sm:w-9 rounded-full text-primary hover:text-primary/90 hover:bg-primary/10 dark:hover:bg-primary/20 transition-colors transition-transform focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:ring-offset-2 focus-visible:ring-offset-background active:scale-95"
                         >
-                          {file.isLink ? <ExternalLink className="w-4 h-4 sm:w-6 sm:h-6" /> : <svg className="w-4 h-4 sm:w-6 sm:h-6" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><path stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 15v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2M12 4v12m0 0-4-4m4 4 4-4" /></svg>}
+                          {file.isLink || file.fileType === 'contact' || file.fileType === 'location' ? <ExternalLink className="w-4 h-4 sm:w-6 sm:h-6" /> : <svg className="w-4 h-4 sm:w-6 sm:h-6" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><path stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 15v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2M12 4v12m0 0-4-4m4 4 4-4" /></svg>}
                         </button>
                       </TooltipTrigger>
-                      <TooltipContent side="top">{file.isLink ? 'Open link' : 'Download'}</TooltipContent>
+                      <TooltipContent side="top">{file.fileType === 'contact' ? 'Call' : (file.fileType === 'location' ? 'Open Map' : (file.isLink ? 'Open link' : 'Download'))}</TooltipContent>
                     </Tooltip>
                     {onReshare && (isOwnItem || (file.allowReshare ?? true)) && (
                       <Tooltip>

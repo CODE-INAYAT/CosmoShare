@@ -80,6 +80,8 @@ interface PrintRequest {
   isPrinted: boolean
   printCopies?: number
   fileId?: string
+  location?: { latitude: number; longitude: number; name: string; address: string }
+  contact?: { name: string; phone: string }
 }
 
 interface OnlineUser {
@@ -231,7 +233,7 @@ function AdminDashboardInner() {
       })
       const sender = onlineUsers.find(u => u.id === fromId)
       const senderName = (meta as any)?.senderName || sender?.name || 'Student'
-      const senderUniqueId = (meta as any)?.senderUniqueId || sender?.uniqueId || 'ID'
+      const senderUniqueId = (meta as any)?.senderUniqueId || sender?.uniqueId || ''
       const req: PrintRequest = {
         id: Date.now().toString() + Math.random(),
         fileName: meta.fileName,
@@ -250,6 +252,8 @@ function AdminDashboardInner() {
         isPrinted: false,
         message: meta.message,
         fileId: (meta as any)?.fileId || makeFileId(false),
+        location: (meta as any)?.location,
+        contact: (meta as any)?.contact,
       }
       try { if (typeof fileUrl === 'string' && fileUrl.startsWith('blob:')) blobUrlsRef.current.add(fileUrl) } catch { }
       setPrintRequests(prev => [req, ...prev])
@@ -259,7 +263,7 @@ function AdminDashboardInner() {
       trackFileSize(meta.fileSize)
 
       // Auto-download if enabled
-      if (autoDownloadRef.current && fileUrl) {
+      if (autoDownloadRef.current && fileUrl && meta.fileType !== 'contact' && meta.fileType !== 'location') {
         try {
           const a = document.createElement('a')
           a.href = fileUrl as string
@@ -292,7 +296,7 @@ function AdminDashboardInner() {
     onLink: (fromId, linkUrl, message, senderInfo?: { name?: string; uniqueId?: string; fileId?: string }) => {
       const sender = onlineUsers.find(u => u.id === fromId)
       const senderName = senderInfo?.name || sender?.name || 'Student'
-      const senderUniqueId = senderInfo?.uniqueId || sender?.uniqueId || 'ID'
+      const senderUniqueId = senderInfo?.uniqueId || sender?.uniqueId || ''
       const req: PrintRequest = {
         id: Date.now().toString() + Math.random(),
         fileName: linkUrl,
@@ -1059,6 +1063,7 @@ function AdminDashboardInner() {
                                     fileId: request.fileId
                                   }}
                                   senderName={request.senderName}
+                                  senderUniqueId={request.senderUniqueId}
                                   timestamp={request.timestamp}
                                   highlightQuery={debouncedQuery}
                                   onMarkPrinted={!request.isPrinted ? () => handlePrintRequest(request.id, 1) : undefined}

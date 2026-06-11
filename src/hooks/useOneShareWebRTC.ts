@@ -9,6 +9,8 @@ type FileMetadata = {
     fileType: string
     message?: string
     fileId?: string
+    location?: { latitude: number; longitude: number; name: string; address: string }
+    contact?: { name: string; phone: string }
 }
 
 type ReceiveCallbacks = {
@@ -86,6 +88,18 @@ export const useOneShareWebRTC = (
                 try {
                     const obj = JSON.parse(data)
                     switch (obj.type) {
+                        case 'contact-share':
+                            callbacksRef.current.onFileComplete?.(
+                                `tel:${obj.phone}`,
+                                { fileName: obj.name, fileSize: 0, fileType: 'contact', fileId: obj.fileId, contact: { name: obj.name, phone: obj.phone } }
+                            )
+                            return
+                        case 'location-share':
+                            callbacksRef.current.onFileComplete?.(
+                                `https://www.google.com/maps?q=${obj.latitude},${obj.longitude}`,
+                                { fileName: obj.name, fileSize: 0, fileType: 'location', fileId: obj.fileId, location: { latitude: obj.latitude, longitude: obj.longitude, name: obj.name, address: obj.address } }
+                            )
+                            return
                         case 'file-metadata':
                             recvState.current = { meta: obj, buffers: [], received: 0 }
                             callbacksRef.current.onFileMetadata?.(obj)
@@ -146,6 +160,20 @@ export const useOneShareWebRTC = (
                     try {
                         const text = new TextDecoder().decode(u8)
                         const obj = JSON.parse(text)
+                        if (obj?.type === 'contact-share') {
+                            callbacksRef.current.onFileComplete?.(
+                                `tel:${obj.phone}`,
+                                { fileName: obj.name, fileSize: 0, fileType: 'contact', fileId: obj.fileId, contact: { name: obj.name, phone: obj.phone } }
+                            )
+                            return
+                        }
+                        if (obj?.type === 'location-share') {
+                            callbacksRef.current.onFileComplete?.(
+                                `https://www.google.com/maps?q=${obj.latitude},${obj.longitude}`,
+                                { fileName: obj.name, fileSize: 0, fileType: 'location', fileId: obj.fileId, location: { latitude: obj.latitude, longitude: obj.longitude, name: obj.name, address: obj.address } }
+                            )
+                            return
+                        }
                         if (obj?.type === 'file-metadata') {
                             recvState.current = { meta: obj, buffers: [], received: 0 }
                             callbacksRef.current.onFileMetadata?.(obj)

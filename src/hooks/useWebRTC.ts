@@ -4,9 +4,9 @@ import { useEffect, useRef, useState } from 'react'
 import SimplePeer from 'simple-peer'
 
 type ReceiveCallbacks = {
-  onFileMetadata?: (fromId: string, meta: { fileName: string; fileSize: number; fileType: string; message?: string; senderName?: string; senderUniqueId?: string; allowReshare?: boolean; fileId?: string }) => void
+  onFileMetadata?: (fromId: string, meta: { fileName: string; fileSize: number; fileType: string; message?: string; senderName?: string; senderUniqueId?: string; allowReshare?: boolean; fileId?: string; location?: { latitude: number; longitude: number; name: string; address: string }; contact?: { name: string; phone: string } }) => void
   onFileChunk?: (fromId: string, receivedBytes: number, total: number) => void
-  onFileComplete?: (fromId: string, fileBase64: string, meta: { fileName: string; fileSize: number; fileType: string; message?: string; senderName?: string; senderUniqueId?: string; allowReshare?: boolean; fileId?: string }) => void
+  onFileComplete?: (fromId: string, fileBase64: string, meta: { fileName: string; fileSize: number; fileType: string; message?: string; senderName?: string; senderUniqueId?: string; allowReshare?: boolean; fileId?: string; location?: { latitude: number; longitude: number; name: string; address: string }; contact?: { name: string; phone: string } }) => void
   onMessage?: (fromId: string, message: string, sender?: { name?: string; uniqueId?: string; allowReshare?: boolean }) => void
   onLink?: (
     fromId: string,
@@ -208,6 +208,30 @@ export const useWebRTC = (socket: any, roomNumber: string, callbacks: ReceiveCal
 
       if (obj && obj.type) {
         switch (obj.type) {
+          case 'contact-share': {
+            callbacks.onFileComplete?.(targetId, `tel:${obj.phone}`, {
+              fileName: obj.name,
+              fileSize: 0,
+              fileType: 'contact',
+              senderName: obj.senderName,
+              senderUniqueId: obj.senderUniqueId,
+              fileId: obj.fileId,
+              contact: { name: obj.name, phone: obj.phone },
+            })
+            return
+          }
+          case 'location-share': {
+            callbacks.onFileComplete?.(targetId, `https://www.google.com/maps?q=${obj.latitude},${obj.longitude}`, {
+              fileName: obj.name,
+              fileSize: 0,
+              fileType: 'location',
+              senderName: obj.senderName,
+              senderUniqueId: obj.senderUniqueId,
+              fileId: obj.fileId,
+              location: { latitude: obj.latitude, longitude: obj.longitude, name: obj.name, address: obj.address },
+            })
+            return
+          }
           case 'file-metadata': {
             recvState.current.set(targetId, { meta: obj, buffers: [], received: 0 })
             callbacks.onFileMetadata?.(targetId, obj)

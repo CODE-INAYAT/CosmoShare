@@ -514,6 +514,8 @@ function StudentDashboardInner() {
         senderUniqueId,
         fileId: (meta as any)?.fileId || makeFileId(false),
         method: (meta as any)?.method,
+        location: (meta as any)?.location,
+        contact: (meta as any)?.contact,
         timestamp: new Date()
       }, ...prev])
 
@@ -522,7 +524,7 @@ function StudentDashboardInner() {
       trackFileSize(meta.fileSize)
 
       // Auto-download if enabled
-      if (autoDownloadRef.current && fileUrl) {
+      if (autoDownloadRef.current && fileUrl && meta.fileType !== 'contact' && meta.fileType !== 'location') {
         try {
           const a = document.createElement('a')
           a.href = fileUrl as string
@@ -1249,16 +1251,16 @@ function StudentDashboardInner() {
   const performShare = async (targets: string[], isPrintRequest: boolean) => {
     if (targets.length === 0) return
 
-    // Initialize batch aggregation across all targets
-    const bytesPerBatch = selectedFiles.reduce((sum, f) => sum + f.size, 0)
+    // Initialize batch aggregation across all targets (0/empty if codeShareMode)
+    const bytesPerBatch = codeShareMode ? 0 : selectedFiles.reduce((sum, f) => sum + f.size, 0)
     batchTotalRef.current = bytesPerBatch * targets.length
     batchCompletedRef.current = 0
     currentFileTotalRef.current = 0
     currentFileSentRef.current = 0
     // links counted per target
-    linkCountRef.current = linkUrl ? targets.length : 0
+    linkCountRef.current = codeShareMode ? 0 : (linkUrl ? targets.length : 0)
     linksCompletedRef.current = 0
-    if (batchTotalRef.current > 0 || linkCountRef.current > 0) {
+    if (batchTotalRef.current > 0 || linkCountRef.current > 0 || (codeShareMode && codeShareText.trim())) {
       setIsUploading(true)
       setUploadProgress(0)
       setUiProgress(0)
@@ -1330,7 +1332,7 @@ function StudentDashboardInner() {
       }
 
       // Handle code share mode
-      if (codeShareMode && selectedFiles.length === 0 && !linkUrl && codeShareText.trim()) {
+      if (codeShareMode && codeShareText.trim()) {
         // Show progress for code sending
         setUploadProgress(30)
 
@@ -1764,8 +1766,8 @@ function StudentDashboardInner() {
     // 1. Has files OR has link OR (codeShareMode is enabled AND has code)
     if (selectedFiles.length === 0 && !linkUrl && !(codeShareMode && codeShareText.trim())) return
 
-    // Google Link Check
-    if (!bypassGoogleCheck && linkUrl) {
+    // Google Link Check (bypass if codeShareMode is true as link won't be sent)
+    if (!bypassGoogleCheck && linkUrl && !codeShareMode) {
       let type: 'docs' | 'sheets' | 'slides' | 'drive' | null = null
       const lowerUrl = linkUrl.toLowerCase()
 

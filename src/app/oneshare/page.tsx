@@ -70,6 +70,8 @@ import {
     Timer,
     StopCircle,
     UserPlus,
+    User,
+    MapPin,
 } from 'lucide-react'
 
 // Helper to get icon by file type
@@ -378,12 +380,14 @@ function OneShareInner() {
                     name: meta.fileName,
                     url: fileUrl,
                     size: meta.fileSize,
-                    type: meta.fileType
+                    type: meta.fileType,
+                    location: (meta as any)?.location,
+                    contact: (meta as any)?.contact
                 }
                 setReceivedFiles(prev => [...prev, newFile])
 
                 // Auto-download if enabled (for files, not links)
-                if (autoDownload && meta.fileType !== 'link') {
+                if (autoDownload && meta.fileType !== 'link' && meta.fileType !== 'contact' && meta.fileType !== 'location') {
                     const a = document.createElement('a')
                     a.href = fileUrl
                     a.download = meta.fileName
@@ -693,13 +697,20 @@ function OneShareInner() {
             return
         }
 
-        if (selectedFiles.length === 0 && !linkUrl && (!codeShareText || !codeShareMode)) {
-            setJoinError('Please select files, enter a link, or write code to share')
-            return
+        if (codeShareMode) {
+            if (!codeShareText.trim()) {
+                setJoinError('Please write code to share')
+                return
+            }
+        } else {
+            if (selectedFiles.length === 0 && !linkUrl) {
+                setJoinError('Please select files or enter a link to share')
+                return
+            }
         }
 
-        // Create session with file info
-        const files = selectedFiles.map(f => ({
+        // Create session with file info (empty if code share mode)
+        const files = codeShareMode ? [] : selectedFiles.map(f => ({
             name: f.name,
             size: f.size,
             type: f.type
@@ -785,8 +796,8 @@ function OneShareInner() {
 
         console.log('Starting file transfer...')
 
-        // Calculate total bytes for all files upfront
-        const totalBytes = selectedFiles.reduce((sum, f) => sum + f.size, 0)
+        // Calculate total bytes for all files upfront (0 if codeShareMode)
+        const totalBytes = codeShareMode ? 0 : selectedFiles.reduce((sum, f) => sum + f.size, 0)
         totalBytesToSendRef.current = totalBytes
         bytesSentSoFarRef.current = 0
         currentFileSizeRef.current = 0
@@ -802,32 +813,34 @@ function OneShareInner() {
         setForceUploadProgress(false)
 
         try {
-            // Send files - progress is handled in onSendProgress callback
-            for (const file of selectedFiles) {
-                await webrtc.sendFile(file, { message })
-            }
+            if (!codeShareMode) {
+                // Send files - progress is handled in onSendProgress callback
+                for (const file of selectedFiles) {
+                    await webrtc.sendFile(file, { message })
+                }
 
-            // Send link if present (links have no byte progress, so simulate it)
-            if (linkUrl) {
-                // For links, set progress to show activity
-                if (selectedFiles.length === 0) {
+                // Send link if present (links have no byte progress, so simulate it)
+                if (linkUrl) {
+                    // For links, set progress to show activity
+                    if (selectedFiles.length === 0) {
+                        uploadProgressTargetRef.current = 50
+                        setUploadProgress(50) // Links-only: set midway progress
+                    }
+                    await webrtc.sendLink(linkUrl, message)
+                    if (selectedFiles.length === 0) {
+                        uploadProgressTargetRef.current = 90
+                        setUploadProgress(90) // Links completed
+                    }
+                }
+            } else {
+                // Send code if in code share mode
+                if (codeShareText) {
                     uploadProgressTargetRef.current = 50
-                    setUploadProgress(50) // Links-only: set midway progress
+                    setUploadProgress(50)
+                    await webrtc.sendMessage(codeShareText)
+                    uploadProgressTargetRef.current = 100
+                    setUploadProgress(100)
                 }
-                await webrtc.sendLink(linkUrl, message)
-                if (selectedFiles.length === 0) {
-                    uploadProgressTargetRef.current = 90
-                    setUploadProgress(90) // Links completed
-                }
-            }
-
-            // Send code if in code share mode with no files/links
-            if (codeShareMode && selectedFiles.length === 0 && !linkUrl && codeShareText) {
-                uploadProgressTargetRef.current = 50
-                setUploadProgress(50)
-                await webrtc.sendMessage(codeShareText)
-                uploadProgressTargetRef.current = 100
-                setUploadProgress(100)
             }
 
             // ALL files/links sent - wait for UI to smoothly reach 100%
@@ -919,8 +932,8 @@ function OneShareInner() {
         try {
             const ok = await webrtc.sendToReceiver(
                 receiverId,
-                selectedFiles,
-                linkUrl || undefined,
+                codeShareMode ? [] : selectedFiles,
+                codeShareMode ? undefined : (linkUrl || undefined),
                 (codeShareMode ? codeShareText : message) || undefined,
                 codeShareMode,
                 (sent, total) => {
@@ -1313,7 +1326,7 @@ function OneShareInner() {
                                         {/* Generate Code Button */}
                                         <Button
                                             className="w-full gradient-primary text-white glow-button"
-                                            disabled={!isConnected || (selectedFiles.length === 0 && !linkUrl && (!codeShareText || !codeShareMode))}
+                                            disabled={!isConnected || (codeShareMode ? !codeShareText.trim() : (selectedFiles.length === 0 && !linkUrl))}
                                             onClick={handleCreateSession}
                                         >
                                             <Hash className="w-4 h-4 mr-2" />
@@ -1488,25 +1501,25 @@ function OneShareInner() {
                                                                 </div>
                                                             </>
                                                         )}
+                                                        {transferComplete && (
+                                                            <p className="text-center text-lg font-semibold text-emerald-600 dark:text-emerald-400">
+                                                                {codeShareMode
+                                                                    ? 'Code Transferred!'
+                                                                    : 'Files Transferred!'}
+                                                            </p>
+                                                        )}
                                                     </div>
-                                                    {transferComplete && (
-                                                        <p className="text-center text-lg font-semibold text-emerald-600 dark:text-emerald-400">
-                                                            {codeShareMode && selectedFiles.length === 0 && !linkUrl
-                                                                ? 'Code Transferred!'
-                                                                : 'Files Transferred!'}
-                                                        </p>
-                                                    )}
                                                 </div>
 
                                                 <div className="space-y-2">
                                                     <Label className="text-xs text-muted-foreground">
-                                                        {codeShareMode && selectedFiles.length === 0 && !linkUrl
+                                                        {codeShareMode
                                                             ? (transferComplete ? 'Code Sent:' : 'Sending:')
                                                             : (transferComplete ? 'Files Sent:' : 'Sending:')}
                                                     </Label>
                                                     <div className="space-y-2 max-h-48 overflow-y-auto">
                                                         {/* Show code for code share mode */}
-                                                        {codeShareMode && selectedFiles.length === 0 && !linkUrl && codeShareText && (
+                                                        {codeShareMode && codeShareText && (
                                                             <div className="flex items-center gap-3 p-3 bg-slate-800 rounded-xl border border-slate-600">
                                                                 <CodeIcon className="w-5 h-5 text-sky-400 flex-shrink-0" />
                                                                 <div className="min-w-0 flex-1">
@@ -1516,7 +1529,7 @@ function OneShareInner() {
                                                             </div>
                                                         )}
                                                         {/* Show files */}
-                                                        {selectedFiles.map((file, i) => {
+                                                        {!codeShareMode && selectedFiles.map((file, i) => {
                                                             const Icon = getFileIcon(file.name)
                                                             return (
                                                                 <div key={i} className="flex items-center gap-3 p-3 bg-secondary/50 rounded-xl">
@@ -1529,7 +1542,7 @@ function OneShareInner() {
                                                                 </div>
                                                             )
                                                         })}
-                                                        {linkUrl && (
+                                                        {!codeShareMode && linkUrl && (
                                                             <div className="flex items-center gap-3 p-3 bg-secondary/50 rounded-xl">
                                                                 <LinkIcon className="w-5 h-5 text-primary flex-shrink-0" />
                                                                 <div className="min-w-0 flex-1">
@@ -1804,28 +1817,48 @@ function OneShareInner() {
                                                 <Label className="text-xs text-muted-foreground">Received Files:</Label>
                                                 <div className="space-y-2 max-h-48 overflow-y-auto">
                                                     {receivedFiles.map((file, index) => {
-                                                        const Icon = file.type === 'link' ? LinkIcon : getFileIcon(file.name)
+                                                        const Icon = file.type === 'link'
+                                                            ? LinkIcon
+                                                            : (file.type === 'contact'
+                                                                ? User
+                                                                : (file.type === 'location'
+                                                                    ? MapPin
+                                                                    : getFileIcon(file.name)))
+                                                        const isContactOrLocation = file.type === 'contact' || file.type === 'location'
                                                         return (
                                                             <div
                                                                 key={index}
                                                                 className="flex items-center justify-between p-3 bg-secondary/50 rounded-xl"
+                                                                onClick={() => isContactOrLocation && downloadFile(file)}
+                                                                style={isContactOrLocation ? { cursor: 'pointer' } : {}}
                                                             >
                                                                 <div className="flex items-center gap-3 min-w-0">
                                                                     <Icon className="w-5 h-5 text-primary flex-shrink-0" />
                                                                     <div className="min-w-0">
                                                                         <p className="text-sm font-medium truncate">{file.name}</p>
-                                                                        {file.size > 0 && (
+                                                                        {file.type === 'contact' && file.url.startsWith('tel:') && (
+                                                                            <p className="text-xs text-muted-foreground">{file.url.replace('tel:', '')}</p>
+                                                                        )}
+                                                                        {file.type === 'location' && (
+                                                                            <p className="text-xs text-muted-foreground">Google Maps Location</p>
+                                                                        )}
+                                                                        {file.size > 0 && file.type !== 'contact' && file.type !== 'location' && (
                                                                             <p className="text-xs text-muted-foreground">{formatBytes(file.size)}</p>
                                                                         )}
                                                                     </div>
                                                                 </div>
                                                                 <Button
                                                                     size="sm"
-                                                                    onClick={() => downloadFile(file)}
+                                                                    onClick={(e) => {
+                                                                        if (isContactOrLocation) {
+                                                                            e.stopPropagation()
+                                                                        }
+                                                                        downloadFile(file)
+                                                                    }}
                                                                     className="gap-1 flex-shrink-0"
                                                                 >
-                                                                    {file.type === 'link' ? <ExternalLink className="w-4 h-4" /> : <Download className="w-4 h-4" />}
-                                                                    {file.type === 'link' ? 'Open' : 'Save'}
+                                                                    {file.type === 'link' || isContactOrLocation ? <ExternalLink className="w-4 h-4" /> : <Download className="w-4 h-4" />}
+                                                                    {file.type === 'link' ? 'Open' : (file.type === 'contact' ? 'Call' : (file.type === 'location' ? 'Map' : 'Save'))}
                                                                 </Button>
                                                             </div>
                                                         )
