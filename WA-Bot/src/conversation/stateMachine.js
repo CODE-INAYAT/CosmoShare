@@ -56,6 +56,18 @@ function parseInput(text, currentState) {
       return { type: 'text', value: normalized };
     }
 
+    case STATES.LABSHARE_STUDENT_OPTION: {
+      const studentOpt = validators.isValidStudentOption(normalized);
+      if (studentOpt) return { type: 'studentOption', value: studentOpt };
+      return { type: 'text', value: normalized };
+    }
+
+    case STATES.LABSHARE_PICK_MEMBER: {
+      const memberId = validators.isValidMemberId(normalized);
+      if (memberId) return { type: 'memberId', value: memberId };
+      return { type: 'text', value: normalized };
+    }
+
     default:
       return { type: 'text', value: normalized };
   }
@@ -79,7 +91,8 @@ async function processMessage(userId, messageText, sessionMgr, sendProgress) {
   // ── Global: menu/9 from ANY state → show main menu ──────────────
   if (input.type === 'menu') {
     if (session && (currentState === STATES.COLLECTING || currentState === STATES.LABSHARE_ROOM ||
-        currentState === STATES.LABSHARE_RECIPIENT || currentState === STATES.CHOOSE_METHOD)) {
+        currentState === STATES.LABSHARE_RECIPIENT || currentState === STATES.LABSHARE_STUDENT_OPTION ||
+        currentState === STATES.LABSHARE_PICK_MEMBER || currentState === STATES.CHOOSE_METHOD)) {
       sessionMgr.destroySession(userId);
     }
     const name = sessionMgr.getDisplayName(userId);
@@ -91,6 +104,7 @@ async function processMessage(userId, messageText, sessionMgr, sendProgress) {
       session.codeSnippets = [];
       session.roomNumber = null;
       session.recipientType = null;
+      session.targetMemberId = null;
     }
     return formatter.mainMenu(name);
   }
@@ -136,20 +150,20 @@ async function processMessage(userId, messageText, sessionMgr, sendProgress) {
 
       if (input.type === 'menuOption') {
         switch (input.value) {
-          case '1': // OneShare
+          case '1': // OneShare (uses MultiShare backend)
             session.selectedMethod = 'oneshare';
             sessionMgr.setState(userId, STATES.COLLECTING);
             return formatter.collectingEntry('oneshare');
 
-          case '2': // MultiShare
-            session.selectedMethod = 'multishare';
+          case '2': // LabShare – Submit for Print (Lab Admin)
+            session.selectedMethod = 'labshare_print';
             sessionMgr.setState(userId, STATES.COLLECTING);
-            return formatter.collectingEntry('multishare');
+            return formatter.collectingEntry('labshare_print');
 
-          case '3': // LabShare
-            session.selectedMethod = 'labshare';
+          case '3': // LabShare – Share with Students
+            session.selectedMethod = 'labshare_students';
             sessionMgr.setState(userId, STATES.COLLECTING);
-            return formatter.collectingEntry('labshare');
+            return formatter.collectingEntry('labshare_students');
 
           case '4': // Edit Name
             sessionMgr.setState(userId, STATES.EDIT_NAME);
@@ -214,6 +228,10 @@ async function processMessage(userId, messageText, sessionMgr, sendProgress) {
 
       // Text → code snippet
       if (input.type === 'text' && input.value) {
+        // Block code snippets for LabShare Print
+        if (session.selectedMethod === 'labshare_print') {
+          return formatter.codeSnippetBlockedByPrint();
+        }
         if (session.files.length > 0 || session.links.length > 0) {
           return formatter.codeSnippetBlockedByFiles();
         }
@@ -229,7 +247,20 @@ async function processMessage(userId, messageText, sessionMgr, sendProgress) {
       if (input.type === 'room') {
         session.roomNumber = input.value;
 
-        // Code snippets → auto-skip recipient (always students)
+        // Route based on selectedMethod
+        if (session.selectedMethod === 'labshare_print') {
+          // Submit for Print: auto-set recipient to 'print', skip sub-menu
+          session.recipientType = 'print';
+          return await _executeLabShare(userId, session, sessionMgr, sendProgress);
+        }
+
+        if (session.selectedMethod === 'labshare_students') {
+          // Go directly to User ID input (no sub-menu)
+          sessionMgr.setState(userId, STATES.LABSHARE_PICK_MEMBER);
+          return formatter.showStudentOptions(input.value);
+        }
+
+        // Legacy labshare fallback (backward compat)
         if (session.codeSnippets.length > 0) {
           session.recipientType = 'students';
           return await _executeLabShare(userId, session, sessionMgr, sendProgress);
@@ -242,7 +273,48 @@ async function processMessage(userId, messageText, sessionMgr, sendProgress) {
       return formatter.invalidRoomError(config.validRooms);
     }
 
-    // ── LABSHARE_RECIPIENT ────────────────────────────────────────
+    // ── LABSHARE_STUDENT_OPTION (accepts '1' for all or User ID) ────
+    case STATES.LABSHARE_STUDENT_OPTION: {
+      const normalized = validators.normalizeInput(messageText);
+
+      // '1' = Send to All Students
+      if (normalized === '1') {
+        session.recipientType = 'students';
+        return await _executeLabShare(userId, session, sessionMgr, sendProgress);
+      }
+
+      // Otherwise treat as User ID
+      const memberId = validators.isValidMemberId(normalized);
+      if (memberId) {
+        session.targetMemberId = memberId;
+        session.recipientType = 'single';
+        return await _executeLabShare(userId, session, sessionMgr, sendProgress);
+      }
+
+      return formatter.invalidMemberIdError();
+    }
+
+    // ── LABSHARE_PICK_MEMBER (accepts '1' for all or User ID) ──────
+    case STATES.LABSHARE_PICK_MEMBER: {
+      const normalizedPick = validators.normalizeInput(messageText);
+
+      // '1' = Send to All Students
+      if (normalizedPick === '1') {
+        session.recipientType = 'students';
+        return await _executeLabShare(userId, session, sessionMgr, sendProgress);
+      }
+
+      // Otherwise treat as User ID
+      if (input.type === 'memberId') {
+        session.targetMemberId = input.value;
+        session.recipientType = 'single';
+        return await _executeLabShare(userId, session, sessionMgr, sendProgress);
+      }
+
+      return formatter.invalidMemberIdError();
+    }
+
+    // ── LABSHARE_RECIPIENT (legacy, kept for backward compat) ─────
     case STATES.LABSHARE_RECIPIENT: {
       if (input.type === 'recipient') {
         session.recipientType = input.value === '1' ? 'print' : 'all';
@@ -254,7 +326,6 @@ async function processMessage(userId, messageText, sessionMgr, sendProgress) {
 
     // ── Processing states (shouldn't receive messages) ────────────
     case STATES.PROCESSING_ONESHARE:
-    case STATES.PROCESSING_MULTISHARE:
     case STATES.PROCESSING_LABSHARE:
       return `⏳ Please wait, your files are being shared...`;
 
@@ -276,14 +347,15 @@ async function _processShare(userId, session, sessionMgr, stats, sendProgress) {
   switch (method) {
     case 'oneshare':
       return await _executeOneShare(userId, session, sessionMgr, stats, sendProgress);
-    case 'multishare':
-      return await _executeMultiShare(userId, session, sessionMgr, stats, sendProgress);
+
+    case 'labshare_print':
+    case 'labshare_students':
     case 'labshare': {
-      // LabShare needs room number first
+      // All LabShare variants need room number first
       sessionMgr.setState(userId, STATES.LABSHARE_ROOM);
-      const hasCode = stats.totalCodeSnippets > 0;
-      return formatter.askRoomNumber(hasCode);
+      return formatter.askRoomNumber();
     }
+
     default:
       // Fallback (shouldn't happen)
       sessionMgr.setState(userId, STATES.MAIN_MENU);
@@ -291,6 +363,9 @@ async function _processShare(userId, session, sessionMgr, stats, sendProgress) {
   }
 }
 
+/**
+ * Execute OneShare (uses MultiShare backend — multi-receiver, 5-minute TTL).
+ */
 async function _executeOneShare(userId, session, sessionMgr, stats, sendProgress) {
   sessionMgr.setState(userId, STATES.PROCESSING_ONESHARE);
   try {
@@ -300,11 +375,11 @@ async function _executeOneShare(userId, session, sessionMgr, stats, sendProgress
     }
     const sessionData = sessionMgr.getSessionData(userId);
 
-    const result = await shareManager.createOneShare(sessionData);
+    const result = await shareManager.createMultiShare(sessionData);
 
     const successMsg = formatter.oneShareSuccess({
       code: result.code,
-      validFor: '10 Minutes',
+      validFor: '5 Minutes',
       totalFiles: stats.totalFiles,
       links: stats.totalLinks,
       codeSnippets: stats.totalCodeSnippets,
@@ -317,37 +392,6 @@ async function _executeOneShare(userId, session, sessionMgr, stats, sendProgress
     return successMsg;
   } catch (err) {
     logger.error('OneShare creation failed', { userId, error: err.message });
-    sessionMgr.setState(userId, STATES.MAIN_MENU);
-    return formatter.serviceUnavailableMessage();
-  }
-}
-
-async function _executeMultiShare(userId, session, sessionMgr, stats, sendProgress) {
-  sessionMgr.setState(userId, STATES.PROCESSING_MULTISHARE);
-  try {
-    const sendingMsg = formatter.sendingMessage(stats);
-    if (sendProgress) {
-      await sendProgress(sendingMsg);
-    }
-    const sessionData = sessionMgr.getSessionData(userId);
-
-    const result = await shareManager.createMultiShare(sessionData);
-
-    const successMsg = formatter.multiShareSuccess({
-      code: result.code,
-      validFor: '5 Minutes',
-      totalFiles: stats.totalFiles,
-      links: stats.totalLinks,
-      codeSnippets: stats.totalCodeSnippets,
-      size: stats.totalSizeMB,
-    });
-
-    sessionMgr.sessions.delete(userId);
-    logger.info('MultiShare created', { userId, code: result.code });
-
-    return successMsg;
-  } catch (err) {
-    logger.error('MultiShare creation failed', { userId, error: err.message });
     sessionMgr.setState(userId, STATES.MAIN_MENU);
     return formatter.serviceUnavailableMessage();
   }
@@ -367,19 +411,44 @@ async function _executeLabShare(userId, session, sessionMgr, sendProgress) {
     const generatedId = validators.generateUserId(sanitizedName, session.senderPhone);
     const recipientType = session.recipientType === 'students'
       ? 'students'
-      : (session.recipientType === 'print' ? 'print' : 'all');
+      : (session.recipientType === 'print' ? 'print'
+        : (session.recipientType === 'single' ? 'single' : 'all'));
 
     const result = await shareManager.createLabShare(
       sessionData,
       session.roomNumber,
       recipientType,
       sanitizedName || session.senderName,
-      generatedId
+      generatedId,
+      session.targetMemberId  // Pass the target member ID for single-member sharing
     );
 
-    const toLabel = recipientType === 'print'
-      ? 'Lab Admin (Print)'
-      : (recipientType === 'students' ? 'All Students' : 'Everyone (Admin + Students)');
+    // Check if single-member share failed because user was not found
+    if (recipientType === 'single' && result && result.memberNotFound) {
+      // Go back to LABSHARE_PICK_MEMBER so user can try again
+      sessionMgr.setState(userId, STATES.LABSHARE_PICK_MEMBER);
+      return formatter.memberNotFound(session.targetMemberId, session.roomNumber);
+    }
+
+    let toLabel;
+    switch (recipientType) {
+      case 'print':
+        toLabel = 'Lab Admin (Print)';
+        break;
+      case 'students':
+        toLabel = 'All Students';
+        break;
+      case 'single': {
+        // Use actual student name from signaling if available
+        const memberName = (result && result.targetMemberName)
+          ? result.targetMemberName
+          : session.targetMemberId;
+        toLabel = `${memberName} (${session.targetMemberId})`;
+        break;
+      }
+      default:
+        toLabel = 'Everyone (Admin + Students)';
+    }
 
     const successMsg = formatter.labShareSuccess({
       name: (sanitizedName || session.senderName).toUpperCase(),
@@ -393,7 +462,7 @@ async function _executeLabShare(userId, session, sessionMgr, sendProgress) {
     });
 
     sessionMgr.sessions.delete(userId);
-    logger.info('LabShare created', { userId, room: session.roomNumber });
+    logger.info('LabShare created', { userId, room: session.roomNumber, recipientType, targetMemberId: session.targetMemberId });
 
     return successMsg;
   } catch (err) {

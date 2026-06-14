@@ -11,11 +11,12 @@ const STATES = {
   MAIN_MENU: 'MAIN_MENU',
   EDIT_NAME: 'EDIT_NAME',
   COLLECTING: 'COLLECTING',
-  CHOOSE_METHOD: 'CHOOSE_METHOD',       // kept for backward compat, but rarely used now
+  CHOOSE_METHOD: 'CHOOSE_METHOD',            // kept for backward compat, rarely used
   PROCESSING_ONESHARE: 'PROCESSING_ONESHARE',
-  PROCESSING_MULTISHARE: 'PROCESSING_MULTISHARE',
   LABSHARE_ROOM: 'LABSHARE_ROOM',
-  LABSHARE_RECIPIENT: 'LABSHARE_RECIPIENT',
+  LABSHARE_RECIPIENT: 'LABSHARE_RECIPIENT',  // kept for backward compat
+  LABSHARE_STUDENT_OPTION: 'LABSHARE_STUDENT_OPTION', // Send to All / Send to Particular Member
+  LABSHARE_PICK_MEMBER: 'LABSHARE_PICK_MEMBER',       // Enter User ID for specific member
   PROCESSING_LABSHARE: 'PROCESSING_LABSHARE',
 };
 
@@ -123,7 +124,8 @@ class SessionManager {
       senderPhone: phone,
       roomNumber: null,
       recipientType: null,
-      selectedMethod: null,  // 'oneshare' | 'multishare' | 'labshare'
+      selectedMethod: null,     // 'oneshare' | 'labshare_print' | 'labshare_students'
+      targetMemberId: null,     // User ID for single-member LabShare (e.g., 'A7701')
     };
 
     this.sessions.set(userId, session);
@@ -263,6 +265,7 @@ class SessionManager {
           senderPhone: session.senderPhone,
           roomNumber: session.roomNumber,
           recipientType: session.recipientType,
+          targetMemberId: session.targetMemberId,
           selectedMethod: session.selectedMethod,
         };
       }
@@ -302,6 +305,7 @@ class SessionManager {
           roomNumber: saved.roomNumber || null,
           recipientType: saved.recipientType || null,
           selectedMethod: saved.selectedMethod || null,
+          targetMemberId: saved.targetMemberId || null,
         };
 
         this.sessions.set(userId, session);

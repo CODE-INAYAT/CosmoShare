@@ -118,8 +118,9 @@ class ShareManager {
   /**
    * Create a LabShare session.
    * Bot joins the room as a virtual student and sends files to targets.
+   * @param {string} [targetMemberId] - For single-member share, the User ID to target (e.g., 'A7701')
    */
-  async createLabShare(sessionData, roomNumber, recipientType, senderName, senderId) {
+  async createLabShare(sessionData, roomNumber, recipientType, senderName, senderId, targetMemberId) {
     const signalingClient = await connectForLabShare(roomNumber);
 
     // Join the room as a virtual student
@@ -145,16 +146,41 @@ class ShareManager {
       });
     });
 
-    logger.info('Joined lab room', { roomNumber, usersCount: roomUsers.length, senderName, senderId });
+    logger.info('Joined lab room', { roomNumber, usersCount: roomUsers.length, senderName, senderId, recipientType, targetMemberId });
+
+    // For single-member share, validate that the target user is online
+    let targetMemberName = null;
+    if (recipientType === 'single' && targetMemberId) {
+      const targetUser = roomUsers.find(u =>
+        (u.uniqueId && u.uniqueId.toUpperCase() === targetMemberId.toUpperCase()) ||
+        (u.id && u.id.toUpperCase() === targetMemberId.toUpperCase())
+      );
+
+      if (!targetUser) {
+        // Target user not found online — disconnect and return error
+        signalingClient.destroy();
+        return {
+          memberNotFound: true,
+          name: senderName,
+          id: senderId,
+          room: roomNumber,
+          to: recipientType,
+        };
+      }
+
+      // Capture the target member's actual name for the success message
+      targetMemberName = targetUser.name || targetMemberId;
+    }
 
     // Start file transfer to targets
-    this._startLabShareTransfer(signalingClient, sessionData, roomUsers, recipientType, roomNumber, senderName, senderId);
+    this._startLabShareTransfer(signalingClient, sessionData, roomUsers, recipientType, roomNumber, senderName, senderId, targetMemberId);
 
     return {
       name: senderName,
       id: senderId,
       room: roomNumber,
       to: recipientType,
+      targetMemberName,  // Actual student name for single-member shares
     };
   }
 
@@ -228,15 +254,26 @@ class ShareManager {
 
   /**
    * LabShare transfer: send files to admin and/or all users via WebRTC.
+   * @param {string} [targetMemberId] - For single-member share, the User ID to target
    */
-  async _startLabShareTransfer(signalingClient, sessionData, roomUsers, recipientType, roomNumber, senderName, senderId) {
+  async _startLabShareTransfer(signalingClient, sessionData, roomUsers, recipientType, roomNumber, senderName, senderId, targetMemberId) {
     // For lab share, we need to initiate WebRTC with target users
     // The admin is identified by the 'admin-online' event or from room users
-    const targets = recipientType === 'print'
-      ? roomUsers.filter(u => u.name === 'Lab Admin' || u.uniqueId === 'ADMIN')
-      : (recipientType === 'students'
-        ? roomUsers.filter(u => u.name !== 'Lab Admin' && u.uniqueId !== 'ADMIN')
-        : roomUsers);
+    let targets;
+
+    if (recipientType === 'single' && targetMemberId) {
+      // Single member: find the specific user by their ID
+      targets = roomUsers.filter(u =>
+        (u.uniqueId && u.uniqueId.toUpperCase() === targetMemberId.toUpperCase()) ||
+        (u.id && u.id.toUpperCase() === targetMemberId.toUpperCase())
+      );
+    } else if (recipientType === 'print') {
+      targets = roomUsers.filter(u => u.name === 'Lab Admin' || u.uniqueId === 'ADMIN');
+    } else if (recipientType === 'students') {
+      targets = roomUsers.filter(u => u.name !== 'Lab Admin' && u.uniqueId !== 'ADMIN');
+    } else {
+      targets = roomUsers;
+    }
 
     if (targets.length === 0) {
       logger.warn('No target users found in room', { roomNumber, recipientType });

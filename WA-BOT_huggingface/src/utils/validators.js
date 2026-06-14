@@ -112,6 +112,29 @@ function isValidRecipientType(text) {
   return null;
 }
 
+/**
+ * Returns "1" or "2" if valid student sharing option, null otherwise.
+ * 1 = Send to All, 2 = Send to Particular Member
+ */
+function isValidStudentOption(text) {
+  if (typeof text !== 'string') return null;
+  const n = normalizeInput(text);
+  if (n === '1' || n === '2') return n;
+  return null;
+}
+
+/**
+ * Validates a User ID for single-member LabShare (e.g., "A7701").
+ * Format: 1 letter (case-insensitive) followed by digits.
+ * Returns the uppercased ID if valid, null otherwise.
+ */
+function isValidMemberId(text) {
+  if (typeof text !== 'string') return null;
+  const n = normalizeInput(text).trim();
+  if (/^[a-zA-Z]\d{1,10}$/.test(n)) return n.toUpperCase();
+  return null;
+}
+
 // ─── Name & ID Utilities ────────────────────────────────────────────
 
 /**
@@ -248,6 +271,8 @@ module.exports = {
   isValidShareMethod,
   isValidRoomNumber,
   isValidRecipientType,
+  isValidStudentOption,
+  isValidMemberId,
   sanitizeName,
   generateUserId,
   validateFileSize,

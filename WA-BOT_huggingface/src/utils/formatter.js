@@ -9,9 +9,9 @@ function mainMenu(name) {
     `👋 Hi, *${name}*!\n\n` +
     `Welcome to *CosmoShare WA-BOT*\n\n` +
     `What would you like to do?\n\n` +
-    `1️⃣  OneShare – _One code, one device_\n` +
-    `2️⃣  MultiShare – _One code, many devices_\n` +
-    `3️⃣  LabShare – _Share within a lab room_\n` +
+    `1️⃣  OneShare – _Share instantly with a 4-digit code_\n` +
+    `2️⃣  LabShare – _Submit for Print (Lab Admin)_\n` +
+    `3️⃣  LabShare – _Share with Students_\n` +
     `4️⃣  ✏️ Edit Name\n` +
     `5️⃣  ❓ Help\n\n` +
     `_Reply with a number to continue (e.g., 1, 2, or 3)._`
@@ -21,19 +21,15 @@ function mainMenu(name) {
 function helpMessage() {
   return (
     `📖 *CosmoShare Help*\n\n` +
-    `• *OneShare* — Generate a 4-digit code. Enter it on any device at cosmoshare.live to receive your files instantly.\n\n` +
-    `• *MultiShare* — Same code works on multiple devices at the same time.\n\n` +
-    `• *LabShare* — Send files, links, or code snippets directly to a lab room's dashboard.\n\n` +
+    `• *OneShare* — Generate a 4-digit code. Enter it on any device at cosmoshare.live to receive your files. Multiple devices can use the same code.\n\n` +
+    `• *LabShare (Print)* — Send files directly to the Lab Admin for printing.\n\n` +
+    `• *LabShare (Students)* — Share files with a specific student in a room by their User ID.\n\n` +
     `*Quick Commands*\n` +
     `• *Done/#* — Finish adding files and proceed\n` +
     `• *Cancel/0* — Cancel current session\n` +
     `• *Menu/9* — Return to main menu\n\n` +
     `_Type *menu/9* to go back._`
   );
-}
-
-function invalidMenuOption() {
-  return `Please reply with a number from *1* to *5*.`;
 }
 
 // ─── Name Editing ───────────────────────────────────────────────────
@@ -55,12 +51,19 @@ function nameUpdated(newName) {
 function collectingEntry(method) {
   let icon = '📤';
   let label = 'Share';
+  let body = 'Send your files, links, or code snippets now.\nType *Done/#* when you\'re finished.';
 
   switch (method) {
     case 'oneshare':
       label = 'OneShare'; break;
-    case 'multishare':
-      label = 'MultiShare'; break;
+    case 'labshare_print':
+      icon = '🖨️';
+      label = 'LabShare – Print';
+      body = 'Send your files or links now.\nType *Done/#* when you\'re finished.\n\n*Note:* _Code snippets are not shared with the Lab Admin._';
+      break;
+    case 'labshare_students':
+      icon = '🏫';
+      label = 'LabShare – Students'; break;
     case 'labshare':
       icon = '🏫';
       label = 'LabShare'; break;
@@ -68,8 +71,7 @@ function collectingEntry(method) {
 
   return (
     `${icon} *${label}*\n\n` +
-    `Send your files, links, or code snippets now.\n` +
-    `Type *Done/#* when you're finished.`
+    `${body}`
   );
 }
 
@@ -96,12 +98,8 @@ function fileSkippedTooLargeMessage(fileName, fileSizeMB, maxMB) {
 
 // ─── LabShare Prompts ───────────────────────────────────────────────
 
-function askRoomNumber(hasCodeSnippets) {
-  let msg = `Which room?\n\n_Reply with the room number (e.g., 309)._`;
-  if (hasCodeSnippets) {
-    msg += `\n\n*Note:* _Code snippets are shared only with students (not with Lab Admin)._`;
-  }
-  return msg;
+function askRoomNumber() {
+  return `Which room?\n\n_Reply with the room number (e.g., 309)._`;
 }
 
 function showRecipientOptions(roomNumber) {
@@ -109,6 +107,38 @@ function showRecipientOptions(roomNumber) {
     `Who should receive this in Room *${roomNumber}*?\n\n` +
     `1️⃣  Lab Admin (Print)\n` +
     `2️⃣  Everyone (Admin + Students)\n\n` +
+    `_Type *cancel/0* to go back._`
+  );
+}
+
+function showStudentOptions(roomNumber) {
+  return (
+    `🏫 Room *${roomNumber}* — Share with Students\n\n` +
+    `1️⃣  Send to All Students\n` +
+    `OR type the *User ID* of the student (e.g., *I8960*)\n\n` +
+    `_Type *cancel/0* to go back._`
+  );
+}
+
+function askMemberId(roomNumber) {
+  return (
+    `Enter the *User ID* of the member you want to share with.\n\n` +
+    `_Example: A7701_\n\n` +
+    `_Type *cancel/0* to go back._`
+  );
+}
+
+function memberNotFound(memberId, roomNumber) {
+  return (
+    `⚠️ User *${memberId}* is not currently online in Room *${roomNumber}*.\n\n` +
+    `Please check the User ID and try again, or type *cancel/0* to go back.`
+  );
+}
+
+function invalidMemberIdError() {
+  return (
+    `⚠️ That doesn't look like a valid option.\n\n` +
+    `Type *1* to send to all students, or enter a valid *User ID* (e.g., *A7701*).\n\n` +
     `_Type *cancel/0* to go back._`
   );
 }
@@ -139,25 +169,6 @@ function sendingMessage(stats) {
 // ─── Success Messages ───────────────────────────────────────────────
 
 function oneShareSuccess({ code, validFor, totalFiles, links, codeSnippets, size }) {
-  const isCode = (codeSnippets || 0) > 0;
-
-  let stats;
-  if (isCode) {
-    stats = `📋 Code Snippets: ${codeSnippets}`;
-  } else {
-    stats = `📎 Files: ${totalFiles} | Links: ${links || 0}\n💾 Size: ${size} MB`;
-  }
-
-  return (
-    `✅ *Share Ready!*\n\n` +
-    `📌 Code: *${code}*\n` +
-    `⏰ Valid for: *${validFor}*\n` +
-    `${stats}\n\n` +
-    `Open *cosmoshare.live* and enter the code to receive your files.`
-  );
-}
-
-function multiShareSuccess({ code, validFor, totalFiles, links, codeSnippets, size }) {
   const isCode = (codeSnippets || 0) > 0;
 
   let stats;
@@ -209,6 +220,11 @@ function invalidShareMethodError() {
   return `Please reply with *1*, *2*, or *3*.`;
 }
 
+// Note: invalidMenuOption updated for new 5-option menu
+function invalidMenuOption() {
+  return `Please reply with a number from *1* to *5*.`;
+}
+
 function invalidRoomError(validRooms) {
   const roomList = validRooms.join(', ');
   return (
@@ -228,6 +244,10 @@ function codeSnippetBlockedByFiles() {
 
 function filesBlockedByCodeSnippet() {
   return `⚠️ You're currently sharing code snippets. Type *Done/#* first, then you can share files.`;
+}
+
+function codeSnippetBlockedByPrint() {
+  return `⚠️ Code snippets are not supported for *LabShare – Print*.\n\nPlease send files or links only.`;
 }
 
 // ─── Session & Status Messages ──────────────────────────────────────
@@ -282,11 +302,14 @@ module.exports = {
   // LabShare
   askRoomNumber,
   showRecipientOptions,
+  showStudentOptions,
+  askMemberId,
+  memberNotFound,
+  invalidMemberIdError,
 
   // Sharing
   sendingMessage,
   oneShareSuccess,
-  multiShareSuccess,
   labShareSuccess,
 
   // Errors & Validation
@@ -296,6 +319,7 @@ module.exports = {
   invalidRecipientError,
   codeSnippetBlockedByFiles,
   filesBlockedByCodeSnippet,
+  codeSnippetBlockedByPrint,
 
   // Session & Status
   alreadyInSessionMessage,
