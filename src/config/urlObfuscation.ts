@@ -113,23 +113,55 @@ function maskUrlsInString(value: unknown): unknown {
   return value.replace(/wss?:\/\/[^\s"')]+/gi, (match) => hashUrlForDisplay(match))
 }
 
-function maskArgs(args: unknown[]): unknown[] {
-  return args.map((arg) => {
-    if (typeof arg === 'string') return maskUrlsInString(arg)
-    if (typeof arg === 'object' && arg !== null) {
-      try {
-        // Shallow clone & mask string values
-        const clone: Record<string, unknown> = { ...arg as Record<string, unknown> }
-        for (const k of Object.keys(clone)) {
-          clone[k] = maskUrlsInString(clone[k])
+function maskValueShallow(val: unknown): unknown {
+  if (typeof val === 'string') {
+    return maskUrlsInString(val)
+  }
+  if (typeof val !== 'object' || val === null) {
+    return val
+  }
+
+  if (val instanceof Error) {
+    const maskedMessage = maskUrlsInString(val.message) as string
+    const newErr = new Error(maskedMessage)
+    newErr.name = val.name
+    if (val.stack) {
+      newErr.stack = maskUrlsInString(val.stack) as string
+    }
+    // Copy and mask custom properties (shallow)
+    Object.getOwnPropertyNames(val).forEach((key) => {
+      if (key !== 'message' && key !== 'stack' && key !== 'name') {
+        try {
+          const propVal = (val as any)[key]
+          ;(newErr as any)[key] = typeof propVal === 'string' ? maskUrlsInString(propVal) : propVal
+        } catch {
+          // ignore readonly/getter errors
         }
-        return clone
-      } catch {
-        return arg
+      }
+    })
+    return newErr
+  }
+
+  if (Array.isArray(val)) {
+    return val.map((item) => (typeof item === 'string' ? maskUrlsInString(item) : item))
+  }
+
+  // Regular object - shallow clone and mask
+  try {
+    const clone: Record<string, unknown> = { ...val as Record<string, unknown> }
+    for (const k of Object.keys(clone)) {
+      if (typeof clone[k] === 'string') {
+        clone[k] = maskUrlsInString(clone[k])
       }
     }
-    return arg
-  })
+    return clone
+  } catch {
+    return val
+  }
+}
+
+function maskArgs(args: unknown[]): unknown[] {
+  return args.map(maskValueShallow)
 }
 
 let _consolePatched = false

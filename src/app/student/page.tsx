@@ -8,6 +8,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import WhatsAppIcon from '@/components/WhatsAppIcon'
+import WhatsAppNumberDialog from '@/components/WhatsAppNumberDialog'
 import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
 import { Alert, AlertDescription } from '@/components/ui/alert'
@@ -201,6 +203,44 @@ function StudentDashboardInner() {
   const transferCancelledRef = useRef(false)
   // Success + progress dialogs
   const [successModalOpen, setSuccessModalOpen] = useState(false)
+  const [whatsAppDialogOpen, setWhatsAppDialogOpen] = useState(false)
+
+  // Scroll tracking state for Quick Action FAB collapse near bottom
+  const [isNearBottom, setIsNearBottom] = useState(false)
+  const [isScrollingDown, setIsScrollingDown] = useState(false)
+  const lastScrollTopRef = useRef(0)
+
+  useEffect(() => {
+    const handleScroll = () => {
+      const scrollHeight = document.documentElement.scrollHeight
+      const scrollTop = document.documentElement.scrollTop || document.body.scrollTop
+      const clientHeight = document.documentElement.clientHeight
+      
+      // If we are within 120px of the bottom of the page, collapse the FAB text
+      if (scrollHeight - scrollTop - clientHeight < 120) {
+        setIsNearBottom(true)
+      } else {
+        setIsNearBottom(false)
+      }
+
+      // Track scroll direction (immediately dock on scroll down, restore on scroll up/top)
+      if (scrollTop > lastScrollTopRef.current && scrollTop > 10) {
+        setIsScrollingDown(true)
+      } else if (scrollTop < lastScrollTopRef.current || scrollTop <= 10) {
+        setIsScrollingDown(false)
+      }
+      
+      lastScrollTopRef.current = scrollTop <= 0 ? 0 : scrollTop
+    }
+    
+    window.addEventListener('scroll', handleScroll, { passive: true })
+    handleScroll()
+    return () => window.removeEventListener('scroll', handleScroll)
+  }, [])
+
+  const [isWhatsAppShare, setIsWhatsAppShare] = useState(false)
+  const [whatsAppPhoneNumber, setWhatsAppPhoneNumber] = useState('')
+  const activeXhrRef = useRef<XMLHttpRequest | null>(null)
   const [showAllSkippedRecipients, setShowAllSkippedRecipients] = useState(false) // Dialog for viewing all skipped recipients
   const [successInfo, setSuccessInfo] = useState<null | {
     mode: 'sent' | 'received'
@@ -215,6 +255,8 @@ function StudentDashboardInner() {
     successfulRecipients?: { name: string; uniqueId: string }[] // NEW: Who actually received files
     senders?: { name: string; uniqueId: string }[]
     skippedRecipients?: { name: string; uniqueId: string }[]
+    isWhatsApp?: boolean
+    phoneNumber?: string
   }>(null)
   const [showAllRecipients, setShowAllRecipients] = useState(false)
   const [uiProgress, setUiProgress] = useState(0)
@@ -411,6 +453,13 @@ function StudentDashboardInner() {
     raf = requestAnimationFrame(tick)
     return () => { running = false; try { cancelAnimationFrame(raf) } catch { } }
   }, [isUploading, uploadProgress, forceProgress])
+
+  useEffect(() => {
+    if (!successModalOpen) {
+      setIsWhatsAppShare(false)
+      setWhatsAppPhoneNumber('')
+    }
+  }, [successModalOpen])
 
   const blobUrlsRef = useRef<Set<string>>(new Set())
   // Recycle bin for undo (holds items briefly until permanent delete)
@@ -1828,6 +1877,245 @@ function StudentDashboardInner() {
     performShare(online, isPrintRequest)
   }
 
+  const handleWhatsAppConfirm = async (phoneNumber: string) => {
+    setIsWhatsAppShare(true)
+    setWhatsAppPhoneNumber(phoneNumber)
+    setIsUploading(true)
+    setUploadProgress(5)
+    setUiProgress(0)
+    setForceProgress(false)
+    transferCancelledRef.current = false
+    uploadStartAtRef.current = performance.now()
+    
+    const lastFour = phoneNumber.slice(-4)
+    setTransferRecipients([
+      { id: 'whatsapp', name: 'WhatsApp', uniqueId: `****${lastFour}`, status: 'sending' }
+    ])
+
+    try {
+      if (codeShareMode) {
+        if (!codeShareText.trim()) throw new Error('Please write code to share')
+        
+        setUploadProgress(50)
+        
+        const resp = await fetch('/api/whatsapp/share', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            type: 'code',
+            phoneNumber,
+            codeSnippet: codeShareText,
+            message: message.trim() || undefined
+          })
+        })
+        if (!resp.ok) {
+          const err = await resp.json().catch(() => ({}));
+          throw new Error(err.error || `HTTP error ${resp.status}`);
+        }
+        
+        setUploadProgress(100)
+      } else {
+        if (selectedFiles.length === 0 && !linkUrl) {
+          throw new Error('Please select files or enter a link to share')
+        }
+
+        const totalBytes = selectedFiles.reduce((sum, f) => sum + f.size, 0)
+        let bytesSentSoFar = 0
+
+        // Upload files sequentially
+        for (const file of selectedFiles) {
+          await new Promise<void>((resolve, reject) => {
+            const xhr = new XMLHttpRequest()
+            activeXhrRef.current = xhr
+            xhr.open('POST', '/api/whatsapp/share-file', true)
+            xhr.setRequestHeader('x-phone-number', phoneNumber)
+            xhr.setRequestHeader('x-file-name', encodeURIComponent(file.name))
+            xhr.setRequestHeader('content-type', file.type || 'application/octet-stream')
+            if (message) {
+              xhr.setRequestHeader('x-message', encodeURIComponent(message))
+            }
+
+            xhr.upload.onprogress = (event) => {
+              if (event.lengthComputable) {
+                const currentSent = event.loaded
+                const progress = Math.round(((bytesSentSoFar + currentSent) / (totalBytes || 1)) * 100)
+                const clamped = Math.min(95, progress)
+                setUploadProgress(clamped)
+              }
+            }
+
+            xhr.onload = () => {
+              activeXhrRef.current = null
+              if (xhr.status >= 200 && xhr.status < 300) {
+                bytesSentSoFar += file.size
+                resolve()
+              } else {
+                try {
+                  const err = JSON.parse(xhr.responseText)
+                  reject(new Error(err.error || `HTTP error ${xhr.status}`))
+                } catch {
+                  reject(new Error(`HTTP error ${xhr.status}`))
+                }
+              }
+            }
+
+            xhr.onerror = () => {
+              activeXhrRef.current = null
+              reject(new Error('Network error occurred during upload.'))
+            }
+            xhr.send(file)
+          })
+        }
+
+        // Send link if present
+        if (linkUrl) {
+          if (selectedFiles.length === 0) {
+            setUploadProgress(50)
+          }
+          const resp = await fetch('/api/whatsapp/share', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              type: 'link',
+              phoneNumber,
+              linkUrl,
+              message: message.trim() || undefined
+            })
+          })
+          if (!resp.ok) {
+            const err = await resp.json().catch(() => ({}));
+            throw new Error(err.error || `HTTP error ${resp.status}`);
+          }
+          if (selectedFiles.length === 0) {
+            setUploadProgress(100)
+          }
+        }
+      }
+
+      setForceProgress(true)
+      setUploadProgress(100)
+      
+      await new Promise<void>((resolve) => {
+        const check = setInterval(() => {
+          if (uiProgressRef.current >= 99.8) {
+            clearInterval(check)
+            resolve()
+          }
+        }, 50)
+      })
+
+      setForceProgress(false)
+      setIsUploading(false)
+      
+      setTransferRecipients([
+        { id: 'whatsapp', name: 'WhatsApp', uniqueId: `****${lastFour}`, status: 'completed' }
+      ])
+
+      // Add to sent history
+      const recipientsInfo = [
+        { id: 'whatsapp', name: 'WhatsApp', uniqueId: `****${lastFour}` }
+      ]
+
+      if (codeShareMode) {
+        const codeEntry: FileShare = {
+          id: Date.now().toString() + Math.random(),
+          fileName: codeShareText.slice(0, 50) + (codeShareText.length > 50 ? '...' : ''),
+          fileSize: codeShareText.length,
+          fileType: 'code',
+          isLink: false,
+          message: codeShareText,
+          allowReshare: true,
+          senderId: userData.id,
+          receiverId: 'whatsapp',
+          senderName: userData.name,
+          senderUniqueId: userData.uniqueId,
+          recipients: recipientsInfo,
+          fileId: 'C' + Math.floor(10000 + Math.random() * 90000),
+          timestamp: new Date()
+        }
+        setSentFiles(prev => [codeEntry, ...prev])
+      } else {
+        const filesToShare: FileShare[] = []
+        for (const file of selectedFiles) {
+          const fileUrlLocal = URL.createObjectURL(file)
+          try { blobUrlsRef.current.add(fileUrlLocal) } catch { }
+          filesToShare.push({
+            id: Date.now().toString() + Math.random(),
+            fileName: file.name,
+            fileSize: file.size,
+            fileType: file.type,
+            fileUrl: fileUrlLocal,
+            isLink: false,
+            message,
+            allowReshare: true,
+            senderId: userData.id,
+            receiverId: 'whatsapp',
+            senderName: userData.name,
+            senderUniqueId: userData.uniqueId,
+            recipients: recipientsInfo,
+            fileId: makeFileId(false),
+            timestamp: new Date()
+          })
+        }
+        if (linkUrl) {
+          filesToShare.push({
+            id: Date.now().toString() + Math.random(),
+            fileName: linkUrl,
+            fileSize: linkUrl.length,
+            fileType: 'link',
+            isLink: true,
+            linkUrl: linkUrl,
+            message,
+            allowReshare: true,
+            senderId: userData.id,
+            receiverId: 'whatsapp',
+            senderName: userData.name,
+            senderUniqueId: userData.uniqueId,
+            recipients: recipientsInfo,
+            fileId: makeFileId(true, linkUrl),
+            timestamp: new Date()
+          })
+        }
+        if (filesToShare.length > 0) {
+          setSentFiles(prev => [...filesToShare, ...prev])
+        }
+      }
+
+      setSuccessInfo({
+        mode: 'sent',
+        outcome: 'complete',
+        to: 'WhatsApp',
+        from: userData.name,
+        totalSize: formatBytes(codeShareMode ? 0 : selectedFiles.reduce((sum, f) => sum + f.size, 0)),
+        totalFiles: selectedFiles.length,
+        totalLinks: linkUrl ? 1 : 0,
+        totalCodes: codeShareMode && codeShareText.trim() ? 1 : 0,
+        recipients: [{ name: `WhatsApp (****${lastFour})`, uniqueId: 'WHATSAPP' }],
+        successfulRecipients: [{ name: `WhatsApp (****${lastFour})`, uniqueId: 'WHATSAPP' }],
+        isWhatsApp: true,
+        phoneNumber: phoneNumber
+      })
+      setSuccessModalOpen(true)
+
+      setSelectedFiles([])
+      setLinkUrl('')
+      setMessage('')
+      setCodeShareText('')
+    } catch (err: any) {
+      if (transferCancelledRef.current) {
+        console.log('WhatsApp share cancelled by user')
+      } else {
+        console.error('WhatsApp Share error:', err)
+        alert(err.message || 'WhatsApp share failed')
+      }
+      setForceProgress(false)
+      setIsUploading(false)
+      setIsWhatsAppShare(false)
+      setWhatsAppPhoneNumber('')
+      setTransferRecipients([])
+    }
+  }
+
   // Legacy helper kept for compatibility if needed
   const readFileAsBase64 = (file: File): Promise<string> => {
     return new Promise((resolve, reject) => {
@@ -1902,6 +2190,8 @@ function StudentDashboardInner() {
     } catch { }
     window.location.href = '/'
   }
+
+  const pendingCount = selectedFiles.length + (linkUrl ? 1 : 0)
 
   if (!userData || isPageLoading) {
     return <FullPageLoader variant="labroom" />
@@ -1984,7 +2274,7 @@ function StudentDashboardInner() {
                   <Share2 className="w-4 h-4 sm:w-5 sm:h-5" />
                   Share Files
                 </CardTitle>
-                <CardDescription className="text-xs sm:text-sm">Upload files or share links with friends or submit for printing</CardDescription>
+                <CardDescription className="text-xs sm:text-sm">Upload files or share links with friends or submit for printing.</CardDescription>
               </CardHeader>
               <CardContent className="space-y-3 sm:space-y-4 px-3 sm:px-6">
                 {/* Auto-Share (Admin) Active Banner */}
@@ -2090,6 +2380,29 @@ function StudentDashboardInner() {
                   )}
                 </AnimatePresence>
 
+                {/* Allow reshare toggle */}
+                <div className="flex justify-center w-full">
+                  <div
+                    onClick={() => setAllowReshare(!allowReshare)}
+                    className={`inline-flex items-center gap-3 px-4 py-2 rounded-full border cursor-pointer select-none transition-all duration-300 hover:scale-[1.01] active:scale-95 ${
+                      allowReshare
+                        ? 'bg-primary/5 dark:bg-primary/10 border-primary/20 dark:border-primary/30 text-foreground'
+                        : 'bg-muted/10 border-border/40 hover:bg-muted/20 text-muted-foreground hover:text-foreground'
+                    }`}
+                  >
+                    <span className="text-xs font-medium">Allow Recipient to Reshare</span>
+                    <div
+                      className={`w-4 h-4 rounded-full flex items-center justify-center shrink-0 transition-all duration-200 ${
+                        allowReshare
+                          ? 'bg-primary text-primary-foreground scale-100'
+                          : 'border border-muted-foreground/45 scale-95'
+                      }`}
+                    >
+                      {allowReshare && <Check className="w-2.5 h-2.5 stroke-[3]" />}
+                    </div>
+                  </div>
+                </div>
+
                 {/* Code Share Toggle */}
                 <div className="flex items-center justify-between p-2.5 sm:p-3 bg-secondary/50 dark:bg-secondary/30 rounded-xl border border-border/50">
                   <div className="flex items-center gap-2.5 sm:gap-3">
@@ -2137,144 +2450,27 @@ function StudentDashboardInner() {
                         </p>
                       </div>
 
-                      {/* Allow reshare toggle */}
-                      <div className="flex items-center justify-between">
-                        <Label htmlFor="allow-reshare-msg">Allow recipients to reshare</Label>
-                        <Switch id="allow-reshare-msg" checked={allowReshare} onCheckedChange={(v) => setAllowReshare(!!v)} />
-                      </div>
 
-                      {/* Share To selector */}
-                      <div className="space-y-2">
-                        <Label>Share To:</Label>
-                        <Dialog open={selectModalOpen} onOpenChange={setSelectModalOpen}>
-                          <DialogTrigger asChild>
-                            <Button variant="outline" className="justify-between w-full">
-                              <span>{selectedRecipients.length > 0 ? `${selectedRecipients.length} recipient${selectedRecipients.length > 1 ? 's' : ''} selected` : 'Select recipients'}</span>
-                            </Button>
-                          </DialogTrigger>
-                          <DialogContent className="sm:max-w-2xl p-0 gap-0 overflow-hidden flex flex-col max-h-[85vh]">
-                            {/* Fixed Header */}
-                            <div className="p-6 pb-4 shrink-0">
-                              <DialogHeader>
-                                <DialogTitle>Select Recipients</DialogTitle>
-                                <DialogDescription>Choose one or more recipients to share with.</DialogDescription>
-                              </DialogHeader>
-                            </div>
-
-                            {/* Scrollable Content Area */}
-                            <div className="flex-1 overflow-y-auto px-6 min-h-0">
-                              <Tabs defaultValue="users" className="w-full">
-                                <TabsList className="w-full sticky top-0 bg-background z-10">
-                                  <TabsTrigger value="users" className="flex-1">Online Users</TabsTrigger>
-                                </TabsList>
-                                <TabsContent value="users" className="space-y-3 mt-3">
-                                  <div className="relative">
-                                    <Input
-                                      placeholder="Search users by name or ID"
-                                      value={searchQuery}
-                                      onChange={(e) => setSearchQuery(e.target.value)}
-                                      className="pl-9"
-                                    />
-                                    <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                                  </div>
-                                  {/* Select All Row */}
-                                  {(() => {
-                                    const filteredUsers = onlineUsers
-                                      .filter(u => u.uniqueId !== 'ADMIN' && u.id !== adminId)
-                                      .filter(u => (u.name + ' ' + u.uniqueId).toLowerCase().includes(searchQuery.toLowerCase()))
-                                    const allFilteredIds = filteredUsers.map(u => u.id)
-                                    const allSelected = filteredUsers.length > 0 && allFilteredIds.every(id => selectedRecipients.includes(id))
-
-                                    if (filteredUsers.length === 0) return null
-
-                                    return (
-                                      <div
-                                        className={`flex items-center justify-between py-2 px-3 rounded-lg cursor-pointer transition-colors ${allSelected ? 'bg-primary/8' : 'hover:bg-muted/50'}`}
-                                        onClick={() => {
-                                          if (allSelected) {
-                                            setSelectedRecipients(prev => prev.filter(id => !allFilteredIds.includes(id)))
-                                          } else {
-                                            setSelectedRecipients(prev => {
-                                              const newSet = new Set([...prev, ...allFilteredIds])
-                                              allFilteredIds.forEach(id => {
-                                                const user = filteredUsers.find(u => u.id === id)
-                                                if (user) recipientInfoRef.current[id] = { name: user.name, uniqueId: user.uniqueId }
-                                              })
-                                              return Array.from(newSet)
-                                            })
-                                          }
-                                        }}
-                                      >
-                                        <div className="flex items-center gap-2">
-                                          <span className="text-sm font-medium">{allSelected ? 'Deselect All' : 'Select All'}</span>
-                                          <span className="text-xs text-muted-foreground">({filteredUsers.length} users)</span>
-                                        </div>
-                                        <div className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 transition-colors ${allSelected ? 'bg-primary' : 'border-2 border-muted-foreground/30'}`}>
-                                          {allSelected && <Check className="w-3 h-3 text-primary-foreground" />}
-                                        </div>
-                                      </div>
-                                    )
-                                  })()}
-                                  {/* User List */}
-                                  <div className="space-y-1 pb-2">
-                                    {onlineUsers
-                                      .filter(u => u.uniqueId !== 'ADMIN' && u.id !== adminId)
-                                      .filter(u => (u.name + ' ' + u.uniqueId).toLowerCase().includes(searchQuery.toLowerCase()))
-                                      .map((user) => (
-                                        <div
-                                          key={user.id}
-                                          className={`flex items-center gap-3 py-2.5 px-3 rounded-lg cursor-pointer transition-colors ${selectedRecipients.includes(user.id) ? 'bg-primary/8' : 'hover:bg-muted/50'}`}
-                                          onClick={() => {
-                                            setSelectedRecipients(prev =>
-                                              prev.includes(user.id)
-                                                ? prev.filter(id => id !== user.id)
-                                                : [...prev, user.id]
-                                            )
-                                            recipientInfoRef.current[user.id] = { name: user.name, uniqueId: user.uniqueId }
-                                          }}
-                                        >
-                                          <div className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-medium" style={{ backgroundImage: generateGradient(user.name) }}>
-                                            {user.name.charAt(0).toUpperCase()}
-                                          </div>
-                                          <div className="flex-1 min-w-0">
-                                            <p className="text-sm font-medium truncate">{user.name}</p>
-                                            <p className="text-xs text-muted-foreground">{user.uniqueId}</p>
-                                          </div>
-                                          <div className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 transition-colors ${selectedRecipients.includes(user.id) ? 'bg-primary' : 'border-2 border-muted-foreground/30'}`}>
-                                            {selectedRecipients.includes(user.id) && <Check className="w-3 h-3 text-primary-foreground" />}
-                                          </div>
-                                        </div>
-                                      ))}
-                                    {onlineUsers.filter(u => u.uniqueId !== 'ADMIN' && u.id !== adminId).length === 0 && (
-                                      <p className="text-center text-muted-foreground py-4">No other users online</p>
-                                    )}
-                                  </div>
-                                </TabsContent>
-                              </Tabs>
-                            </div>
-
-                            {/* Fixed Footer */}
-                            <div className="p-6 pt-4 border-t shrink-0 bg-background">
-                              <div className="flex justify-end gap-2">
-                                <Button variant="outline" onClick={() => setSelectModalOpen(false)}>Cancel</Button>
-                                <Button onClick={() => setSelectModalOpen(false)}>Confirm ({selectedRecipients.length})</Button>
-                              </div>
-                            </div>
-                          </DialogContent>
-                        </Dialog>
-                      </div>
 
                       {/* Actions */}
-                      <div className="flex flex-col sm:flex-row gap-2">
+                      <div className="flex flex-col sm:flex-row gap-2 mt-6 md:justify-center md:max-w-md md:mx-auto w-full">
                         <Button
-                          onClick={() => preflightAndMaybeShare(false)}
-                          disabled={isUploading || !codeShareText.trim() || selectedRecipients.length === 0}
+                          onClick={() => setSelectModalOpen(true)}
+                          disabled={isUploading || !codeShareText.trim()}
                           className="flex-1 text-sm"
                         >
                           <Send className="w-4 h-4 mr-2" />
                           Send Message
                         </Button>
-                        {/* No Submit For Print button for Code Share - code cannot be sent to Lab Admin */}
+                        <Button
+                          variant="secondary"
+                          onClick={() => setWhatsAppDialogOpen(true)}
+                          disabled={isUploading || !codeShareText.trim()}
+                          className="flex-1 text-sm border border-slate-300 dark:border-slate-700 hover:border-slate-400 dark:hover:border-slate-600 transition duration-300"
+                        >
+                          <WhatsAppIcon className="w-4 h-4 mr-2 text-emerald-600 dark:text-emerald-400" />
+                          Share to WhatsApp
+                        </Button>
                       </div>
                     </motion.div>
                   ) : (
@@ -2351,189 +2547,26 @@ function StudentDashboardInner() {
                             </span>
                           </div>
 
-                          {/* Allow reshare toggle */}
-                          <div className="flex items-center justify-between">
-                            <Label htmlFor="allow-reshare">Allow recipients to reshare</Label>
-                            <Switch id="allow-reshare" checked={allowReshare} onCheckedChange={(v) => setAllowReshare(!!v)} />
-                          </div>
 
-                          {/* Share To selector as modal trigger */}
-                          <div className="space-y-2">
-                            <Label>Share To:</Label>
-                            <Dialog open={selectModalOpen} onOpenChange={setSelectModalOpen}>
-                              <DialogTrigger asChild>
-                                <Button variant="outline" className="justify-between w-full">
-                                  <span>{selectedRecipients.length > 0 ? `${selectedRecipients.length} recipient${selectedRecipients.length > 1 ? 's' : ''} selected` : 'Select recipients'}</span>
-                                </Button>
-                              </DialogTrigger>
-                              <DialogContent className="sm:max-w-2xl p-0 gap-0 overflow-hidden flex flex-col max-h-[85vh]">
-                                {/* Fixed Header */}
-                                <div className="p-6 pb-4 shrink-0">
-                                  <DialogHeader>
-                                    <DialogTitle>Select Recipients</DialogTitle>
-                                    <DialogDescription>Choose one or more recipients to share with.</DialogDescription>
-                                  </DialogHeader>
-                                </div>
-
-                                {/* Scrollable Content Area */}
-                                <div className="flex-1 overflow-y-auto px-6 min-h-0">
-                                  <Tabs defaultValue="users" className="w-full">
-                                    <TabsList className="grid grid-cols-2 w-full sticky top-0 bg-background z-10">
-                                      <TabsTrigger value="users">Online Users</TabsTrigger>
-                                      <TabsTrigger value="labs">Lab Rooms</TabsTrigger>
-                                    </TabsList>
-                                    {/* Online Users tab with search and multi-select */}
-                                    <TabsContent value="users" className="space-y-3 mt-3">
-                                      <div className="relative">
-                                        <Input
-                                          placeholder="Search users by name or ID"
-                                          value={searchQuery}
-                                          onChange={(e) => setSearchQuery(e.target.value)}
-                                          className="pl-9"
-                                        />
-                                        <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                                      </div>
-                                      {/* Select All Row */}
-                                      {(() => {
-                                        const filteredUsers = onlineUsers
-                                          .filter(u => u.uniqueId !== 'ADMIN' && u.id !== adminId)
-                                          .filter(u => (u.name + ' ' + u.uniqueId).toLowerCase().includes(searchQuery.toLowerCase()))
-                                        const allFilteredIds = filteredUsers.map(u => u.id)
-                                        const allSelected = filteredUsers.length > 0 && allFilteredIds.every(id => selectedRecipients.includes(id))
-
-                                        if (filteredUsers.length === 0) return null
-
-                                        return (
-                                          <div
-                                            className={`flex items-center justify-between py-2 px-3 rounded-lg cursor-pointer transition-colors ${allSelected ? 'bg-primary/8' : 'hover:bg-muted/50'}`}
-                                            onClick={() => {
-                                              if (allSelected) {
-                                                setSelectedRecipients(prev => prev.filter(id => !allFilteredIds.includes(id)))
-                                              } else {
-                                                setSelectedRecipients(prev => {
-                                                  const newSet = new Set([...prev, ...allFilteredIds])
-                                                  allFilteredIds.forEach(id => {
-                                                    const user = filteredUsers.find(u => u.id === id)
-                                                    if (user) recipientInfoRef.current[id] = { name: user.name, uniqueId: user.uniqueId }
-                                                  })
-                                                  return Array.from(newSet)
-                                                })
-                                              }
-                                            }}
-                                          >
-                                            <div className="flex items-center gap-2">
-                                              <span className="text-sm font-medium">{allSelected ? 'Deselect All' : 'Select All'}</span>
-                                              <span className="text-xs text-muted-foreground">({filteredUsers.length} users)</span>
-                                            </div>
-                                            <div className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 transition-colors ${allSelected ? 'bg-primary' : 'border-2 border-muted-foreground/30'}`}>
-                                              {allSelected && <Check className="w-3 h-3 text-primary-foreground" />}
-                                            </div>
-                                          </div>
-                                        )
-                                      })()}
-                                      {/* User List */}
-                                      <div className="space-y-1">
-                                        {onlineUsers
-                                          .filter(u => u.uniqueId !== 'ADMIN' && u.id !== adminId)
-                                          .filter(u => (u.name + ' ' + u.uniqueId).toLowerCase().includes(searchQuery.toLowerCase()))
-                                          .map(user => {
-                                            const checked = selectedRecipients.includes(user.id)
-                                            return (
-                                              <div
-                                                key={user.id}
-                                                className={`flex items-center gap-3 py-2.5 px-3 rounded-lg cursor-pointer transition-colors ${checked ? 'bg-primary/8' : 'hover:bg-muted/50'}`}
-                                                onClick={() => {
-                                                  setSelectedRecipients(prev => {
-                                                    const isSelected = prev.includes(user.id)
-                                                    const next = isSelected ? prev.filter(id => id !== user.id) : [...prev, user.id]
-                                                    recipientInfoRef.current[user.id] = { name: user.name, uniqueId: user.uniqueId }
-                                                    return next
-                                                  })
-                                                }}
-                                              >
-                                                <div className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-medium shrink-0" style={{ backgroundImage: generateGradient(user.name) }}>
-                                                  {user.name.charAt(0).toUpperCase()}
-                                                </div>
-                                                <div className="flex-1 min-w-0">
-                                                  <p className="text-sm font-medium truncate">{user.name}</p>
-                                                  <p className="text-xs text-muted-foreground">{user.uniqueId}</p>
-                                                </div>
-                                                <div className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 transition-colors ${checked ? 'bg-primary' : 'border-2 border-muted-foreground/30'}`}>
-                                                  {checked && <Check className="w-3 h-3 text-primary-foreground" />}
-                                                </div>
-                                              </div>
-                                            )
-                                          })}
-                                        {onlineUsers.filter(u => u.uniqueId !== 'ADMIN' && u.id !== adminId).length === 0 && (
-                                          <p className="text-center text-muted-foreground py-4">No users online</p>
-                                        )}
-                                      </div>
-                                    </TabsContent>
-                                    {/* Lab Rooms tab */}
-                                    <TabsContent value="labs" className="space-y-3 mt-3">
-                                      <div className="space-y-1">
-                                        {adminId ? (
-                                          <div
-                                            className={`flex items-center gap-3 py-2.5 px-3 rounded-lg cursor-pointer transition-colors ${selectedRecipients.includes('admin') ? 'bg-primary/8' : 'hover:bg-muted/50'}`}
-                                            onClick={() => {
-                                              setSelectedRecipients(prev => {
-                                                const next = prev.includes('admin') ? prev.filter(id => id !== 'admin') : [...prev, 'admin']
-                                                recipientInfoRef.current['admin'] = { name: `Lab Admin (Room ${adminRoom || userData?.roomNumber || ''})`, uniqueId: 'ADMIN' }
-                                                return next
-                                              })
-                                            }}
-                                          >
-                                            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-emerald-400 to-cyan-500 flex items-center justify-center text-white shrink-0">
-                                              <Printer className="w-3.5 h-3.5" />
-                                            </div>
-                                            <div className="flex-1">
-                                              <p className="text-sm font-medium">Lab Admin</p>
-                                              <p className="text-xs text-muted-foreground">Room {adminRoom || userData.roomNumber}</p>
-                                            </div>
-                                            <div className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 transition-colors ${selectedRecipients.includes('admin') ? 'bg-primary' : 'border-2 border-muted-foreground/30'}`}>
-                                              {selectedRecipients.includes('admin') && <Check className="w-3 h-3 text-primary-foreground" />}
-                                            </div>
-                                          </div>
-                                        ) : (
-                                          <p className="text-center text-muted-foreground py-4">No lab admin online</p>
-                                        )}
-                                      </div>
-                                    </TabsContent>
-                                  </Tabs>
-                                </div>
-
-                                {/* Fixed Footer */}
-                                <div className="p-6 pt-4 border-t shrink-0 bg-background">
-                                  <div className="flex justify-end gap-2">
-                                    <Button variant="outline" onClick={() => setSelectModalOpen(false)}>Cancel</Button>
-                                    <Button onClick={() => setSelectModalOpen(false)}>Confirm ({selectedRecipients.length})</Button>
-                                  </div>
-                                </div>
-                              </DialogContent>
-                            </Dialog>
-                          </div>
-
-                          {/* Progress */}
-                          {/* Progress moved to global dialog */}
 
                           {/* Actions */}
-                          <div className="flex flex-col sm:flex-row gap-2">
+                          <div className="flex flex-col sm:flex-row gap-2 mt-6 md:justify-center md:max-w-md md:mx-auto w-full">
                             <Button
-                              onClick={() => preflightAndMaybeShare(false)}
-                              disabled={isUploading || (selectedFiles.length === 0 && !linkUrl) || selectedRecipients.length === 0}
+                              onClick={() => setSelectModalOpen(true)}
+                              disabled={isUploading || (selectedFiles.length === 0 && !linkUrl)}
                               className="flex-1 text-sm"
                             >
                               <Send className="w-4 h-4 mr-2" />
                               Share Files
                             </Button>
                             <Button
-                              onClick={() => preflightAndMaybeShare(true)}
-                              disabled={isUploading || (selectedFiles.length === 0 && !linkUrl) || autoShareActive}
-                              variant="outline"
-                              className="flex-1 text-sm"
+                              variant="secondary"
+                              onClick={() => setWhatsAppDialogOpen(true)}
+                              disabled={isUploading || (selectedFiles.length === 0 && !linkUrl)}
+                              className="flex-1 text-sm border border-slate-300 dark:border-slate-700 hover:border-slate-400 dark:hover:border-slate-600 transition duration-300"
                             >
-                              <Printer className="w-4 h-4 mr-2" />
-                              {`Submit For Print (Lab ${userData.roomNumber})`}
+                              <WhatsAppIcon className="w-4 h-4 mr-2 text-emerald-600 dark:text-emerald-400" />
+                              Share to WhatsApp
                             </Button>
                           </div>
                         </TabsContent>
@@ -2568,123 +2601,26 @@ function StudentDashboardInner() {
                             </span>
                           </div>
 
-                          {/* Allow reshare toggle */}
-                          <div className="flex items-center justify-between">
-                            <Label htmlFor="allow-reshare-link">Allow recipients to reshare</Label>
-                            <Switch id="allow-reshare-link" checked={allowReshare} onCheckedChange={(v) => setAllowReshare(!!v)} />
-                          </div>
 
-                          {/* Share To selector as modal trigger (same as Files tab) */}
-                          <div className="space-y-2">
-                            <Label>Share To:</Label>
-                            <Dialog open={selectModalOpen} onOpenChange={setSelectModalOpen}>
-                              <DialogTrigger asChild>
-                                <Button variant="outline" className="justify-between w-full">
-                                  <span>{selectedRecipients.length > 0 ? `${selectedRecipients.length} recipient${selectedRecipients.length > 1 ? 's' : ''} selected` : 'Select recipients'}</span>
-                                </Button>
-                              </DialogTrigger>
-                              <DialogContent className="sm:max-w-2xl">
-                                <DialogHeader>
-                                  <DialogTitle>Select Recipients</DialogTitle>
-                                  <DialogDescription>Choose one or more recipients to share with.</DialogDescription>
-                                </DialogHeader>
-                                <Tabs defaultValue="users" className="w-full mt-2">
-                                  <TabsList className="grid grid-cols-2 w-full">
-                                    <TabsTrigger value="users">Online Users</TabsTrigger>
-                                    <TabsTrigger value="labs">Lab Rooms</TabsTrigger>
-                                  </TabsList>
-                                  <TabsContent value="users" className="space-y-3">
-                                    <div className="relative">
-                                      <Input
-                                        placeholder="Search users by name or ID"
-                                        value={searchQuery}
-                                        onChange={(e) => setSearchQuery(e.target.value)}
-                                        className="pl-9"
-                                      />
-                                      <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                                    </div>
-                                    <div className="max-h-64 overflow-y-auto space-y-2">
-                                      {onlineUsers
-                                        // Hide Lab Admin from Online Users tab in Select Recipients
-                                        .filter(u => u.uniqueId !== 'ADMIN' && u.id !== adminId)
-                                        .filter(u => (u.name + ' ' + u.uniqueId).toLowerCase().includes(searchQuery.toLowerCase()))
-                                        .map(u => {
-                                          const checked = selectedRecipients.includes(u.id)
-                                          return (
-                                            <label key={u.id} className={`flex items-center gap-3 p-2 rounded border ${checked ? 'border-blue-500 bg-primary/5' : 'border-gray-200 hover:bg-muted/50'}`}>
-                                              <input
-                                                type="checkbox"
-                                                className="accent-blue-600"
-                                                checked={checked}
-                                                onChange={(e) => {
-                                                  setSelectedRecipients(prev => e.target.checked ? Array.from(new Set([...prev, u.id])) : prev.filter(id => id !== u.id))
-                                                }}
-                                              />
-                                              <div className="flex items-center gap-3">
-                                                <div className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-medium" style={{ backgroundImage: generateGradient(u.name) }}>{u.name.charAt(0).toUpperCase()}</div>
-                                                <div>
-                                                  <p className="text-sm font-medium">{u.name}</p>
-                                                  <p className="text-xs text-muted-foreground">{u.uniqueId}</p>
-                                                </div>
-                                              </div>
-                                            </label>
-                                          )
-                                        })}
-                                      {onlineUsers.length === 0 && (
-                                        <p className="text-sm text-muted-foreground">No users online</p>
-                                      )}
-                                    </div>
-                                  </TabsContent>
-                                  <TabsContent value="labs" className="space-y-3">
-                                    <div className="max-h-64 overflow-y-auto space-y-2">
-                                      <label className={`flex items-center gap-3 p-2 rounded border ${selectedRecipients.includes('admin') ? 'border-blue-500 bg-primary/5' : 'border-gray-200 hover:bg-muted/50'}`}>
-                                        <input
-                                          type="checkbox"
-                                          className="accent-blue-600"
-                                          checked={selectedRecipients.includes('admin')}
-                                          onChange={(e) => {
-                                            setSelectedRecipients(prev => e.target.checked ? Array.from(new Set([...prev, 'admin'])) : prev.filter(id => id !== 'admin'))
-                                          }}
-                                        />
-                                        <div className="flex items-center gap-3">
-                                          <div className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-medium" style={{ backgroundImage: 'linear-gradient(135deg, #34d399, #06b6d4)' }}>
-                                            <Printer className="w-4 h-4" />
-                                          </div>
-                                          <span>Lab Admin (Room {adminRoom || userData.roomNumber})</span>
-                                        </div>
-                                      </label>
-                                      {!adminId && <p className="text-xs text-orange-600">Admin is currently offline.</p>}
-                                    </div>
-                                  </TabsContent>
-                                </Tabs>
-                                <div className="flex justify-end">
-                                  <Button onClick={() => setSelectModalOpen(false)}>Done</Button>
-                                </div>
-                              </DialogContent>
-                            </Dialog>
-                          </div>
-
-                          {/* Progress */}
-                          {/* Progress moved to global dialog */}
 
                           {/* Actions */}
-                          <div className="flex flex-col sm:flex-row gap-2">
+                          <div className="flex flex-col sm:flex-row gap-2 mt-6 md:justify-center md:max-w-md md:mx-auto w-full">
                             <Button
-                              onClick={() => preflightAndMaybeShare(false)}
-                              disabled={isUploading || (selectedFiles.length === 0 && !linkUrl) || selectedRecipients.length === 0}
+                              onClick={() => setSelectModalOpen(true)}
+                              disabled={isUploading || (selectedFiles.length === 0 && !linkUrl)}
                               className="flex-1 text-sm"
                             >
                               <Send className="w-4 h-4 mr-2" />
                               Share Files
                             </Button>
                             <Button
-                              onClick={() => preflightAndMaybeShare(true)}
-                              disabled={isUploading || (selectedFiles.length === 0 && !linkUrl) || autoShareActive}
-                              variant="outline"
-                              className="flex-1 text-sm"
+                              variant="secondary"
+                              onClick={() => setWhatsAppDialogOpen(true)}
+                              disabled={isUploading || (selectedFiles.length === 0 && !linkUrl)}
+                              className="flex-1 text-sm border border-slate-300 dark:border-slate-700 hover:border-slate-400 dark:hover:border-slate-600 transition duration-300"
                             >
-                              <Printer className="w-4 h-4 mr-2" />
-                              {`Submit For Print (Lab ${userData.roomNumber})`}
+                              <WhatsAppIcon className="w-4 h-4 mr-2 text-emerald-600 dark:text-emerald-400" />
+                              Share to WhatsApp
                             </Button>
                           </div>
                         </TabsContent>
@@ -3072,6 +3008,164 @@ function StudentDashboardInner() {
           </TabsContent>
         </Tabs>
 
+        {/* Select Recipients Dialog */}
+        <Dialog open={selectModalOpen} onOpenChange={setSelectModalOpen}>
+          <DialogContent className="sm:max-w-2xl p-0 gap-0 overflow-hidden flex flex-col max-h-[85vh]">
+            {/* Fixed Header */}
+            <div className="p-6 pb-4 shrink-0">
+              <DialogHeader>
+                <DialogTitle>Select Recipients</DialogTitle>
+                <DialogDescription>Choose one or more recipients to share with.</DialogDescription>
+              </DialogHeader>
+            </div>
+
+            {/* Scrollable Content Area */}
+            <div className="flex-1 overflow-y-auto px-6 min-h-0">
+              <Tabs defaultValue="users" className="w-full">
+                <TabsList className={`grid ${codeShareMode ? 'grid-cols-1' : 'grid-cols-2'} w-full sticky top-0 bg-background z-10`}>
+                  <TabsTrigger value="users">Online Users</TabsTrigger>
+                  {!codeShareMode && <TabsTrigger value="labs">Lab Rooms</TabsTrigger>}
+                </TabsList>
+                {/* Online Users tab with search and multi-select */}
+                <TabsContent value="users" className="space-y-3 mt-3">
+                  <div className="relative">
+                    <Input
+                      placeholder="Search users by name or ID"
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="pl-9"
+                    />
+                    <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                  </div>
+                  {/* Select All Row */}
+                  {(() => {
+                    const filteredUsers = onlineUsers
+                      .filter(u => u.uniqueId !== 'ADMIN' && u.id !== adminId)
+                      .filter(u => (u.name + ' ' + u.uniqueId).toLowerCase().includes(searchQuery.toLowerCase()))
+                    const allFilteredIds = filteredUsers.map(u => u.id)
+                    const allSelected = filteredUsers.length > 0 && allFilteredIds.every(id => selectedRecipients.includes(id))
+
+                    if (filteredUsers.length === 0) return null
+
+                    return (
+                      <div
+                        className={`flex items-center justify-between py-2 px-3 rounded-lg cursor-pointer transition-colors ${allSelected ? 'bg-primary/8' : 'hover:bg-muted/50'}`}
+                        onClick={() => {
+                          if (allSelected) {
+                            setSelectedRecipients(prev => prev.filter(id => !allFilteredIds.includes(id)))
+                          } else {
+                            setSelectedRecipients(prev => {
+                              const newSet = new Set([...prev, ...allFilteredIds])
+                              allFilteredIds.forEach(id => {
+                                const user = filteredUsers.find(u => u.id === id)
+                                if (user) recipientInfoRef.current[id] = { name: user.name, uniqueId: user.uniqueId }
+                              })
+                              return Array.from(newSet)
+                            })
+                          }
+                        }}
+                      >
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-medium">{allSelected ? 'Deselect All' : 'Select All'}</span>
+                          <span className="text-xs text-muted-foreground">({filteredUsers.length} users)</span>
+                        </div>
+                        <div className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 transition-colors ${allSelected ? 'bg-primary' : 'border-2 border-muted-foreground/30'}`}>
+                          {allSelected && <Check className="w-3 h-3 text-primary-foreground" />}
+                        </div>
+                      </div>
+                    )
+                  })()}
+                  {/* User List */}
+                  <div className="space-y-1">
+                    {onlineUsers
+                      .filter(u => u.uniqueId !== 'ADMIN' && u.id !== adminId)
+                      .filter(u => (u.name + ' ' + u.uniqueId).toLowerCase().includes(searchQuery.toLowerCase()))
+                      .map(user => {
+                        const checked = selectedRecipients.includes(user.id)
+                        return (
+                          <div
+                            key={user.id}
+                            className={`flex items-center gap-3 py-2.5 px-3 rounded-lg cursor-pointer transition-colors ${checked ? 'bg-primary/8' : 'hover:bg-muted/50'}`}
+                            onClick={() => {
+                              setSelectedRecipients(prev => {
+                                const isSelected = prev.includes(user.id)
+                                const next = isSelected ? prev.filter(id => id !== user.id) : [...prev, user.id]
+                                recipientInfoRef.current[user.id] = { name: user.name, uniqueId: user.uniqueId }
+                                return next
+                              })
+                            }}
+                          >
+                            <div className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-medium shrink-0" style={{ backgroundImage: generateGradient(user.name) }}>
+                              {user.name.charAt(0).toUpperCase()}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-medium truncate">{user.name}</p>
+                              <p className="text-xs text-muted-foreground">{user.uniqueId}</p>
+                            </div>
+                            <div className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 transition-colors ${checked ? 'bg-primary' : 'border-2 border-muted-foreground/30'}`}>
+                              {checked && <Check className="w-3 h-3 text-primary-foreground" />}
+                            </div>
+                          </div>
+                        )
+                      })}
+                    {onlineUsers.filter(u => u.uniqueId !== 'ADMIN' && u.id !== adminId).length === 0 && (
+                      <p className="text-center text-muted-foreground py-4">No users online</p>
+                    )}
+                  </div>
+                </TabsContent>
+                {/* Lab Rooms tab */}
+                {!codeShareMode && (
+                  <TabsContent value="labs" className="space-y-3 mt-3">
+                    <div className="space-y-1">
+                      {adminId ? (
+                        <div
+                          className={`flex items-center gap-3 py-2.5 px-3 rounded-lg cursor-pointer transition-colors ${selectedRecipients.includes('admin') ? 'bg-primary/8' : 'hover:bg-muted/50'}`}
+                          onClick={() => {
+                            setSelectedRecipients(prev => {
+                              const next = prev.includes('admin') ? prev.filter(id => id !== 'admin') : [...prev, 'admin']
+                              recipientInfoRef.current['admin'] = { name: `Lab Admin (Room ${adminRoom || userData?.roomNumber || ''})`, uniqueId: 'ADMIN' }
+                              return next
+                            })
+                          }}
+                        >
+                          <div className="w-8 h-8 rounded-full bg-gradient-to-br from-emerald-400 to-cyan-500 flex items-center justify-center text-white shrink-0">
+                            <Printer className="w-3.5 h-3.5" />
+                          </div>
+                          <div className="flex-1">
+                            <p className="text-sm font-medium">Lab Admin</p>
+                            <p className="text-xs text-muted-foreground">Room {adminRoom || userData.roomNumber}</p>
+                          </div>
+                          <div className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 transition-colors ${selectedRecipients.includes('admin') ? 'bg-primary' : 'border-2 border-muted-foreground/30'}`}>
+                            {selectedRecipients.includes('admin') && <Check className="w-3 h-3 text-primary-foreground" />}
+                          </div>
+                        </div>
+                      ) : (
+                        <p className="text-center text-muted-foreground py-4">No lab admin online</p>
+                      )}
+                    </div>
+                  </TabsContent>
+                )}
+              </Tabs>
+            </div>
+
+            {/* Fixed Footer */}
+            <div className="p-6 pt-4 border-t shrink-0 bg-background">
+              <div className="flex justify-end gap-2">
+                <Button variant="outline" onClick={() => setSelectModalOpen(false)}>Cancel</Button>
+                <Button
+                  onClick={() => {
+                    setSelectModalOpen(false)
+                    preflightAndMaybeShare(false)
+                  }}
+                  disabled={selectedRecipients.length === 0}
+                >
+                  Confirm & Share ({selectedRecipients.length})
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+
         {/* Google Link Warning Dialog */}
         <Dialog open={googleWarningOpen} onOpenChange={setGoogleWarningOpen}>
           <DialogContent className="sm:max-w-[500px] p-0 overflow-hidden border-none shadow-lg">
@@ -3242,11 +3336,17 @@ function StudentDashboardInner() {
           <DialogContent className="max-w-md border-primary/20 overflow-hidden">
             <DialogHeader>
               <DialogTitle className="text-lg text-center font-semibold flex items-center justify-center gap-2 text-primary">
-                <Upload className="w-5 h-5" />
-                Transferring...
+                {isWhatsAppShare ? (
+                  <WhatsAppIcon className="w-5 h-5 text-emerald-500 fill-emerald-500 animate-pulse" />
+                ) : (
+                  <Upload className="w-5 h-5" />
+                )}
+                {isWhatsAppShare ? 'Sharing to WhatsApp...' : 'Transferring...'}
               </DialogTitle>
               <DialogDescription className="text-sm text-center text-muted-foreground">
-                Keep this tab open until your files finish sending.
+                {isWhatsAppShare
+                  ? 'Uploading to WhatsApp server. Keep this tab open.'
+                  : 'Keep this tab open until your files finish sending.'}
               </DialogDescription>
             </DialogHeader>
             <div className="flex flex-col items-center gap-6 py-4 w-full overflow-hidden">
@@ -3277,6 +3377,10 @@ function StudentDashboardInner() {
                 size="sm"
                 className="text-red-600 border-red-200 hover:bg-red-50 hover:border-red-300"
                 onClick={() => {
+                  if (isWhatsAppShare && activeXhrRef.current) {
+                    activeXhrRef.current.abort()
+                    activeXhrRef.current = null
+                  }
                   // Notify all recipients about cancellation (current sending and pending)
                   transferRecipients
                     .filter(r => r.status === 'sending' || r.status === 'pending')
@@ -3321,9 +3425,22 @@ function StudentDashboardInner() {
                       >
                         <div
                           className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-medium shrink-0"
-                          style={{ backgroundImage: recipient.uniqueId === 'ADMIN' ? 'linear-gradient(135deg, #34d399, #06b6d4)' : generateGradient(recipient.name) }}
+                          style={{
+                            backgroundImage:
+                              recipient.id === 'whatsapp'
+                                ? 'linear-gradient(135deg, #25D366, #128C7E)'
+                                : recipient.uniqueId === 'ADMIN'
+                                  ? 'linear-gradient(135deg, #34d399, #06b6d4)'
+                                  : generateGradient(recipient.name)
+                          }}
                         >
-                          {recipient.uniqueId === 'ADMIN' ? <Printer className="w-3.5 h-3.5" /> : recipient.name.charAt(0).toUpperCase()}
+                          {recipient.id === 'whatsapp' ? (
+                            <WhatsAppIcon className="w-4 h-4 text-white" />
+                          ) : recipient.uniqueId === 'ADMIN' ? (
+                            <Printer className="w-3.5 h-3.5" />
+                          ) : (
+                            recipient.name.charAt(0).toUpperCase()
+                          )}
                         </div>
                         <div className="min-w-0 flex-1 overflow-hidden">
                           <p className="text-sm font-medium truncate">{recipient.name}</p>
@@ -3373,9 +3490,13 @@ function StudentDashboardInner() {
                 <div className="flex items-center justify-between mb-3 sm:mb-4">
                   <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
                     {/* Icon based on outcome */}
-                    {successInfo.mode === 'received' || successInfo.outcome === 'complete' ? (
+                    {successInfo.mode === 'received' || (successInfo.outcome as string) === 'complete' || (successInfo.isWhatsApp && (successInfo.outcome as string) === 'complete') ? (
                       <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0">
                         <CheckCircle2 className="w-5 h-5 sm:w-6 sm:h-6" />
+                      </div>
+                    ) : (successInfo.isWhatsApp && (successInfo.outcome as string) !== 'complete') || (successInfo.outcome === 'failed') ? (
+                      <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-red-100 text-red-700 flex items-center justify-center shrink-0">
+                        <X className="w-5 h-5 sm:w-6 sm:h-6" />
                       </div>
                     ) : successInfo.outcome === 'partial' ? (
                       <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center shrink-0">
@@ -3388,7 +3509,9 @@ function StudentDashboardInner() {
                     )}
                     <div className="min-w-0">
                       <h3 className="text-sm sm:text-base font-semibold leading-none">
-                        {successInfo.mode === 'received'
+                        {successInfo.isWhatsApp ? (
+                          successInfo.outcome === 'complete' ? 'WhatsApp Share Complete' : 'WhatsApp Share Failed'
+                        ) : successInfo.mode === 'received'
                           ? (successInfo.totalCodes ? 'Code received' : 'Files received')
                           : successInfo.totalCodes
                             ? (successInfo.outcome === 'complete'
@@ -3402,8 +3525,12 @@ function StudentDashboardInner() {
                                 ? 'Transfer partially complete'
                                 : 'Transfer failed')}
                       </h3>
-                      <p className="text-xs text-muted-foreground">
-                        {successInfo.mode === 'received'
+                      <p className="text-xs text-muted-foreground mt-1">
+                        {successInfo.isWhatsApp ? (
+                          successInfo.outcome === 'complete'
+                            ? 'Your items were delivered successfully.'
+                            : 'Failed to share to WhatsApp'
+                        ) : successInfo.mode === 'received'
                           ? (successInfo.totalCodes ? 'Your code was received successfully' : 'Your items were received successfully')
                           : successInfo.totalCodes
                             ? (successInfo.outcome === 'complete'
@@ -3430,24 +3557,32 @@ function StudentDashboardInner() {
                             {successInfo.outcome === 'failed' ? 'Intended Recipients' : 'Sent To'}
                           </div>
                           <div className="flex flex-wrap gap-1.5">
-                            {/* Show successful recipients if any, otherwise show original recipients for failed */}
-                            {((successInfo.outcome === 'failed' ? successInfo.recipients : successInfo.successfulRecipients) || successInfo.recipients).slice(0, 6).map((r, i) => {
-                              const isSelf = r.uniqueId === userData.uniqueId
-                              const isAdmin = r.uniqueId === 'ADMIN'
-                              const displayName = isAdmin ? `Lab Admin (Room ${userData.roomNumber})` : r.name
-                              const isFailed = successInfo.outcome === 'failed'
-                              return (
-                                <span key={r.uniqueId + i} className={`inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-xs ${isFailed ? 'border-red-200 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400' : 'bg-muted/50 dark:bg-neutral-800'
-                                  }`}>
-                                  <span className="inline-flex w-5 h-5 items-center justify-center rounded-full text-white text-[10px] font-medium" style={{ backgroundImage: isAdmin ? 'linear-gradient(135deg, #34d399, #06b6d4)' : generateGradient(displayName) }}>
-                                    {isAdmin ? <Printer className="w-3 h-3" /> : r.name.charAt(0).toUpperCase()}
-                                  </span>
-                                  {isAdmin ? displayName : `${r.name} (${r.uniqueId})`}
-                                  {isSelf ? ' (You)' : ''}
+                            {successInfo.isWhatsApp ? (
+                              <span className="inline-flex items-center gap-2 rounded-full border border-border px-2.5 py-1 text-xs bg-muted/50 dark:bg-neutral-800">
+                                <span className="inline-flex w-5 h-5 items-center justify-center rounded-full bg-emerald-500 text-white shrink-0">
+                                  <WhatsAppIcon className="w-3 h-3 fill-white text-white" />
                                 </span>
-                              )
-                            })}
-                            {((successInfo.outcome === 'failed' ? successInfo.recipients : successInfo.successfulRecipients) || successInfo.recipients).length > 6 && (
+                                WhatsApp (****{successInfo.phoneNumber?.slice(-4)})
+                              </span>
+                            ) : (
+                              ((successInfo.outcome === 'failed' ? successInfo.recipients : successInfo.successfulRecipients) || successInfo.recipients).slice(0, 6).map((r, i) => {
+                                const isSelf = r.uniqueId === userData.uniqueId
+                                const isAdmin = r.uniqueId === 'ADMIN'
+                                const displayName = isAdmin ? `Lab Admin (Room ${userData.roomNumber})` : r.name
+                                const isFailed = successInfo.outcome === 'failed'
+                                return (
+                                  <span key={r.uniqueId + i} className={`inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-xs ${isFailed ? 'border-red-200 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400' : 'bg-muted/50 dark:bg-neutral-800'
+                                    }`}>
+                                    <span className="inline-flex w-5 h-5 items-center justify-center rounded-full text-white text-[10px] font-medium" style={{ backgroundImage: isAdmin ? 'linear-gradient(135deg, #34d399, #06b6d4)' : generateGradient(displayName) }}>
+                                      {isAdmin ? <Printer className="w-3 h-3" /> : r.name.charAt(0).toUpperCase()}
+                                    </span>
+                                    {isAdmin ? displayName : `${r.name} (${r.uniqueId})`}
+                                    {isSelf ? ' (You)' : ''}
+                                  </span>
+                                )
+                              })
+                            )}
+                            {!successInfo.isWhatsApp && ((successInfo.outcome === 'failed' ? successInfo.recipients : successInfo.successfulRecipients) || successInfo.recipients).length > 6 && (
                               <span className="inline-flex items-center rounded-full border px-2.5 py-1 text-xs bg-muted/50 dark:bg-neutral-800">
                                 +{((successInfo.outcome === 'failed' ? successInfo.recipients : successInfo.successfulRecipients) || successInfo.recipients).length - 6} more
                               </span>
@@ -3697,7 +3832,7 @@ function StudentDashboardInner() {
       {/* Receiving Speed Dial (bottom-right) */}
       {
         (Object.keys(recvProgress).length > 0 || (recvCounter.total > 0 && recvCounter.received < recvCounter.total)) && (
-          <div className="fixed bottom-6 right-6 z-50">
+          <div className="fixed bottom-24 right-6 z-50">
             <Button
               className="relative h-14 w-14 rounded-full shadow-lg gradient-primary text-white hover:opacity-90 active:scale-95 transition-all overflow-visible"
               size="icon"
@@ -3714,6 +3849,66 @@ function StudentDashboardInner() {
           </div>
         )
       }
+
+      {/* Floating Submit for Print FAB */}
+      <AnimatePresence>
+        {activeTab === 'share' && !codeShareMode && (selectedFiles.length > 0 || linkUrl) && (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.8, y: 15 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.8, y: 15 }}
+            transition={{ duration: 0.25, ease: "easeInOut" }}
+            className="fixed bottom-6 right-4 sm:right-6 z-40"
+          >
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <div className={`group relative inline-block transition-transform duration-300 ease-in-out ${
+                    isUploading || autoShareActive ? 'cursor-not-allowed' : 'cursor-pointer'
+                  } ${
+                    isScrollingDown ? 'translate-x-[50px] sm:translate-x-0' : 'translate-x-0'
+                  } hover:translate-x-0 active:translate-x-0 focus-within:translate-x-0`}>
+                    <button
+                      onClick={() => preflightAndMaybeShare(true)}
+                      disabled={isUploading || autoShareActive}
+                      className={`h-12 rounded-full shadow-lg flex items-center justify-center cursor-pointer gradient-primary text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 transition-all duration-300 ease-in-out disabled:opacity-50 disabled:cursor-not-allowed ${
+                        isNearBottom || isScrollingDown ? 'w-12 px-0 gap-0' : 'w-12 px-0 gap-0 sm:w-auto sm:px-5 sm:gap-2'
+                      }`}
+                    >
+                      <Printer className={`w-5 h-5 shrink-0 transition-all duration-300 ${
+                        isScrollingDown 
+                          ? 'opacity-0 scale-75 sm:opacity-100 sm:scale-100 group-hover:opacity-100 group-hover:scale-100 group-active:opacity-100 group-active:scale-100' 
+                          : 'opacity-100 scale-100'
+                      }`} />
+                      <span className={`hidden sm:inline-block transition-all duration-300 ease-in-out overflow-hidden whitespace-nowrap text-xs font-semibold ${
+                        isNearBottom || isScrollingDown ? 'sm:max-w-0 sm:opacity-0 sm:ml-0' : 'sm:max-w-[150px] sm:opacity-100 sm:ml-1.5'
+                      }`}>
+                        Submit for Print
+                      </span>
+                    </button>
+                    
+                    {/* Dynamic notification/count badge */}
+                    {pendingCount > 0 && (
+                      <span className={`absolute -top-1.5 -right-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-white text-[10px] font-bold border-2 border-background animate-scale-in shadow-md transition-all duration-300 ${
+                        isScrollingDown
+                          ? 'opacity-0 scale-75 sm:opacity-100 sm:scale-100 group-hover:opacity-100 group-hover:scale-100 group-active:opacity-100 group-active:scale-100'
+                          : 'opacity-100 scale-100'
+                      }`}>
+                        {pendingCount}
+                      </span>
+                    )}
+                  </div>
+                </TooltipTrigger>
+                <TooltipContent side="left" align="center">
+                  {autoShareActive
+                    ? "Auto-share is already active"
+                    : `Submit staged resources to Admin (Room ${userData.roomNumber})`}
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Receiving details dialog */}
       <Dialog open={receiveDialogOpen} onOpenChange={setReceiveDialogOpen}>
@@ -3762,6 +3957,12 @@ function StudentDashboardInner() {
 
       {/* Offline Dialog */}
       <OfflineDialog isOnline={isOnline} />
+
+      <WhatsAppNumberDialog
+        isOpen={whatsAppDialogOpen}
+        onClose={() => setWhatsAppDialogOpen(false)}
+        onConfirm={handleWhatsAppConfirm}
+      />
     </div >
   )
 }

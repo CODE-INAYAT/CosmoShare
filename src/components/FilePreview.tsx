@@ -46,6 +46,7 @@ import {
 } from 'lucide-react'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { toast } from '@/hooks/use-toast'
 
 interface RecipientInfo { id: string; name: string; uniqueId: string }
 
@@ -236,6 +237,72 @@ function FilePreviewInner({ file, senderName, senderUniqueId, recipients, timest
   const [copiedCode, setCopiedCode] = useState(false)
   const [meatballsOpen, setMeatballsOpen] = useState(false)
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
+
+  const triggerWhatsAppShare = async () => {
+    try {
+      if (file.fileType === 'code') {
+        window.dispatchEvent(new CustomEvent('cosmoshare:whatsapp-share', {
+          detail: {
+            type: 'code',
+            codeSnippet: file.message || '',
+            message: ''
+          }
+        }))
+        return
+      }
+
+      if (file.isLink) {
+        window.dispatchEvent(new CustomEvent('cosmoshare:whatsapp-share', {
+          detail: {
+            type: 'link',
+            linkUrl: file.linkUrl || '',
+            message: file.message || ''
+          }
+        }))
+        return
+      }
+
+      // Reconstruct file
+      toast({
+        title: 'Preparing file...',
+        description: 'Reconstructing file from cache...'
+      })
+
+      let blob: Blob
+      if (file.fileUrl) {
+        const resp = await fetch(file.fileUrl)
+        blob = await resp.blob()
+      } else if (file.fileData) {
+        const base64 = file.fileData
+        const arr = base64.split(',')
+        const mime = arr[0].match(/:(.*?);/)?.[1] || file.fileType
+        const bstr = atob(arr[1])
+        let n = bstr.length
+        const u8arr = new Uint8Array(n)
+        while (n--) u8arr[n] = bstr.charCodeAt(n)
+        blob = new Blob([u8arr], { type: mime })
+      } else {
+        throw new Error('No file data available to share')
+      }
+
+      const reconstructedFile = new window.File([blob], file.fileName, { type: file.fileType })
+
+      window.dispatchEvent(new CustomEvent('cosmoshare:whatsapp-share', {
+        detail: {
+          type: 'file',
+          files: [reconstructedFile],
+          message: file.message || ''
+        }
+      }))
+    } catch (err: any) {
+      console.error(err)
+      toast({
+        variant: 'destructive',
+        title: 'Share Failed',
+        description: err.message || 'Failed to prepare file for WhatsApp share.'
+      })
+    }
+  }
   const FileIcon = getFileIcon(file.fileType, file.fileName)
   const isPreviewableType = (
     file.fileType.startsWith('image/') ||
@@ -502,6 +569,7 @@ function FilePreviewInner({ file, senderName, senderUniqueId, recipients, timest
                       Reshare
                     </button>
                   )}
+
                   {typeof onDelete === 'function' && (
                     <button
                       className="flex items-center gap-2.5 w-full px-3 py-2 text-sm text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 rounded-md transition-colors"
@@ -595,8 +663,7 @@ function FilePreviewInner({ file, senderName, senderUniqueId, recipients, timest
                         </button>
                       </TooltipTrigger>
                       <TooltipContent side="top">{file.fileType === 'contact' ? 'Call' : (file.fileType === 'location' ? 'Open Map' : (file.isLink ? 'Open link' : 'Download'))}</TooltipContent>
-                    </Tooltip>
-                    {onReshare && (isOwnItem || (file.allowReshare ?? true)) && (
+                    </Tooltip>                     {onReshare && (isOwnItem || (file.allowReshare ?? true)) && (
                       <Tooltip>
                         <TooltipTrigger asChild>
                           <button
@@ -610,6 +677,7 @@ function FilePreviewInner({ file, senderName, senderUniqueId, recipients, timest
                         <TooltipContent side="top">Reshare</TooltipContent>
                       </Tooltip>
                     )}
+
                     {typeof onDelete === 'function' && (
                       <AlertDialog>
                         <Tooltip>
@@ -686,6 +754,7 @@ function FilePreviewInner({ file, senderName, senderUniqueId, recipients, timest
                       </Tooltip>
                     </TooltipProvider>
                   )}
+
                   {typeof onDelete === 'function' && (
                     <AlertDialog>
                       <TooltipProvider delayDuration={150}>
@@ -896,6 +965,7 @@ function FilePreviewInner({ file, senderName, senderUniqueId, recipients, timest
                     <TooltipContent side="bottom">Reshare</TooltipContent>
                   </Tooltip>
                 )}
+
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <DialogClose asChild>

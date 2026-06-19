@@ -425,16 +425,19 @@ class ShareManager {
             }));
           }
 
-          // Send code snippets
-          for (const snippet of (sessionData.codeSnippets || [])) {
-            peer.send(JSON.stringify({
-              type: 'message',
-              message: snippet,
-              senderName: senderName.toUpperCase(),
-              senderUniqueId: senderId,
-              allowReshare: true,
-              timestamp: Date.now()
-            }));
+          // Send code snippets (only to students/everyone, never to Lab Admin for printing)
+          const isTargetAdmin = target.uniqueId === 'ADMIN' || target.name === 'Lab Admin';
+          if (!isTargetAdmin) {
+            for (const snippet of (sessionData.codeSnippets || [])) {
+              peer.send(JSON.stringify({
+                type: 'message',
+                message: snippet,
+                senderName: senderName.toUpperCase(),
+                senderUniqueId: senderId,
+                allowReshare: true,
+                timestamp: Date.now()
+              }));
+            }
           }
 
           logger.info('Lab transfer complete to target', { targetId: target.id, targetName: target.name });

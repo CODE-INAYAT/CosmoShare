@@ -30,6 +30,9 @@ import { ConnectionStatusBadge } from '@/components/ConnectionStatusBadge'
 import { OfflineDialog } from '@/components/OfflineDialog'
 import FullPageLoader from '@/components/FullPageLoader'
 
+import WhatsAppIcon from '@/components/WhatsAppIcon'
+import WhatsAppNumberDialog from '@/components/WhatsAppNumberDialog'
+
 // Hooks
 import { useOneShareWebRTC } from '@/hooks/useOneShareWebRTC'
 import { useNetworkStatus } from '@/hooks/useNetworkStatus'
@@ -197,6 +200,10 @@ function OneShareInner() {
     const [isUploading, setIsUploading] = useState(false)
     const [uploadProgress, setUploadProgress] = useState(0)
     const [transferComplete, setTransferComplete] = useState(false)
+    const [whatsAppDialogOpen, setWhatsAppDialogOpen] = useState(false)
+    const [isWhatsAppShare, setIsWhatsAppShare] = useState(false)
+    const [whatsAppPhoneNumber, setWhatsAppPhoneNumber] = useState('')
+    const activeXhrRef = useRef<XMLHttpRequest | null>(null)
 
     // Receiver state
     const [enteredCode, setEnteredCode] = useState('')
@@ -861,6 +868,138 @@ function OneShareInner() {
         }
     }
 
+    const handleWhatsAppConfirm = async (phoneNumber: string) => {
+        setIsWhatsAppShare(true)
+        setWhatsAppPhoneNumber(phoneNumber)
+        setMode('send')
+        setSessionCode('WAPP')
+        setIsUploading(true)
+        setUploadProgress(5)
+        setUiUploadProgress(0)
+        setTransferComplete(false)
+        setForceUploadProgress(false)
+        setJoinError(null)
+        
+        webrtc.cleanup()
+
+        try {
+            if (codeShareMode) {
+                if (!codeShareText.trim()) throw new Error('Please write code to share')
+                
+                setUploadProgress(50)
+                uploadProgressTargetRef.current = 50
+                
+                const resp = await fetch('/api/whatsapp/share', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        type: 'code',
+                        phoneNumber,
+                        codeSnippet: codeShareText,
+                        message: message.trim() || undefined
+                    })
+                })
+                if (!resp.ok) {
+                    const err = await resp.json().catch(() => ({}));
+                    throw new Error(err.error || `HTTP error ${resp.status}`);
+                }
+                
+                setUploadProgress(100)
+                uploadProgressTargetRef.current = 100
+            } else {
+                if (selectedFiles.length === 0 && !linkUrl) {
+                    throw new Error('Please select files or enter a link to share')
+                }
+
+                const totalBytes = selectedFiles.reduce((sum, f) => sum + f.size, 0)
+                let bytesSentSoFar = 0
+
+                // Upload files sequentially
+                for (const file of selectedFiles) {
+                    await new Promise<void>((resolve, reject) => {
+                        const xhr = new XMLHttpRequest()
+                        activeXhrRef.current = xhr
+                        xhr.open('POST', '/api/whatsapp/share-file', true)
+                        xhr.setRequestHeader('x-phone-number', phoneNumber)
+                        xhr.setRequestHeader('x-file-name', encodeURIComponent(file.name))
+                        xhr.setRequestHeader('content-type', file.type || 'application/octet-stream')
+                        if (message) {
+                            xhr.setRequestHeader('x-message', encodeURIComponent(message))
+                        }
+
+                        xhr.upload.onprogress = (event) => {
+                            if (event.lengthComputable) {
+                                const currentSent = event.loaded
+                                const progress = Math.round(((bytesSentSoFar + currentSent) / (totalBytes || 1)) * 100)
+                                const clamped = Math.min(95, progress)
+                                uploadProgressTargetRef.current = clamped
+                                setUploadProgress(clamped)
+                            }
+                        }
+
+                        xhr.onload = () => {
+                            activeXhrRef.current = null
+                            if (xhr.status >= 200 && xhr.status < 300) {
+                                bytesSentSoFar += file.size
+                                resolve()
+                            } else {
+                                try {
+                                    const err = JSON.parse(xhr.responseText)
+                                    reject(new Error(err.error || `HTTP error ${xhr.status}`))
+                                } catch {
+                                    reject(new Error(`HTTP error ${xhr.status}`))
+                                }
+                            }
+                        }
+
+                        xhr.onerror = () => {
+                            activeXhrRef.current = null
+                            reject(new Error('Network error occurred during upload.'))
+                        }
+                        xhr.send(file)
+                    })
+                }
+
+                // Send link if present
+                if (linkUrl) {
+                    if (selectedFiles.length === 0) {
+                        setUploadProgress(50)
+                        uploadProgressTargetRef.current = 50
+                    }
+                    const resp = await fetch('/api/whatsapp/share', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            type: 'link',
+                            phoneNumber,
+                            linkUrl,
+                            message: message.trim() || undefined
+                        })
+                    })
+                    if (!resp.ok) {
+                        const err = await resp.json().catch(() => ({}));
+                        throw new Error(err.error || `HTTP error ${resp.status}`);
+                    }
+                    if (selectedFiles.length === 0) {
+                        setUploadProgress(100)
+                        uploadProgressTargetRef.current = 100
+                    }
+                }
+            }
+
+            await ensureUploadProgressComplete()
+            setForceUploadProgress(false)
+            setIsUploading(false)
+            setTransferComplete(true)
+        } catch (err: any) {
+            console.error('WhatsApp Share error:', err)
+            setForceUploadProgress(false)
+            setIsUploading(false)
+            setJoinError(err.message || 'WhatsApp share failed')
+            setMode('select')
+        }
+    }
+
     const resetToSelect = () => {
         setMode('select')
         setSessionCode(null)
@@ -901,8 +1040,15 @@ function OneShareInner() {
         recvChunkPendingRef.current = {}
         webrtc.cleanup()
 
+        if (activeXhrRef.current) {
+            activeXhrRef.current.abort()
+            activeXhrRef.current = null
+        }
+        setIsWhatsAppShare(false)
+        setWhatsAppPhoneNumber('')
+
         // Only the sender should cancel the session on the server
-        if (mode === 'send' && sessionCode && socket) {
+        if (mode === 'send' && sessionCode && socket && !isWhatsAppShare) {
             socket.emit('oneshare-cancel', { code: sessionCode })
         }
 
@@ -1021,40 +1167,26 @@ function OneShareInner() {
                 initial={{ y: -20, opacity: 0 }}
                 animate={{ y: 0, opacity: 1 }}
                 transition={{ duration: 0.6 }}
-                className="relative z-50 px-2 sm:px-4 py-3 sm:py-4"
+                className="relative z-50 px-4 py-3 sm:py-4"
             >
-                <div className="max-w-7xl mx-auto">
-                    <div className="glass rounded-2xl px-3 sm:px-6 py-2.5 sm:py-3 flex items-center justify-between">
-                        <div className="flex items-center gap-1.5 sm:gap-3">
-                            <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => router.push('/')}
-                                className="gap-1.5 sm:gap-2 px-2 sm:px-3"
-                            >
-                                <ArrowLeft className="w-4 h-4" />
-                                <span className="hidden sm:inline">Home</span>
-                            </Button>
-                            <div className="h-6 w-px bg-border hidden sm:block" />
-                            <div className="flex items-center gap-1.5 sm:gap-2">
-                                <motion.div
-                                    whileHover={{ rotate: 180, scale: 1.1 }}
-                                    transition={{ duration: 0.4 }}
-                                    className="w-7 h-7 sm:w-10 sm:h-10 rounded-xl gradient-primary flex items-center justify-center glow-sm"
-                                >
-                                    <Share2 className="w-3.5 h-3.5 sm:w-5 sm:h-5 text-white" />
-                                </motion.div>
-                                <span className="text-base sm:text-xl font-bold gradient-text">OneShare</span>
-                            </div>
-                        </div>
+                <div className="max-w-7xl mx-auto flex items-center justify-between">
+                    <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => router.push('/')}
+                        className="glass px-3.5 sm:px-4 py-2 text-foreground text-xs sm:text-sm font-medium rounded-xl transition duration-300 gap-1.5 sm:gap-2 hover:bg-accent/50 shadow-sm"
+                    >
+                        <ArrowLeft className="w-4 h-4" />
+                        <span>Home</span>
+                    </Button>
 
-                        <div className="flex items-center gap-1.5 sm:gap-3">
-                            <ConnectionStatusBadge
-                                isOnline={isOnline}
-                                isSocketConnected={isConnected}
-                            />
-                            <ThemeToggle />
-                        </div>
+                    <div className="glass px-3 py-1.5 rounded-full flex items-center justify-center shadow-sm">
+                        <ConnectionStatusBadge
+                            isOnline={isOnline}
+                            isSocketConnected={isConnected}
+                            variant="minimal"
+                            size="md"
+                        />
                     </div>
                 </div>
             </motion.nav>
@@ -1323,15 +1455,26 @@ function OneShareInner() {
                                             </div>
                                         )}
 
-                                        {/* Generate Code Button */}
-                                        <Button
-                                            className="w-full gradient-primary text-white glow-button"
-                                            disabled={!isConnected || (codeShareMode ? !codeShareText.trim() : (selectedFiles.length === 0 && !linkUrl))}
-                                            onClick={handleCreateSession}
-                                        >
-                                            <Hash className="w-4 h-4 mr-2" />
-                                            Generate Share Code
-                                        </Button>
+                                        {/* Buttons */}
+                                        <div className="flex flex-col sm:flex-row gap-2 justify-center sm:items-center w-full">
+                                            <Button
+                                                className="w-full sm:w-auto gradient-primary text-white glow-button text-sm"
+                                                disabled={!isConnected || (codeShareMode ? !codeShareText.trim() : (selectedFiles.length === 0 && !linkUrl))}
+                                                onClick={handleCreateSession}
+                                            >
+                                                <Hash className="w-4 h-4 mr-2" />
+                                                Generate Share Code
+                                            </Button>
+                                            <Button
+                                                variant="secondary"
+                                                className="w-full sm:w-auto border border-slate-300 dark:border-slate-700 hover:border-slate-400 dark:hover:border-slate-600 transition duration-300 animate-in fade-in slide-in-from-bottom-2 duration-200 text-sm"
+                                                disabled={codeShareMode ? !codeShareText.trim() : (selectedFiles.length === 0 && !linkUrl)}
+                                                onClick={() => setWhatsAppDialogOpen(true)}
+                                            >
+                                                <WhatsAppIcon className="w-4 h-4 mr-2 text-emerald-600 dark:text-emerald-400" />
+                                                Share to WhatsApp
+                                            </Button>
+                                        </div>
                                     </CardContent>
                                 </Card>
                             </motion.div>
@@ -1348,27 +1491,31 @@ function OneShareInner() {
                                 <Card className="glass-card border-0">
                                     <CardHeader className="text-center">
                                         <CardTitle className="text-xl">
-                                            {multiShareEnabled
-                                                ? (multiShareReceivers.length > 0 ? 'MultiShare Active' : 'MultiShare — Waiting')
-                                                : (transferComplete
-                                                    ? 'Transfer Complete!'
-                                                    : receiverConnected
-                                                        ? 'Transferring...'
-                                                        : 'Share These with Receiver')}
+                                            {isWhatsAppShare
+                                                ? (transferComplete ? 'Shared to WhatsApp!' : 'Sharing to WhatsApp...')
+                                                : multiShareEnabled
+                                                    ? (multiShareReceivers.length > 0 ? 'MultiShare Active' : 'MultiShare — Waiting')
+                                                    : (transferComplete
+                                                        ? 'Transfer Complete!'
+                                                        : receiverConnected
+                                                            ? 'Transferring...'
+                                                            : 'Share These with Receiver')}
                                         </CardTitle>
                                         <CardDescription>
-                                            {multiShareEnabled
-                                                ? (multiShareReceivers.length > 0
-                                                    ? `${multiShareReceivers.filter(r => r.status === 'completed').length} of ${multiShareReceivers.length} receivers completed`
-                                                    : 'Share the code — multiple users can join')
-                                                : (transferComplete
-                                                    ? 'All files have been sent successfully'
-                                                    : receiverConnected
-                                                        ? 'Files are being sent...'
-                                                        : 'Ask the receiver to scan QR code or enter the code')}
+                                            {isWhatsAppShare
+                                                ? (transferComplete ? 'Your items were sent successfully' : 'Please wait while we upload your files.')
+                                                : multiShareEnabled
+                                                    ? (multiShareReceivers.length > 0
+                                                        ? `${multiShareReceivers.filter(r => r.status === 'completed').length} of ${multiShareReceivers.length} receivers completed`
+                                                        : 'Share the code — multiple users can join')
+                                                    : (transferComplete
+                                                        ? 'All files have been sent successfully'
+                                                        : receiverConnected
+                                                            ? 'Files are being sent...'
+                                                            : 'Ask the receiver to scan QR code or enter the code')}
                                         </CardDescription>
                                         {/* Session Timer Badge — always for MultiShare, only while waiting for regular */}
-                                        {sessionTimeLeft && (multiShareEnabled || !receiverConnected) && (
+                                        {sessionTimeLeft && (multiShareEnabled || !receiverConnected) && !isWhatsAppShare && (
                                             <div className="flex justify-center mt-2">
                                                 <Badge variant="outline" className={`gap-1.5 px-3 py-1 text-sm font-mono ${sessionTimeLeft === 'Expired' ? 'text-destructive border-destructive' : 'text-violet-500 border-violet-500/40'}`}>
                                                     <Timer className="w-3.5 h-3.5" />
@@ -1378,7 +1525,7 @@ function OneShareInner() {
                                         )}
                                     </CardHeader>
                                     <CardContent className="space-y-6">
-                                        {(multiShareEnabled || !receiverConnected) ? (
+                                        {(multiShareEnabled || !receiverConnected) && !isWhatsAppShare ? (
                                             <>
                                                 {/* QR Code */}
                                                 <div className="flex justify-center">
@@ -1470,52 +1617,60 @@ function OneShareInner() {
                                         ) : (
                                             <>
                                                 {/* Circular Progress / Success */}
-                                                <div className="flex flex-col items-center gap-6">
-                                                    <div className="relative">
-                                                        {transferComplete ? (
+                                                <div className="flex flex-col items-center justify-center w-full">
+                                                    {transferComplete ? (
+                                                        <div className="flex flex-col items-center justify-center gap-4 text-center w-full py-2">
                                                             <motion.div
                                                                 initial={{ scale: 0 }}
                                                                 animate={{ scale: 1 }}
-                                                                className="w-20 h-20 rounded-full bg-gradient-to-br from-emerald-400 to-emerald-600 flex items-center justify-center glow-md shadow-lg shadow-emerald-500/20"
+                                                                className={`w-20 h-20 sm:w-22 sm:h-22 lg:w-24 lg:h-24 rounded-full bg-gradient-to-br ${
+                                                                    isWhatsAppShare ? 'from-[#25D366] to-[#128C7E]' : 'from-emerald-400 to-emerald-600'
+                                                                } flex items-center justify-center glow-md shadow-lg shadow-emerald-500/20`}
                                                             >
-                                                                <CheckCircle2 className="w-10 h-10 text-white" />
+                                                                {isWhatsAppShare ? (
+                                                                    <WhatsAppIcon className="w-10 h-10 sm:w-11 sm:h-11 lg:w-12 lg:h-12 text-white" />
+                                                                ) : (
+                                                                    <CheckCircle2 className="w-10 h-10 sm:w-11 sm:h-11 lg:w-12 lg:h-12 text-white" />
+                                                                )}
                                                             </motion.div>
-                                                        ) : (
-                                                            <>
-                                                                <svg className="w-32 h-32 -rotate-90" viewBox="0 0 100 100">
-                                                                    <circle cx="50" cy="50" r="46" className="stroke-primary/20" strokeWidth="6" fill="none" />
-                                                                    <circle
-                                                                        cx="50"
-                                                                        cy="50"
-                                                                        r="46"
-                                                                        className="stroke-primary"
-                                                                        strokeWidth="6"
-                                                                        strokeLinecap="round"
-                                                                        fill="none"
-                                                                        strokeDasharray={2 * Math.PI * 46}
-                                                                        strokeDashoffset={(1 - uiUploadProgress / 100) * 2 * Math.PI * 46}
-                                                                    />
-                                                                </svg>
-                                                                <div className="absolute inset-0 flex flex-col items-center justify-center">
-                                                                    <div className="text-2xl font-bold text-primary">{Math.round(uiUploadProgress)}%</div>
-                                                                </div>
-                                                            </>
-                                                        )}
-                                                        {transferComplete && (
-                                                            <p className="text-center text-lg font-semibold text-emerald-600 dark:text-emerald-400">
-                                                                {codeShareMode
-                                                                    ? 'Code Transferred!'
-                                                                    : 'Files Transferred!'}
+                                                            <p className="text-center text-xl sm:text-2xl font-semibold text-emerald-600 dark:text-emerald-400 mt-2">
+                                                                {isWhatsAppShare
+                                                                    ? 'Shared to WhatsApp!'
+                                                                    : codeShareMode
+                                                                        ? 'Code Transferred!'
+                                                                        : 'Files Transferred!'}
                                                             </p>
-                                                        )}
-                                                    </div>
+                                                        </div>
+                                                    ) : (
+                                                        <div className="relative">
+                                                            <svg className="w-32 h-32 -rotate-90" viewBox="0 0 100 100">
+                                                                <circle cx="50" cy="50" r="46" className="stroke-primary/20" strokeWidth="6" fill="none" />
+                                                                <circle
+                                                                    cx="50"
+                                                                    cy="50"
+                                                                    r="46"
+                                                                    className="stroke-primary"
+                                                                    strokeWidth="6"
+                                                                    strokeLinecap="round"
+                                                                    fill="none"
+                                                                    strokeDasharray={2 * Math.PI * 46}
+                                                                    strokeDashoffset={(1 - uiUploadProgress / 100) * 2 * Math.PI * 46}
+                                                                />
+                                                            </svg>
+                                                            <div className="absolute inset-0 flex flex-col items-center justify-center">
+                                                                <div className="text-2xl font-bold text-primary">{Math.round(uiUploadProgress)}%</div>
+                                                            </div>
+                                                        </div>
+                                                    )}
                                                 </div>
 
                                                 <div className="space-y-2">
                                                     <Label className="text-xs text-muted-foreground">
-                                                        {codeShareMode
-                                                            ? (transferComplete ? 'Code Sent:' : 'Sending:')
-                                                            : (transferComplete ? 'Files Sent:' : 'Sending:')}
+                                                        {isWhatsAppShare
+                                                            ? (transferComplete ? `Sent to WhatsApp (****${whatsAppPhoneNumber.slice(-4)}):` : 'Sharing to WhatsApp:')
+                                                            : codeShareMode
+                                                                ? (transferComplete ? 'Code Sent:' : 'Sending:')
+                                                                : (transferComplete ? 'Files Sent:' : 'Sending:')}
                                                     </Label>
                                                     <div className="space-y-2 max-h-48 overflow-y-auto">
                                                         {/* Show code for code share mode */}
@@ -1557,11 +1712,11 @@ function OneShareInner() {
                                         )}
 
                                         <Button
-                                            variant={transferComplete ? "default" : multiShareEnabled ? "destructive" : "outline"}
-                                            className={`w-full ${transferComplete && !multiShareEnabled ? 'gradient-primary text-white' : ''}`}
+                                            variant={transferComplete ? "default" : (multiShareEnabled && !isWhatsAppShare) ? "destructive" : "outline"}
+                                            className={`w-full ${transferComplete && !(multiShareEnabled && !isWhatsAppShare) ? 'gradient-primary text-white' : ''}`}
                                             onClick={resetToSelect}
                                         >
-                                            {multiShareEnabled ? (
+                                            {multiShareEnabled && !isWhatsAppShare ? (
                                                 <><StopCircle className="w-4 h-4 mr-2" /> Stop Sharing</>
                                             ) : (
                                                 transferComplete ? 'Share More' : 'Cancel'
@@ -1884,6 +2039,13 @@ function OneShareInner() {
 
             {/* Offline Dialog */}
             <OfflineDialog isOnline={isOnline} />
+
+            {/* WhatsApp Dialog */}
+            <WhatsAppNumberDialog
+                isOpen={whatsAppDialogOpen}
+                onClose={() => setWhatsAppDialogOpen(false)}
+                onConfirm={handleWhatsAppConfirm}
+            />
         </div >
     )
 }
