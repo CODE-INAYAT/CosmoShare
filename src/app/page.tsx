@@ -460,6 +460,15 @@ export default function Home() {
     return () => ctx.revert()
   }, [mounted])
 
+  const scrollToSection = (e: React.MouseEvent<HTMLAnchorElement>, id: string) => {
+    e.preventDefault()
+    const element = document.getElementById(id)
+    if (element) {
+      element.scrollIntoView({ behavior: 'smooth' })
+      window.history.pushState(null, '', `#${id}`)
+    }
+  }
+
   const generateUniqueId = (name: string) => {
     const firstChar = name.charAt(0).toUpperCase()
     const randomNum = Math.floor(1000 + Math.random() * 9000)
@@ -681,9 +690,9 @@ export default function Home() {
             </div>
 
             <div className="hidden md:flex items-center gap-8">
-              <a href="#portal" className="text-muted-foreground hover:text-foreground transition-colors text-sm font-medium">Get Started</a>
-              <a href="#how-it-works" className="text-muted-foreground hover:text-foreground transition-colors text-sm font-medium">How It Works</a>
-              <a href="#features" className="text-muted-foreground hover:text-foreground transition-colors text-sm font-medium">Features</a>
+              <a href="#portal" onClick={(e) => scrollToSection(e, 'portal')} className="text-muted-foreground hover:text-foreground transition-colors text-sm font-medium">Get Started</a>
+              <a href="#how-it-works" onClick={(e) => scrollToSection(e, 'how-it-works')} className="text-muted-foreground hover:text-foreground transition-colors text-sm font-medium">How It Works</a>
+              <a href="#features" onClick={(e) => scrollToSection(e, 'features')} className="text-muted-foreground hover:text-foreground transition-colors text-sm font-medium">Features</a>
             </div>
 
             <div className="flex items-center gap-3">
@@ -828,7 +837,7 @@ export default function Home() {
       </section>
 
       {/* Portal Section */}
-      <section ref={portalRef} id="portal" className="py-16 md:py-24 px-4 relative">
+      <section ref={portalRef} id="portal" className="py-16 md:py-24 px-4 relative scroll-mt-20">
         <div className="max-w-5xl mx-auto">
           <motion.div
             initial="hidden"
@@ -1207,7 +1216,7 @@ export default function Home() {
       </section>
 
       {/* How It Works Section */}
-      <section ref={howItWorksRef} id="how-it-works" className="py-16 md:py-24 px-4 relative">
+      <section ref={howItWorksRef} id="how-it-works" className="py-16 md:py-24 px-4 relative scroll-mt-20">
         <div className="max-w-6xl mx-auto">
           <motion.div
             initial="hidden"
@@ -1269,7 +1278,7 @@ export default function Home() {
       </section>
 
       {/* Features Section - Horizontal Scroll Carousel */}
-      <section ref={featuresRef} id="features" className="relative py-20">
+      <section ref={featuresRef} id="features" className="relative py-20 scroll-mt-20">
         {/* Section heading */}
         <div className="features-heading text-center px-4 mb-12">
           <motion.div
