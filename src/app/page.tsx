@@ -237,6 +237,7 @@ export default function Home() {
   const featuresContainerRef = useRef<HTMLDivElement>(null)
   const ctaRef = useRef<HTMLDivElement>(null)
   const footerRef = useRef<HTMLElement>(null)
+  const navRef = useRef<HTMLElement>(null)
   const [showFab, setShowFab] = useState(false)
 
   useEffect(() => {
@@ -651,9 +652,16 @@ export default function Home() {
 
       {/* Navbar */}
       <motion.nav
+        ref={navRef}
         initial={{ y: -20, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
         transition={{ duration: 0.6 }}
+        onAnimationComplete={() => {
+          if (navRef.current) {
+            navRef.current.style.transform = 'none'
+            navRef.current.style.willChange = 'auto'
+          }
+        }}
         className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ease-in-out ${
           isScrolled ? 'px-0 py-0' : 'px-4 py-4'
         }`}
