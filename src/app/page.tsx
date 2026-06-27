@@ -224,6 +224,7 @@ export default function Home() {
   const [error, setError] = useState('')
   const [suggestedNames, setSuggestedNames] = useState<string[]>([])
   const [mounted, setMounted] = useState(false)
+  const [isScrolled, setIsScrolled] = useState(false)
   const [roomOpen, setRoomOpen] = useState(false)
   const [supportOpen, setSupportOpen] = useState(false)
   const router = useRouter()
@@ -252,6 +253,19 @@ export default function Home() {
     router.prefetch('/student')
     router.prefetch('/admin')
   }, [router])
+
+  // Track scroll position to transition the navbar
+  useEffect(() => {
+    if (!mounted) return
+
+    const handleScroll = () => {
+      setIsScrolled(window.scrollY > 0)
+    }
+
+    handleScroll()
+    window.addEventListener('scroll', handleScroll, { passive: true })
+    return () => window.removeEventListener('scroll', handleScroll)
+  }, [mounted])
 
   // Hide FAB when hero or footer is visible
   useEffect(() => {
@@ -640,10 +654,18 @@ export default function Home() {
         initial={{ y: -20, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
         transition={{ duration: 0.6 }}
-        className="fixed top-0 left-0 right-0 z-50 px-4 py-4"
+        className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ease-in-out ${
+          isScrolled ? 'px-0 py-0' : 'px-4 py-4'
+        }`}
       >
-        <div className="max-w-7xl mx-auto">
-          <div className="glass rounded-2xl px-6 py-3 flex items-center justify-between">
+        <div className={`mx-auto transition-all duration-300 ease-in-out w-full ${
+          isScrolled ? 'max-w-full' : 'max-w-7xl'
+        }`}>
+          <div className={`glass flex items-center justify-between transition-all duration-300 ease-in-out ${
+            isScrolled
+              ? 'rounded-none px-6 py-2 border-t-0 border-l-0 border-r-0 border-b border-border/20 shadow-md'
+              : 'rounded-2xl px-6 py-2.5 border border-border/10'
+          }`}>
             <div className="flex items-center gap-3">
               <Image src="/logo.svg" alt="CosmoShare Logo" width={120} height={40} className="block dark:hidden h-8 sm:h-10 w-auto" priority />
               <Image src="/logoDark.svg" alt="CosmoShare Logo" width={120} height={40} className="hidden dark:block h-8 sm:h-10 w-auto" priority />
@@ -676,15 +698,6 @@ export default function Home() {
           <div className="grid lg:grid-cols-2 gap-12 items-center">
             {/* Left Content */}
             <div className="text-center lg:text-left">
-              {/* Badge */}
-              <div className="hero-cta inline-flex items-center gap-2 glass px-4 py-2 rounded-full mb-8">
-                <span className="relative flex h-2 w-2">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-                </span>
-                <span className="text-sm text-muted-foreground">Seamless Real-Time Connectivity</span>
-              </div>
-
               {/* Main Headline */}
               <h1 className="hero-title text-4xl sm:text-5xl md:text-6xl lg:text-7xl font-bold mb-6 leading-tight tracking-tight">
                 <span className="text-foreground">Share Files </span>
