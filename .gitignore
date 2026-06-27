@@ -50,3 +50,5 @@ server.log
 
 # Worker deploy
 workers/signaling/accounts.json
+
+/SafeState_Repo

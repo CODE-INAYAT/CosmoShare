@@ -2,6 +2,11 @@
 
 require('dotenv').config();
 
+const dns = require('dns');
+if (typeof dns.setDefaultResultOrder === 'function') {
+  dns.setDefaultResultOrder('ipv4first');
+}
+
 const fs = require('fs');
 const path = require('path');
 const express = require('express');
@@ -28,6 +33,20 @@ function _loadGreetings() {
       const raw = fs.readFileSync(GREETINGS_FILE, 'utf-8');
       const data = JSON.parse(raw);
       greetingStore = new Map(Object.entries(data));
+      
+      // Cleanup entries older than 48 hours to prevent unbounded growth
+      const cutoff = Date.now() - (48 * 60 * 60 * 1000);
+      let cleaned = 0;
+      for (const [phone, timestamp] of greetingStore) {
+        if (timestamp < cutoff) {
+          greetingStore.delete(phone);
+          cleaned++;
+        }
+      }
+      if (cleaned > 0) {
+        logger.debug(`Cleaned ${cleaned} expired greeting entries`);
+        _saveGreetings();
+      }
     }
   } catch (err) {
     logger.error('Failed to load greeting store', { error: err.message });
@@ -494,7 +513,6 @@ function startHealthServer() {
   }
 
   // 1. Register raw binary endpoint before global body parsers
-  // 1. Register raw binary endpoint before global body parsers
   app.post('/api/whatsapp/share-file', checkApiAuth, express.raw({ type: '*/*', limit: '100mb' }), async (req, res) => {
     try {
       const phoneNumber = req.headers['x-phone-number'];
@@ -551,52 +569,9 @@ function startHealthServer() {
     }
   });
 
-  // 2. Register global json body parser middlewares
+  // 2. Register JSON body parser
   app.use(express.json({ limit: '100mb' }));
   app.use(express.urlencoded({ limit: '100mb', extended: true }));
-
-  // Middleware to authenticate admin requests
-  function checkAuth(req, res, next) {
-    const cookies = parseCookies(req);
-    if (cookies.auth_token === config.admin.password) {
-      return next();
-    }
-    res.send(renderLoginPage());
-  }
-
-  // Handle Login
-  app.post('/login', (req, res) => {
-    const { password } = req.body;
-    if (password === config.admin.password) {
-      res.setHeader('Set-Cookie', `auth_token=${encodeURIComponent(password)}; Max-Age=${24 * 60 * 60}; Path=/; HttpOnly; SameSite=None; Secure`);
-      res.redirect('/');
-    } else {
-      res.send(renderLoginPage('Invalid Password'));
-    }
-  });
-
-  // Handle Logout
-  app.post('/logout', (req, res) => {
-    res.setHeader('Set-Cookie', 'auth_token=; Max-Age=0; Path=/; HttpOnly; SameSite=None; Secure');
-    res.redirect('/');
-  });
-
-  // Health endpoint (public)
-  app.get('/health', (req, res) => {
-    const info = client.info;
-    const pauseState = pauseService.getState();
-    res.json({
-      status: 'ok',
-      uptime: Math.floor((Date.now() - startTime) / 1000),
-      connectedToWhatsApp: !!(info && info.wid),
-      botStatus: global.botStatus,
-      isPaused: pauseService.isPaused(),
-      pauseType: pauseState.pauseType,
-      resumeAtIST: pauseState.resumeAt ? pauseService.formatToIST(pauseState.resumeAt) : null,
-      activeSessions: sessionManager.activeSessionCount,
-      timestamp: new Date().toISOString(),
-    });
-  });
 
   // API Sharing Endpoint (authenticated)
   app.post('/api/whatsapp/share', checkApiAuth, async (req, res) => {
@@ -691,6 +666,49 @@ function startHealthServer() {
       logger.error('Error handling API share request', { error: err.message, stack: err.stack });
       return res.status(500).json({ error: 'Failed to share content: ' + err.message });
     }
+  });
+
+  // Middleware to authenticate admin requests
+  function checkAuth(req, res, next) {
+    const cookies = parseCookies(req);
+    if (cookies.auth_token === config.admin.password) {
+      return next();
+    }
+    res.send(renderLoginPage());
+  }
+
+  // Handle Login
+  app.post('/login', (req, res) => {
+    const { password } = req.body;
+    if (password === config.admin.password) {
+      res.setHeader('Set-Cookie', `auth_token=${encodeURIComponent(password)}; Max-Age=${24 * 60 * 60}; Path=/; HttpOnly; SameSite=None; Secure`);
+      res.redirect('/');
+    } else {
+      res.send(renderLoginPage('Invalid Password'));
+    }
+  });
+
+  // Handle Logout
+  app.post('/logout', (req, res) => {
+    res.setHeader('Set-Cookie', 'auth_token=; Max-Age=0; Path=/; HttpOnly; SameSite=None; Secure');
+    res.redirect('/');
+  });
+
+  // Health endpoint (public)
+  app.get('/health', (req, res) => {
+    const info = client.info;
+    const pauseState = pauseService.getState();
+    res.json({
+      status: 'ok',
+      uptime: Math.floor((Date.now() - startTime) / 1000),
+      connectedToWhatsApp: !!(info && info.wid),
+      botStatus: global.botStatus,
+      isPaused: pauseService.isPaused(),
+      pauseType: pauseState.pauseType,
+      resumeAtIST: pauseState.resumeAt ? pauseService.formatToIST(pauseState.resumeAt) : null,
+      activeSessions: sessionManager.activeSessionCount,
+      timestamp: new Date().toISOString(),
+    });
   });
 
   // Dashboard Page (authenticated)
@@ -834,6 +852,95 @@ async function shutdown(signal) {
   }
 }
 
+// ─── Network Diagnostic Helper ──────────────────────────────────────
+async function runNetworkDiagnostics() {
+  const dns = require('dns').promises;
+  const https = require('https');
+  
+  logger.info('[Diagnostic] Running network and DNS checks...');
+  const targetHost = 'web.whatsapp.com';
+  
+  // 1. DNS Resolution Check
+  try {
+    const ipv4 = await dns.resolve4(targetHost).catch(() => []);
+    logger.info(`[Diagnostic] DNS IPv4 addresses: ${JSON.stringify(ipv4)}`);
+  } catch (err) {
+    logger.error('[Diagnostic] Failed to resolve IPv4:', { error: err.message });
+  }
+  
+  try {
+    const ipv6 = await dns.resolve6(targetHost).catch(() => []);
+    logger.info(`[Diagnostic] DNS IPv6 addresses: ${JSON.stringify(ipv6)}`);
+  } catch (err) {
+    logger.warn('[Diagnostic] Failed to resolve IPv6:', { error: err.message });
+  }
+
+  // 2. Outbound internet check to Google
+  const testGoogle = () => {
+    return new Promise((resolve) => {
+      logger.info('[Diagnostic] Attempting HTTPS request to https://google.com/ to check outbound internet...');
+      const start = Date.now();
+      const req = https.get('https://google.com/', { timeout: 10000 }, (res) => {
+        logger.info(`[Diagnostic] Google connection successful! Status Code: ${res.statusCode}, Time: ${Date.now() - start}ms`);
+        res.resume();
+        resolve(true);
+      });
+
+      req.on('error', (err) => {
+        logger.error('[Diagnostic] Google connection failed:', { error: err.message, code: err.code, time: Date.now() - start });
+        resolve(false);
+      });
+
+      req.on('timeout', () => {
+        logger.error('[Diagnostic] Google connection timed out after 10000ms');
+        req.destroy();
+        resolve(false);
+      });
+    });
+  };
+
+  // 3. Connection check to WhatsApp Web with a modern User-Agent over IPv4
+  const testWhatsAppWithUA = () => {
+    return new Promise((resolve) => {
+      logger.info(`[Diagnostic] Attempting HTTPS request to https://${targetHost}/ with modern User-Agent...`);
+      const start = Date.now();
+      const options = {
+        hostname: targetHost,
+        port: 443,
+        path: '/',
+        method: 'GET',
+        family: 4,
+        timeout: 10000,
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36'
+        }
+      };
+
+      const req = https.request(options, (res) => {
+        logger.info(`[Diagnostic] WhatsApp HTTPS (with UA) successful! Status Code: ${res.statusCode}, Time: ${Date.now() - start}ms`);
+        res.resume();
+        resolve(true);
+      });
+
+      req.on('error', (err) => {
+        logger.error('[Diagnostic] WhatsApp HTTPS (with UA) failed:', { error: err.message, code: err.code, time: Date.now() - start });
+        resolve(false);
+      });
+
+      req.on('timeout', () => {
+        logger.error('[Diagnostic] WhatsApp HTTPS (with UA) timed out after 10000ms');
+        req.destroy();
+        resolve(false);
+      });
+
+      req.end();
+    });
+  };
+
+  await testGoogle();
+  await testWhatsAppWithUA();
+}
+
 // ─── Main ───────────────────────────────────────────────────────────
 async function main() {
   logger.info('╔══════════════════════════════════════╗');
@@ -864,9 +971,42 @@ async function main() {
   // Start health and dashboard check server
   startHealthServer();
 
-  // Initialize WhatsApp client
+  // Run network diagnostics before client initialization
+  try {
+    await runNetworkDiagnostics();
+  } catch (diagErr) {
+    logger.error('Error running network diagnostics:', { error: diagErr.message });
+  }
+
+  // Initialize WhatsApp client with retries
   logger.info('Initializing WhatsApp client...');
-  await client.initialize();
+  const MAX_INIT_ATTEMPTS = 3;
+  const INIT_RETRY_DELAY_MS = 10000;
+  let attempt = 0;
+  let initialized = false;
+
+  while (attempt < MAX_INIT_ATTEMPTS && !initialized) {
+    try {
+      attempt++;
+      logger.info(`Initialization attempt ${attempt}/${MAX_INIT_ATTEMPTS}...`);
+      await client.initialize();
+      initialized = true;
+      logger.info('WhatsApp client initialized successfully!');
+    } catch (err) {
+      logger.error(`Initialization attempt ${attempt} failed:`, { error: err.message, stack: err.stack });
+      if (attempt < MAX_INIT_ATTEMPTS) {
+        logger.info(`Waiting ${INIT_RETRY_DELAY_MS / 1000}s before retrying...`);
+        await new Promise((resolve) => setTimeout(resolve, INIT_RETRY_DELAY_MS));
+        try {
+          await client.destroy();
+        } catch (destroyErr) {
+          logger.warn('Failed to destroy client on retry:', { error: destroyErr.message });
+        }
+      } else {
+        throw err;
+      }
+    }
+  }
 
   logger.info('Bot startup sequence complete');
 }

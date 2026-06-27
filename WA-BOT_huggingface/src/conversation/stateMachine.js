@@ -212,12 +212,6 @@ async function processMessage(userId, messageText, sessionMgr, sendProgress) {
           return formatter.noFilesError();
         }
 
-        // Additional safety check: Block code snippets for LabShare Print
-        if (session.selectedMethod === 'labshare_print' && stats.totalCodeSnippets > 0) {
-          session.codeSnippets = []; // Clear snippets to recover session state
-          return formatter.codeSnippetBlockedByPrint();
-        }
-
         // Route based on selectedMethod
         return await _processShare(userId, session, sessionMgr, stats, sendProgress);
       }

@@ -196,6 +196,9 @@ class WebRTCSender {
     const fileSize = stat.size;
     const fileType = mimeType || require('mime-types').lookup(filePath) || 'application/octet-stream';
 
+    // Wait for buffer to drain before sending metadata
+    await this._waitForDrain();
+
     // 1. Send file metadata
     this.peer.send(JSON.stringify({
       type: 'file-metadata',
@@ -230,6 +233,9 @@ class WebRTCSender {
       fs.closeSync(fd);
     }
 
+    // Wait for buffer to drain before sending completion marker
+    await this._waitForDrain();
+
     // 3. Send file-complete marker
     this.peer.send(JSON.stringify({
       type: 'file-complete',
@@ -246,6 +252,7 @@ class WebRTCSender {
     if (!this.peer || this.peer.destroyed || !this.connected) {
       throw new Error('Not connected');
     }
+    await this._waitForDrain();
     this.peer.send(JSON.stringify({ type: 'link', linkUrl, message, fileId }));
   }
 
@@ -256,6 +263,7 @@ class WebRTCSender {
     if (!this.peer || this.peer.destroyed || !this.connected) {
       throw new Error('Not connected');
     }
+    await this._waitForDrain();
     this.peer.send(JSON.stringify({
       type: 'contact-share',
       name,
@@ -271,6 +279,7 @@ class WebRTCSender {
     if (!this.peer || this.peer.destroyed || !this.connected) {
       throw new Error('Not connected');
     }
+    await this._waitForDrain();
     this.peer.send(JSON.stringify({
       type: 'location-share',
       latitude,
@@ -288,6 +297,7 @@ class WebRTCSender {
     if (!this.peer || this.peer.destroyed || !this.connected) {
       throw new Error('Not connected');
     }
+    await this._waitForDrain();
     this.peer.send(JSON.stringify({ type: 'message-only', message }));
   }
 
@@ -309,21 +319,43 @@ class WebRTCSender {
     try {
       const ch = this.peer._channel || this.peer.channel || this.peer.dataChannel;
       if (ch && typeof ch.bufferedAmount === 'number') {
-        const MAX_BUFFER = 256 * 1024;
+        const MAX_BUFFER = 256 * 1024; // 256KB
+        const LOW_WATER = 64 * 1024;   // 64KB
+        
         if (ch.bufferedAmount > MAX_BUFFER) {
+          if (typeof ch.bufferedAmountLowThreshold === 'number' && ch.bufferedAmountLowThreshold < LOW_WATER) {
+            ch.bufferedAmountLowThreshold = LOW_WATER;
+          }
           await new Promise((resolve) => {
+            let done = false;
+            const cleanup = () => {
+              if (done) return;
+              done = true;
+              try { ch.removeEventListener('bufferedamountlow', onLow); } catch (e) {}
+              try { clearInterval(poll); } catch (e) {}
+              try { clearTimeout(timeout); } catch (e) {}
+            };
+            const onLow = () => {
+              cleanup();
+              resolve();
+            };
             const poll = setInterval(() => {
-              if (!ch || ch.bufferedAmount <= MAX_BUFFER / 2) {
-                clearInterval(poll);
+              if (!ch || ch.bufferedAmount <= LOW_WATER) {
+                cleanup();
                 resolve();
               }
             }, 20);
-            // Safety: don't wait forever
-            setTimeout(() => { clearInterval(poll); resolve(); }, 5000);
+            const timeout = setTimeout(() => {
+              cleanup();
+              resolve();
+            }, 10000); // 10s safety timeout
+            try {
+              ch.addEventListener('bufferedamountlow', onLow, { once: true });
+            } catch (e) {}
           });
         }
       }
-    } catch { /* ignore */ }
+    } catch (e) { /* ignore */ }
   }
 
   /**

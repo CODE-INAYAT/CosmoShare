@@ -7,6 +7,53 @@ const { connectForOneShare, connectForLabShare, generateCode, djb2Hash } = requi
 const { WebRTCSender } = require('./webrtcSender');
 
 /**
+ * Basic backpressure: wait if the internal buffer is too full.
+ */
+async function waitForDrain(peer) {
+  if (!peer || peer.destroyed) return;
+  try {
+    const ch = peer._channel || peer.channel || peer.dataChannel;
+    if (ch && typeof ch.bufferedAmount === 'number') {
+      const MAX_BUFFER = 256 * 1024; // 256KB
+      const LOW_WATER = 64 * 1024;   // 64KB
+      
+      if (ch.bufferedAmount > MAX_BUFFER) {
+        if (typeof ch.bufferedAmountLowThreshold === 'number' && ch.bufferedAmountLowThreshold < LOW_WATER) {
+          ch.bufferedAmountLowThreshold = LOW_WATER;
+        }
+        await new Promise((resolve) => {
+          let done = false;
+          const cleanup = () => {
+            if (done) return;
+            done = true;
+            try { ch.removeEventListener('bufferedamountlow', onLow); } catch (e) {}
+            try { clearInterval(poll); } catch (e) {}
+            try { clearTimeout(timeout); } catch (e) {}
+          };
+          const onLow = () => {
+            cleanup();
+            resolve();
+          };
+          const poll = setInterval(() => {
+            if (!ch || ch.bufferedAmount <= LOW_WATER) {
+              cleanup();
+              resolve();
+            }
+          }, 20);
+          const timeout = setTimeout(() => {
+            cleanup();
+            resolve();
+          }, 10000); // 10s safety timeout
+          try {
+            ch.addEventListener('bufferedamountlow', onLow, { once: true });
+          } catch (e) {}
+        });
+      }
+    }
+  } catch (e) { /* ignore */ }
+}
+
+/**
  * ShareManager — Orchestrates background share sessions for the WA-Bot.
  *
  * When a user chooses OneShare/MultiShare, the ShareManager:
@@ -225,6 +272,7 @@ class ShareManager {
             // Connected! Send all files
             try {
               await this._sendAllContent(sender, sessionData);
+              await sender._waitForDrain();
               sender.complete(receiverId);
               session.transfers++;
               logger.info('Transfer complete', { code, receiverId, transferCount: session.transfers });
@@ -362,6 +410,7 @@ class ShareManager {
           // Send files using the same protocol
           for (const file of sessionData.files) {
             if (file.fileType === 'contact') {
+              await waitForDrain(peer);
               peer.send(JSON.stringify({
                 type: 'contact-share',
                 name: file.fileName,
@@ -371,6 +420,7 @@ class ShareManager {
                 senderUniqueId: senderId,
               }));
             } else if (file.fileType === 'location') {
+              await waitForDrain(peer);
               peer.send(JSON.stringify({
                 type: 'location-share',
                 latitude: file.location.latitude,
@@ -383,6 +433,7 @@ class ShareManager {
               }));
             } else if (file.tempPath && fs.existsSync(file.tempPath)) {
               const stat = fs.statSync(file.tempPath);
+              await waitForDrain(peer);
               peer.send(JSON.stringify({
                 type: 'file-metadata',
                 fileName: file.fileName,
@@ -403,6 +454,8 @@ class ShareManager {
                 const chunk = Buffer.alloc(bytesRead);
                 buf.copy(chunk, 0, 0, bytesRead);
 
+                await waitForDrain(peer);
+
                 peer.send(chunk);
                 offset += bytesRead;
                 // Basic backpressure / event-loop yield
@@ -410,12 +463,14 @@ class ShareManager {
               }
               fs.closeSync(fd);
 
+              await waitForDrain(peer);
               peer.send(JSON.stringify({ type: 'file-complete', fileName: file.fileName }));
             }
           }
 
           // Send links
           for (const link of (sessionData.links || [])) {
+            await waitForDrain(peer);
             peer.send(JSON.stringify({
               type: 'link',
               linkUrl: link.url,
@@ -429,6 +484,7 @@ class ShareManager {
           const isTargetAdmin = target.uniqueId === 'ADMIN' || target.name === 'Lab Admin';
           if (!isTargetAdmin) {
             for (const snippet of (sessionData.codeSnippets || [])) {
+              await waitForDrain(peer);
               peer.send(JSON.stringify({
                 type: 'message',
                 message: snippet,
@@ -439,6 +495,9 @@ class ShareManager {
               }));
             }
           }
+
+          // Wait for final drain to ensure receiver got everything before closing the peer!
+          await waitForDrain(peer);
 
           logger.info('Lab transfer complete to target', { targetId: target.id, targetName: target.name });
           peer.destroy();

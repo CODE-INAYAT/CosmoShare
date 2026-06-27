@@ -26,6 +26,7 @@ function initTransporter() {
         user,
         pass,
       },
+      family: 4, // Force connection over IPv4
     });
     logger.info('SMTP email alerting service initialized successfully');
     return transporter;

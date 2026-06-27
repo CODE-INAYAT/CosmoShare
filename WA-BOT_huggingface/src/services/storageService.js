@@ -62,9 +62,9 @@ async function restoreSession() {
       fs.rmSync(GIT_TEMP_DIR, { recursive: true, force: true });
     }
 
-    // Shallow clone of the remote dataset
+    // Shallow clone of the remote dataset forcing IPv4
     logger.debug('Cloning session dataset...');
-    execSync(`git clone --depth 1 ${remoteUrl} "${GIT_TEMP_DIR}"`, { stdio: 'ignore' });
+    execSync(`git clone -4 --depth 1 ${remoteUrl} "${GIT_TEMP_DIR}"`, { stdio: 'ignore' });
 
     // Restore files
     const sourceAuthDir = path.join(GIT_TEMP_DIR, '.wwebjs_auth');
@@ -200,8 +200,8 @@ async function backupSession() {
     execSync('git commit -m "Backup WhatsApp session state"', opts);
     execSync(`git remote add origin ${remoteUrl}`, opts);
     
-    // Force push to overwrite history (maintains a clean, single-commit repository)
-    execSync('git push --force origin main', opts);
+    // Force push to overwrite history forcing IPv4 (maintains a clean, single-commit repository)
+    execSync('git push -4 --force origin main', opts);
 
     logger.info('✅ WhatsApp session backed up successfully to Hugging Face Dataset');
     

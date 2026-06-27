@@ -8,6 +8,7 @@ const { downloadMedia, saveToTemp, getFileStats } = require('./fileHandler');
 const validators = require('../utils/validators');
 const formatter = require('../utils/formatter');
 const pauseService = require('../services/pauseService');
+const testConfig = require('../../config/testConfig');
 
 /** Rate limit tracking: userId → last reply timestamp */
 const lastReplyTimestamps = new Map();
@@ -137,6 +138,23 @@ function createMessageHandler(client) {
 
     // Ignore messages from self
     if (message.fromMe) return;
+
+    // Restrict messages to allowed test numbers if enabled
+    if (testConfig.ENABLE_TEST_NUMBERS_ONLY) {
+      let senderPhone = extractPhone(message.from);
+      try {
+        const contact = await message.getContact();
+        if (contact && contact.number) {
+          senderPhone = contact.number;
+        }
+      } catch (err) {
+        logger.warn('Failed to resolve contact number for filter', { error: err.message });
+      }
+      if (!testConfig.ALLOWED_TEST_NUMBERS.includes(senderPhone)) {
+        logger.debug('Message ignored: sender is not in allowed test numbers list', { senderPhone });
+        return;
+      }
+    }
 
     // Deduplication
     const msgId = message.id?.id || message.id?._serialized;

@@ -55,7 +55,7 @@ WORKDIR /app
 COPY package*.json ./
 
 # Install dependencies
-RUN npm ci --omit=dev
+RUN npm ci --omit=dev && npm cache clean --force
 
 # Copy the rest of the application
 COPY . .
@@ -63,7 +63,8 @@ COPY . .
 # Create persistent storage directories and assign permissions
 # Hugging Face runs containers with UID 1000 by default. 
 # We make directories and ensure permissions are open to avoid any write failures.
-RUN mkdir -p /data /app/logs /app/temp /app/sessions \
+RUN rm -rf /app/sessions /app/.wwebjs_auth /app/.wwebjs_cache /app/logs /app/temp \
+    && mkdir -p /data /app/logs /app/temp /app/sessions \
     && chmod -R 777 /data /app
 
 # Set environment variables for Puppeteer

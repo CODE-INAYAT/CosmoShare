@@ -14,17 +14,19 @@ const PUPPETEER_ARGS = [
   "--no-first-run",
   "--no-zygote",
   "--disable-gpu",
+  "--disable-async-dns",
 ];
 
 const client = new Client({
   authStrategy: new LocalAuth({
-    dataPath: path.resolve(config.bot.sessionDir),
+    dataPath: path.join(path.resolve(config.bot.sessionDir), ".wwebjs_auth"),
     clientId: "cosmoshare-bot",
   }),
   puppeteer: {
     headless: true,
     args: PUPPETEER_ARGS,
   },
+  userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
 });
 
 const emailService = require("./services/emailService");

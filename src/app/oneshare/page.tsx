@@ -2045,6 +2045,7 @@ function OneShareInner() {
                 isOpen={whatsAppDialogOpen}
                 onClose={() => setWhatsAppDialogOpen(false)}
                 onConfirm={handleWhatsAppConfirm}
+                totalFileSize={selectedFiles.reduce((sum, f) => sum + f.size, 0)}
             />
         </div >
     )

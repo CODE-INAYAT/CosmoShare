@@ -17,7 +17,7 @@
 // ──────────────────────────────────────────────────────────────
 //  Master toggle  —  set to `false` to disable all obfuscation
 // ──────────────────────────────────────────────────────────────
-export const URL_OBFUSCATION_ENABLED = true
+export const URL_OBFUSCATION_ENABLED = false
 
 // ──────────────────────────────────────────────────────────────
 //  Internal cipher key (change this to any random string you like)
@@ -133,7 +133,7 @@ function maskValueShallow(val: unknown): unknown {
       if (key !== 'message' && key !== 'stack' && key !== 'name') {
         try {
           const propVal = (val as any)[key]
-          ;(newErr as any)[key] = typeof propVal === 'string' ? maskUrlsInString(propVal) : propVal
+            ; (newErr as any)[key] = typeof propVal === 'string' ? maskUrlsInString(propVal) : propVal
         } catch {
           // ignore readonly/getter errors
         }
@@ -181,8 +181,8 @@ export function installConsoleMask(): void {
   const methods = ['log', 'warn', 'error', 'info', 'debug'] as const
   for (const m of methods) {
     const original = console[m].bind(console)
-    ;(console as any)[m] = (...args: unknown[]) => {
-      original(...maskArgs(args))
-    }
+      ; (console as any)[m] = (...args: unknown[]) => {
+        original(...maskArgs(args))
+      }
   }
 }
