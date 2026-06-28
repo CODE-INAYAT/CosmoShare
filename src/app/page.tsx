@@ -42,7 +42,8 @@ import {
   ShieldCheck,
   Rocket,
   QrCode,
-  HelpCircle
+  HelpCircle,
+  AlertCircle
 } from 'lucide-react'
 import Image from 'next/image'
 import { useRouter } from 'next/navigation'
@@ -227,6 +228,7 @@ export default function Home() {
   const [isScrolled, setIsScrolled] = useState(false)
   const [roomOpen, setRoomOpen] = useState(false)
   const [supportOpen, setSupportOpen] = useState(false)
+  const [portalTab, setPortalTab] = useState<'oneshare' | 'labshare'>('oneshare')
   const router = useRouter()
 
   // Refs for GSAP animations
@@ -671,40 +673,35 @@ export default function Home() {
             navRef.current.style.willChange = 'auto'
           }
         }}
-        className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ease-in-out ${
-          isScrolled ? 'px-0 py-0' : 'px-4 py-4'
-        }`}
+        className="fixed top-0 left-0 right-0 z-50 flex justify-center pointer-events-none"
       >
-        <div className={`mx-auto transition-all duration-300 ease-in-out w-full ${
-          isScrolled ? 'max-w-full' : 'max-w-7xl'
-        }`}>
-          <div className={`glass flex items-center justify-between transition-all duration-300 ease-in-out ${
-            isScrolled
-              ? 'rounded-none px-6 py-2 border-t-0 border-l-0 border-r-0 border-b border-border/20 shadow-md'
-              : 'rounded-2xl px-6 py-2.5 border border-border/10'
-          }`}>
-            <div className="flex items-center gap-3">
-              <Image src="/logo.svg" alt="CosmoShare Logo" width={120} height={40} className="block dark:hidden h-8 sm:h-10 w-auto" priority />
-              <Image src="/logoDark.svg" alt="CosmoShare Logo" width={120} height={40} className="hidden dark:block h-8 sm:h-10 w-auto" priority />
-              <span className="text-xl font-bold gradient-text">CosmoShare</span>
-            </div>
+        <div
+          className={`glass flex items-center justify-between pointer-events-auto transition-all duration-500 cubic-bezier(0.16, 1, 0.3, 1) ${isScrolled
+              ? 'w-full max-w-full rounded-none px-6 py-2 border-t-0 border-l-0 border-r-0 border-b border-border/20 shadow-md mt-0'
+              : 'w-[calc(100%-2rem)] max-w-7xl rounded-2xl px-6 py-2.5 border border-border/10 mt-4'
+            }`}
+        >
+          <div className="flex items-center gap-3">
+            <Image src="/logo.svg" alt="CosmoShare Logo" width={120} height={40} className="block dark:hidden h-8 sm:h-10 w-auto" priority />
+            <Image src="/logoDark.svg" alt="CosmoShare Logo" width={120} height={40} className="hidden dark:block h-8 sm:h-10 w-auto" priority />
+            <span className="text-xl font-bold gradient-text">CosmoShare</span>
+          </div>
 
-            <div className="hidden md:flex items-center gap-8">
-              <a href="#portal" onClick={(e) => scrollToSection(e, 'portal')} className="text-muted-foreground hover:text-foreground transition-colors text-sm font-medium">Get Started</a>
-              <a href="#how-it-works" onClick={(e) => scrollToSection(e, 'how-it-works')} className="text-muted-foreground hover:text-foreground transition-colors text-sm font-medium">How It Works</a>
-              <a href="#features" onClick={(e) => scrollToSection(e, 'features')} className="text-muted-foreground hover:text-foreground transition-colors text-sm font-medium">Features</a>
-            </div>
+          <div className="hidden md:flex items-center gap-8">
+            <a href="#portal" onClick={(e) => scrollToSection(e, 'portal')} className="text-muted-foreground hover:text-foreground transition-colors text-sm font-medium">Get Started</a>
+            <a href="#how-it-works" onClick={(e) => scrollToSection(e, 'how-it-works')} className="text-muted-foreground hover:text-foreground transition-colors text-sm font-medium">How It Works</a>
+            <a href="#features" onClick={(e) => scrollToSection(e, 'features')} className="text-muted-foreground hover:text-foreground transition-colors text-sm font-medium">Features</a>
+          </div>
 
-            <div className="flex items-center gap-3">
-              <ThemeToggle />
-              <Button
-                className="gradient-primary text-white hover:opacity-90 transition-opacity hidden sm:flex glow-button"
-                onClick={() => document.getElementById('portal')?.scrollIntoView({ behavior: 'smooth' })}
-              >
-                <UserPlus className="w-4 h-4 mr-2" />
-                Join Room
-              </Button>
-            </div>
+          <div className="flex items-center gap-3">
+            <ThemeToggle />
+            <Button
+              className="gradient-primary text-white hover:opacity-90 transition-opacity hidden sm:flex glow-button"
+              onClick={() => document.getElementById('portal')?.scrollIntoView({ behavior: 'smooth' })}
+            >
+              <UserPlus className="w-4 h-4 mr-2" />
+              Join Room
+            </Button>
           </div>
         </div>
       </motion.nav>
@@ -823,7 +820,7 @@ export default function Home() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ delay: 1.5 }}
-            className="absolute bottom-10 left-1/2 -translate-x-1/2 hidden md:flex flex-col items-center gap-2"
+            className="absolute bottom-6 md:bottom-10 left-1/2 -translate-x-1/2 flex flex-col items-center gap-2"
           >
             <span className="text-xs text-muted-foreground">Scroll to explore</span>
             <motion.div
@@ -839,380 +836,438 @@ export default function Home() {
       {/* Portal Section */}
       <section ref={portalRef} id="portal" className="py-16 md:py-24 px-4 relative scroll-mt-20">
         <div className="max-w-5xl mx-auto">
+          {/* Section Header */}
           <motion.div
             initial="hidden"
             whileInView="visible"
             viewport={{ once: true, amount: 0.8, margin: "-15% 0px -35% 0px" }}
             variants={fadeUp}
-            className="text-center mb-12"
+            className="text-center mb-8"
           >
-            <h2 className="text-3xl md:text-5xl font-bold mb-4">
-              Ready to{' '}
-              <span className="gradient-text">Get Started?</span>
+            <h2 className="text-3xl md:text-5xl font-bold tracking-tight mb-4 leading-tight">
+              <span className="gradient-text">Get Started</span>
             </h2>
-            <p className="text-muted-foreground text-lg">
-              Join your lab room and start sharing in seconds
+            <p className="text-muted-foreground text-sm sm:text-base md:text-lg max-w-xl mx-auto leading-relaxed">
+              Select OneShare for quick peer-to-peer transfers, or LabShare to collaborate 'within Lab rooms.
             </p>
           </motion.div>
 
-          {/* OneShare Quick Access */}
+          {/* Primary Toggle (OneShare vs LabShare) */}
           <motion.div
             initial="hidden"
             whileInView="visible"
             viewport={{ once: true }}
             variants={fadeUp}
-            className="mb-10"
+            className="flex p-1 bg-slate-100 dark:bg-slate-900 rounded-full border border-slate-200 dark:border-slate-800/80 w-fit mx-auto mb-10 relative shadow-[inset_0_1px_2px_rgba(0,0,0,0.05)] dark:shadow-[inset_0_1px_3px_rgba(0,0,0,0.2)]"
           >
-            <button
-              onClick={() => {
-                setIsOneShareLoading(true)
-                router.push('/oneshare')
-              }}
-              disabled={isOneShareLoading}
-              className="portal-card w-full glass-card rounded-2xl p-4 md:p-6 text-center transition-all duration-300 hover:ring-2 hover:ring-primary hover:shadow-lg hover:shadow-primary/20 group disabled:opacity-80 disabled:pointer-events-none"
-            >
-              <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
-                <div className="w-16 h-16 rounded-2xl gradient-primary flex items-center justify-center glow-sm group-hover:scale-110 transition-transform">
-                  {isOneShareLoading ? (
-                    <Loader2 className="w-8 h-8 text-white animate-spin" />
-                  ) : (
-                    <QrCode className="w-8 h-8 text-white" />
-                  )}
-                </div>
-                <div className="text-center sm:text-left">
-                  <h3 className="text-xl font-bold text-foreground mb-1">
-                    {isOneShareLoading ? 'Loading OneShare...' : 'OneShare'}
-                  </h3>
-                  <p className="text-sm text-muted-foreground">
-                    {isOneShareLoading ? 'Please wait' : 'Quick share without joining a room — just scan or enter a code'}
-                  </p>
-                </div>
-                {!isOneShareLoading && (
-                  <ArrowRight className="w-6 h-6 text-primary hidden sm:block group-hover:translate-x-1 transition-transform" />
+            {[
+              { id: 'oneshare', label: 'OneShare' },
+              { id: 'labshare', label: 'LabShare' }
+            ].map((tab) => (
+              <button
+                key={tab.id}
+                onClick={() => {
+                  setError('')
+                  setPortalTab(tab.id as 'oneshare' | 'labshare')
+                }}
+                className={`relative px-6 py-2.5 text-sm font-bold rounded-full transition-all duration-200 z-10 ${portalTab === tab.id
+                    ? 'text-white dark:text-white'
+                    : 'text-slate-500 hover:text-slate-850 dark:text-slate-400 dark:hover:text-slate-100'
+                  }`}
+              >
+                {portalTab === tab.id && (
+                  <motion.div
+                    layoutId="primary-tab-bg"
+                    className="absolute inset-0 bg-primary rounded-full -z-10 shadow-sm shadow-primary/20"
+                    transition={{ type: 'spring', stiffness: 380, damping: 30 }}
+                  />
                 )}
-              </div>
-            </button>
+                {tab.label}
+              </button>
+            ))}
           </motion.div>
 
-          <motion.div
-            initial="hidden"
-            whileInView="visible"
-            viewport={{ once: true, amount: 0.3 }}
-            variants={fadeIn}
-            className="flex items-center gap-4 max-w-2xl mx-auto mb-6"
-          >
-            <div className="flex-1 h-px bg-border" />
-            <span className="text-sm text-muted-foreground">or join a lab room</span>
-            <div className="flex-1 h-px bg-border" />
-          </motion.div>
-
-          {/* Role Selection — staggered slide-in */}
-          <motion.div
-            initial="hidden"
-            whileInView="visible"
-            viewport={{ once: true, amount: 0.3 }}
-            variants={staggerContainer}
-            className="grid md:grid-cols-2 gap-6 mb-10 max-w-2xl mx-auto"
-          >
-            <motion.button
-              variants={slideFromLeft}
-              className={`portal-card w-full glass-card rounded-2xl p-4 md:p-6 text-left transition-shadow duration-300 ${userType === 'student'
-                ? 'ring-2 ring-primary shadow-lg shadow-primary/20'
-                : 'hover:shadow-lg'
-                }`}
-              onClick={() => setUserType('student')}
-            >
-              <div className="flex items-center gap-4">
-                <div className={`w-14 h-14 rounded-xl flex items-center justify-center transition-colors duration-300 ${userType === 'student'
-                  ? 'gradient-primary glow-sm'
-                  : 'bg-secondary'
-                  }`}>
-                  <Users className={`w-7 h-7 ${userType === 'student' ? 'text-white' : 'text-muted-foreground'}`} />
-                </div>
-                <div>
-                  <h3 className="text-lg font-semibold text-foreground">Student</h3>
-                  <p className="text-sm text-muted-foreground">Share files and print</p>
-                </div>
-              </div>
-            </motion.button>
-
-            <motion.button
-              variants={slideFromRight}
-              className={`portal-card w-full glass-card rounded-2xl p-4 md:p-6 text-left transition-shadow duration-300 ${userType === 'admin'
-                ? 'ring-2 ring-primary shadow-lg shadow-primary/20'
-                : 'hover:shadow-lg'
-                }`}
-              onClick={() => setUserType('admin')}
-            >
-              <div className="flex items-center gap-4">
-                <div className={`w-14 h-14 rounded-xl flex items-center justify-center transition-colors duration-300 ${userType === 'admin'
-                  ? 'gradient-primary glow-sm'
-                  : 'bg-secondary'
-                  }`}>
-                  <Lock className={`w-7 h-7 ${userType === 'admin' ? 'text-white' : 'text-muted-foreground'}`} />
-                </div>
-                <div>
-                  <h3 className="text-lg font-semibold text-foreground">Lab Admin</h3>
-                  <p className="text-sm text-muted-foreground">Manage print queue</p>
-                </div>
-              </div>
-            </motion.button>
-          </motion.div>
-
-          {/* Login Form — scale-in reveal */}
-          <motion.div
-            initial="hidden"
-            whileInView="visible"
-            viewport={{ once: true, amount: 0.2 }}
-            variants={scaleIn}
-            className="portal-card"
-          >
-            <Card className="glass-card border-0 rounded-3xl max-w-md mx-auto overflow-hidden shimmer-border">
-              <CardHeader className="text-center pt-8 pb-4">
+          {/* Conditional Cards with AnimatePresence */}
+          <div className="relative min-h-[520px] max-w-md mx-auto">
+            <AnimatePresence mode="wait">
+              {portalTab === 'oneshare' ? (
                 <motion.div
-                  initial={{ scale: 0 }}
-                  animate={{ scale: 1 }}
-                  transition={{ type: "spring", stiffness: 200, delay: 0.2 }}
-                  className="w-16 h-16 mx-auto mb-4 rounded-2xl gradient-primary flex items-center justify-center glow-md"
+                  key="oneshare-card"
+                  initial={{ opacity: 0, y: 15 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -15 }}
+                  transition={{ duration: 0.25, ease: 'easeInOut' }}
+                  className="w-full"
                 >
-                  <AnimatePresence mode="wait">
-                    {userType === 'student' ? (
-                      <motion.div
-                        key="student"
-                        initial={{ rotate: -90, opacity: 0 }}
-                        animate={{ rotate: 0, opacity: 1 }}
-                        exit={{ rotate: 90, opacity: 0 }}
-                      >
-                        <Users className="w-8 h-8 text-white" />
-                      </motion.div>
-                    ) : (
-                      <motion.div
-                        key="admin"
-                        initial={{ rotate: -90, opacity: 0 }}
-                        animate={{ rotate: 0, opacity: 1 }}
-                        exit={{ rotate: 90, opacity: 0 }}
-                      >
-                        <Lock className="w-8 h-8 text-white" />
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-                </motion.div>
-                <CardTitle className="text-2xl text-foreground">
-                  {userType === 'student' ? 'Student Portal' : 'Admin Portal'}
-                </CardTitle>
-                <CardDescription className="text-muted-foreground">
-                  {userType === 'student'
-                    ? 'Join your lab room to start sharing'
-                    : 'Access the admin dashboard'
-                  }
-                </CardDescription>
-              </CardHeader>
-
-              <CardContent className="p-5 md:p-8 pt-4">
-                <form onSubmit={userType === 'student' ? handleStudentSubmit : handleAdminSubmit} className="space-y-5">
-                  {/* Room Selection - Searchable Modal */}
-                  <div className="space-y-2">
-                    <Label htmlFor="room" className="text-muted-foreground text-sm">Lab Room Number</Label>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={() => setRoomOpen(true)}
-                      className="w-full justify-between bg-secondary/50 border-border text-foreground rounded-xl h-12 focus:ring-primary focus:ring-offset-0 hover:bg-secondary/70 transition-colors"
-                    >
-                      {roomNumber ? (
-                        <span className="flex items-center gap-2">
-                          <Monitor className="w-4 h-4 text-primary" />
-                          Room {roomNumber}
-                        </span>
-                      ) : (
-                        <span className="text-muted-foreground">Select room...</span>
-                      )}
-                      <ChevronDown className="h-4 w-4 text-muted-foreground" />
-                    </Button>
-
-                    <CommandDialog
-                      open={roomOpen}
-                      onOpenChange={setRoomOpen}
-                      title="Select Room"
-                      description="Choose your lab room"
-                    >
-                      <CommandInput placeholder="Search room..." />
-                      <CommandList className="max-h-[50vh] py-2">
-                        <CommandEmpty>
-                          <p className="py-4 text-sm text-muted-foreground text-center">No room found</p>
-                        </CommandEmpty>
-                        <CommandGroup>
-                          {roomNumbers.map((room) => (
-                            <CommandItem
-                              key={room}
-                              value={room}
-                              onSelect={(currentValue) => {
-                                setRoomNumber(currentValue)
-                                setRoomOpen(false)
-                              }}
-                              className={`flex items-center justify-between mx-2 px-3 py-2.5 rounded-lg cursor-pointer ${roomNumber === room ? 'bg-primary/10' : ''
-                                }`}
-                            >
-                              <span className="flex items-center gap-3">
-                                <Monitor className="w-4 h-4" />
-                                <span className={roomNumber === room ? 'font-medium' : ''}>
-                                  Room {room}
-                                </span>
-                              </span>
-                              {roomNumber === room && (
-                                <CheckCircle2 className="h-4 w-4" />
-                              )}
-                            </CommandItem>
-                          ))}
-                        </CommandGroup>
-                      </CommandList>
-                    </CommandDialog>
-                  </div>
-
-                  {/* Name Input (Student only) */}
-                  <AnimatePresence mode="wait">
-                    {userType === 'student' && (
-                      <motion.div
-                        initial={{ opacity: 0, height: 0 }}
-                        animate={{ opacity: 1, height: 'auto' }}
-                        exit={{ opacity: 0, height: 0 }}
-                        className="space-y-2"
-                      >
-                        <Label htmlFor="name" className="text-muted-foreground text-sm">Your Name</Label>
-                        <Input
-                          id="name"
-                          type="text"
-                          placeholder="Enter your name"
-                          value={name}
-                          onChange={(e) => setName(e.target.value.toUpperCase())}
-                          minLength={3}
-                          maxLength={30}
-                          autoComplete="name"
-                          autoCapitalize="characters"
-                          className="bg-secondary/50 border-border text-foreground rounded-xl h-12 placeholder:text-muted-foreground focus-visible:ring-primary focus-visible:ring-offset-0 uppercase"
-                        />
-                        <div className="flex items-center justify-between mt-1.5">
-                          <span className={`text-xs transition-colors duration-200 ${name.length === 0
-                            ? 'text-muted-foreground'
-                            : name.length < 3
-                              ? 'text-red-500'
-                              : name.length >= 25
-                                ? 'text-amber-500'
-                                : 'text-muted-foreground'
-                            }`}>
-                            {name.length === 0
-                              ? 'Min 3 characters'
-                              : name.length < 3
-                                ? `${3 - name.length} more needed`
-                                : `${name.length}/30 characters`}
-                          </span>
-                          {name.length >= 3 && (
-                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
+                  <Card className="glass-card shimmer-border rounded-[45px] overflow-hidden">
+                    <CardHeader className="text-center pt-8 pb-4">
+                      <div className="w-20 h-20 mx-auto mb-4 rounded-[1.75rem] gradient-primary flex items-center justify-center">
+                        {isOneShareLoading ? (
+                          <Loader2 className="w-10 h-10 text-white animate-spin" />
+                        ) : (
+                          <QrCode className="w-10 h-10 text-white" />
+                        )}
+                      </div>
+                      <CardTitle className="text-2xl font-bold text-foreground">OneShare</CardTitle>
+                      <CardDescription className="text-muted-foreground px-4 text-sm mt-1">
+                        Quick peer-to-peer file sharing without joining a room.
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="p-6 pt-2 pb-8">
+                      <div className="space-y-3 mb-6">
+                        {[
+                          { text: 'Direct device-to-device transfer via WebRTC', icon: Zap },
+                          { text: 'No cloud storage, files are completely private', icon: Shield },
+                          { text: 'Instant connection via QR codes or numeric keys', icon: QrCode }
+                        ].map((item, idx) => {
+                          const Icon = item.icon
+                          return (
+                            <div key={idx} className="flex items-center gap-4 py-3.5 px-6 bg-secondary/10 dark:bg-secondary/5 border border-border/5 rounded-full text-left">
+                              <Icon className="w-4 h-4 text-primary shrink-0" />
+                              <span className="text-sm text-foreground/90 font-medium leading-normal">{item.text}</span>
+                            </div>
+                          )
+                        })}
+                      </div>
+                      <div className="flex justify-center">
+                        <Button
+                          onClick={() => {
+                            setIsOneShareLoading(true)
+                            router.push('/oneshare')
+                          }}
+                          disabled={isOneShareLoading}
+                          className="w-fit min-w-[200px] px-8 h-12 gradient-primary text-white rounded-full group flex items-center justify-center font-semibold text-sm transition-opacity hover:opacity-95 glow-button"
+                        >
+                          {isOneShareLoading ? (
+                            <>
+                              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                              Launching OneShare...
+                            </>
+                          ) : (
+                            <>
+                              Launch OneShare
+                              <ArrowRight className="w-4 h-4 ml-2 group-hover:translate-x-0.5 transition-transform" />
+                            </>
                           )}
-                        </div>
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
+                        </Button>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </motion.div>
+              ) : (
+                <motion.div
+                  key="labshare-card"
+                  initial={{ opacity: 0, y: 15 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -15 }}
+                  transition={{ duration: 0.25, ease: 'easeInOut' }}
+                  className="w-full"
+                >
+                  <Card className="glass-card shimmer-border rounded-[45px] overflow-hidden">
+                    {/* Secondary Toggle (Student vs Lab Admin) */}
+                    <div className="flex border-b border-border/10 w-full">
+                      {[
+                        { id: 'student', label: 'Student' },
+                        { id: 'admin', label: 'Lab Admin' }
+                      ].map((role) => (
+                        <button
+                          key={role.id}
+                          type="button"
+                          onClick={() => {
+                            setError('')
+                            setUserType(role.id as 'student' | 'admin')
+                          }}
+                          className={`flex-1 py-3.5 text-sm font-semibold transition-colors duration-200 relative ${userType === role.id
+                            ? 'text-primary'
+                            : 'text-muted-foreground hover:text-foreground'
+                            }`}
+                        >
+                          {userType === role.id && (
+                            <motion.div
+                              layoutId="secondary-tab-underline"
+                              className="absolute bottom-0 left-6 right-6 h-0.5 bg-primary rounded-full"
+                              transition={{ type: 'spring', stiffness: 350, damping: 28 }}
+                            />
+                          )}
+                          <span>{role.label}</span>
+                        </button>
+                      ))}
+                    </div>
 
-                  {/* Password Input (Admin only) */}
-                  <AnimatePresence mode="wait">
-                    {userType === 'admin' && (
-                      <motion.div
-                        initial={{ opacity: 0, height: 0 }}
-                        animate={{ opacity: 1, height: 'auto' }}
-                        exit={{ opacity: 0, height: 0 }}
-                        className="space-y-2"
-                      >
-                        <Label htmlFor="password" className="text-muted-foreground text-sm">Admin Password</Label>
-                        <Input
-                          id="password"
-                          type={AUTO_LOGIN_ENABLED && verifyHash(password) ? 'text' : 'password'}
-                          placeholder="Enter admin password"
-                          value={password}
-                          onChange={(e) => setPassword(e.target.value)}
-                          className={`bg-secondary/50 border-border rounded-xl h-12 placeholder:text-muted-foreground focus-visible:ring-primary focus-visible:ring-offset-0 ${AUTO_LOGIN_ENABLED && verifyHash(password) ? 'text-[9px] font-mono tracking-tight text-muted-foreground' : 'text-foreground'}`}
-                          readOnly={AUTO_LOGIN_ENABLED && verifyHash(password)}
-                        />
-                        {AUTO_LOGIN_ENABLED && verifyHash(password) && (
+                    <CardContent className="p-6 pt-6">
+                      <AnimatePresence mode="wait">
+                        {userType === 'student' ? (
                           <motion.div
-                            initial={{ opacity: 0, y: -4 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            className="flex items-center gap-2 px-3 py-2 rounded-lg border border-amber-400/40 bg-amber-50/80 dark:bg-amber-950/30"
+                            key="student-form"
+                            initial={{ opacity: 0, x: -15 }}
+                            animate={{ opacity: 1, x: 0 }}
+                            exit={{ opacity: 0, x: 15 }}
+                            transition={{ duration: 0.2 }}
                           >
-                            <div className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse shrink-0" />
-                            <p className="text-[11px] font-medium text-amber-700 dark:text-amber-300">
-                              Test mode — password auto-filled for testing
-                            </p>
+                            <div className="text-center pb-6">
+                              <motion.div
+                                initial={{ opacity: 0, y: 12, scale: 0.94 }}
+                                animate={{ opacity: 1, y: 0, scale: 1 }}
+                                transition={{
+                                  duration: 0.45,
+                                  ease: [0.16, 1, 0.3, 1],
+                                  delay: 0.05
+                                }}
+                                className="w-20 h-20 mx-auto mb-4 rounded-[1.75rem] gradient-primary flex items-center justify-center"
+                              >
+                                <Users className="w-10 h-10 text-white" />
+                              </motion.div>
+                              <h3 className="text-2xl font-bold text-foreground">Student Portal</h3>
+                              <p className="text-sm text-muted-foreground mt-1">Join your lab room to start sharing</p>
+                            </div>
+
+                            <form onSubmit={handleStudentSubmit} className="space-y-4">
+                              <div className="space-y-1.5">
+                                <Label htmlFor="student-room" className="text-muted-foreground text-xs font-medium pl-2">Lab Room Number</Label>
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  onClick={() => setRoomOpen(true)}
+                                  className="w-full justify-between bg-secondary/20 dark:bg-secondary/10 border-border/80 hover:border-primary/50 text-foreground rounded-full h-11 hover:bg-secondary/40 transition-colors pl-4 pr-5 flex items-center"
+                                >
+                                  {roomNumber ? (
+                                    <span className="font-medium text-foreground">Room {roomNumber}</span>
+                                  ) : (
+                                    <span className="text-muted-foreground text-sm">Select Lab Room...</span>
+                                  )}
+                                  <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" />
+                                </Button>
+                              </div>
+
+                              <div className="space-y-1.5">
+                                <Label htmlFor="name" className="text-muted-foreground text-xs font-medium pl-2">Your Name</Label>
+                                <Input
+                                  id="name"
+                                  type="text"
+                                  placeholder="Enter your name"
+                                  value={name}
+                                  onChange={(e) => setName(e.target.value.toUpperCase())}
+                                  minLength={3}
+                                  maxLength={30}
+                                  autoComplete="name"
+                                  autoCapitalize="characters"
+                                  className="bg-secondary/20 dark:bg-secondary/10 border-border/80 text-foreground rounded-full h-11 px-5 placeholder:text-muted-foreground focus-visible:ring-primary focus-visible:ring-offset-0 uppercase font-semibold text-sm transition-colors"
+                                />
+                                <div className="flex items-center justify-between mt-1 px-2">
+                                  <span className={`text-[11px] transition-colors duration-200 ${name.length === 0
+                                    ? 'text-muted-foreground'
+                                    : name.length < 3
+                                      ? 'text-red-500 font-medium'
+                                      : name.length >= 25
+                                        ? 'text-amber-500'
+                                        : 'text-muted-foreground'
+                                    }`}>
+                                    {name.length === 0
+                                      ? 'Min 3 characters'
+                                      : name.length < 3
+                                        ? `${3 - name.length} more needed`
+                                        : `${name.length}/30 characters`}
+                                  </span>
+                                  {name.length >= 3 && (
+                                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                                  )}
+                                </div>
+                              </div>
+
+                              {/* Error Message */}
+                              {error && (
+                                <div className="bg-destructive/5 border border-destructive/20 text-destructive rounded-2xl p-4.5 text-xs flex items-start gap-2.5">
+                                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                                  <span>{error}</span>
+                                </div>
+                              )}
+
+                              {/* Suggested Names */}
+                              {suggestedNames.length > 0 && (
+                                <div className="space-y-1.5">
+                                  <Label className="text-muted-foreground text-xs font-medium pl-2">Suggested Names</Label>
+                                  <div className="flex flex-wrap gap-2 px-1">
+                                    {suggestedNames.map((suggestedName, index) => (
+                                      <Badge
+                                        key={index}
+                                        variant="secondary"
+                                        className="bg-secondary hover:bg-primary/20 hover:text-primary cursor-pointer transition-colors rounded-full px-3.5 py-1 font-medium"
+                                        onClick={() => handleSuggestedNameClick(suggestedName)}
+                                      >
+                                        {suggestedName}
+                                      </Badge>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+
+                              <div className="flex justify-center pt-2">
+                                <Button
+                                  type="submit"
+                                  className="w-fit min-w-[200px] px-8 h-11 gradient-primary text-white rounded-full group flex items-center justify-center font-semibold text-sm transition-opacity hover:opacity-95 glow-button"
+                                  disabled={isLoading}
+                                >
+                                  {isLoading ? (
+                                    <>
+                                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                      Joining Room...
+                                    </>
+                                  ) : (
+                                    <>
+                                      Join Lab Room
+                                      <ArrowRight className="w-4 h-4 ml-2 group-hover:translate-x-0.5 transition-transform" />
+                                    </>
+                                  )}
+                                </Button>
+                              </div>
+                            </form>
+                          </motion.div>
+                        ) : (
+                          <motion.div
+                            key="admin-form"
+                            initial={{ opacity: 0, x: 15 }}
+                            animate={{ opacity: 1, x: 0 }}
+                            exit={{ opacity: 0, x: -15 }}
+                            transition={{ duration: 0.2 }}
+                          >
+                            <div className="text-center pb-6">
+                              <motion.div
+                                initial={{ opacity: 0, y: 12, scale: 0.94 }}
+                                animate={{ opacity: 1, y: 0, scale: 1 }}
+                                transition={{
+                                  duration: 0.45,
+                                  ease: [0.16, 1, 0.3, 1],
+                                  delay: 0.05
+                                }}
+                                className="w-20 h-20 mx-auto mb-4 rounded-[1.75rem] gradient-primary flex items-center justify-center"
+                              >
+                                <Lock className="w-10 h-10 text-white" />
+                              </motion.div>
+                              <h3 className="text-2xl font-bold text-foreground">Admin Portal</h3>
+                              <p className="text-sm text-muted-foreground mt-1">Access the admin dashboard</p>
+                            </div>
+
+                            <form onSubmit={handleAdminSubmit} className="space-y-4">
+                              <div className="space-y-1.5">
+                                <Label htmlFor="admin-room" className="text-muted-foreground text-xs font-medium pl-2">Lab Room Number</Label>
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  onClick={() => setRoomOpen(true)}
+                                  className="w-full justify-between bg-secondary/20 dark:bg-secondary/10 border-border/80 text-foreground rounded-full h-11 hover:bg-secondary/40 transition-colors pl-4 pr-5 flex items-center"
+                                >
+                                  {roomNumber ? (
+                                    <span className="font-medium text-foreground">Room {roomNumber}</span>
+                                  ) : (
+                                    <span className="text-muted-foreground text-sm">Select Lab Room...</span>
+                                  )}
+                                  <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" />
+                                </Button>
+                              </div>
+
+                              <div className="space-y-1.5">
+                                <Label htmlFor="password" className="text-muted-foreground text-xs font-medium pl-2">Admin Password</Label>
+                                <Input
+                                  id="password"
+                                  type={AUTO_LOGIN_ENABLED && verifyHash(password) ? 'text' : 'password'}
+                                  placeholder="Enter admin password"
+                                  value={password}
+                                  onChange={(e) => setPassword(e.target.value)}
+                                  className={`bg-secondary/20 dark:bg-secondary/10 border-border/80 rounded-full h-11 px-5 placeholder:text-muted-foreground focus-visible:ring-primary focus-visible:ring-offset-0 transition-colors ${AUTO_LOGIN_ENABLED && verifyHash(password) ? 'text-[9px] font-mono tracking-tight text-muted-foreground' : 'text-foreground font-semibold text-sm'
+                                    }`}
+                                  readOnly={AUTO_LOGIN_ENABLED && verifyHash(password)}
+                                />
+                                {AUTO_LOGIN_ENABLED && verifyHash(password) && (
+                                  <motion.div
+                                    initial={{ opacity: 0, y: -4 }}
+                                    animate={{ opacity: 1, y: 0 }}
+                                    className="flex items-center gap-2 px-3 py-2 rounded-lg border border-amber-400/20 bg-amber-50/50 dark:bg-amber-950/20"
+                                  >
+                                    <div className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse shrink-0" />
+                                    <p className="text-[11px] font-medium text-amber-700 dark:text-amber-300">
+                                      Test mode — password auto-filled
+                                    </p>
+                                  </motion.div>
+                                )}
+                              </div>
+
+                              {/* Error Message */}
+                              {error && (
+                                <div className="bg-destructive/5 border border-destructive/20 text-destructive rounded-2xl p-4.5 text-xs flex items-start gap-2.5">
+                                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                                  <span>{error}</span>
+                                </div>
+                              )}
+
+                              <div className="flex justify-center pt-2">
+                                <Button
+                                  type="submit"
+                                  className="w-fit min-w-[200px] px-8 h-11 gradient-primary text-white rounded-full group flex items-center justify-center font-semibold text-sm transition-opacity hover:opacity-95 glow-button"
+                                  disabled={isLoading}
+                                >
+                                  {isLoading ? (
+                                    <>
+                                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                      Authenticating...
+                                    </>
+                                  ) : (
+                                    <>
+                                      Access Admin Panel
+                                      <ArrowRight className="w-4 h-4 ml-2 group-hover:translate-x-0.5 transition-transform" />
+                                    </>
+                                  )}
+                                </Button>
+                              </div>
+                            </form>
                           </motion.div>
                         )}
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-
-                  {/* Error Message */}
-                  <AnimatePresence>
-                    {error && (
-                      <motion.div
-                        initial={{ opacity: 0, scale: 0.95 }}
-                        animate={{ opacity: 1, scale: 1 }}
-                        exit={{ opacity: 0, scale: 0.95 }}
-                      >
-                        <Alert variant="destructive" className="bg-destructive/10 border-destructive/30 text-destructive rounded-xl">
-                          <AlertDescription>{error}</AlertDescription>
-                        </Alert>
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-
-                  {/* Suggested Names */}
-                  <AnimatePresence>
-                    {suggestedNames.length > 0 && (
-                      <motion.div
-                        initial={{ opacity: 0, height: 0 }}
-                        animate={{ opacity: 1, height: 'auto' }}
-                        exit={{ opacity: 0, height: 0 }}
-                        className="space-y-2"
-                      >
-                        <Label className="text-muted-foreground text-sm">Suggested Names:</Label>
-                        <div className="flex flex-wrap gap-2">
-                          {suggestedNames.map((suggestedName, index) => (
-                            <Badge
-                              key={index}
-                              variant="secondary"
-                              className="bg-secondary hover:bg-primary/20 hover:text-primary cursor-pointer transition-colors rounded-lg px-3 py-1"
-                              onClick={() => handleSuggestedNameClick(suggestedName)}
-                            >
-                              {suggestedName}
-                            </Badge>
-                          ))}
-                        </div>
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-
-                  {/* Submit Button */}
-                  <Button
-                    type="submit"
-                    className="w-full h-12 gradient-primary text-white rounded-xl glow-button mt-6 group"
-                    disabled={isLoading}
-                  >
-                    {isLoading ? (
-                      <>
-                        <Loader2 className="w-5 h-5 mr-2 animate-spin" />
-                        {userType === 'student' ? 'Joining Room...' : 'Authenticating...'}
-                      </>
-                    ) : (
-                      <>
-                        {userType === 'student' ? 'Join Lab Room' : 'Access Admin Panel'}
-                        <ArrowRight className="w-5 h-5 ml-2 group-hover:translate-x-1 transition-transform" />
-                      </>
-                    )}
-                  </Button>
-                </form>
-              </CardContent>
-            </Card>
-          </motion.div>
+                      </AnimatePresence>
+                    </CardContent>
+                  </Card>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
         </div>
+
+        {/* Command Dialog for Selecting Room */}
+        <CommandDialog
+          open={roomOpen}
+          onOpenChange={setRoomOpen}
+          title="Select Room"
+          description="Choose your lab room"
+        >
+          <CommandInput placeholder="Search room..." />
+          <CommandList className="max-h-[50vh] py-2">
+            <CommandEmpty>
+              <p className="py-4 text-sm text-muted-foreground text-center">No room found</p>
+            </CommandEmpty>
+            <CommandGroup>
+              {roomNumbers.map((room) => (
+                <CommandItem
+                  key={room}
+                  value={room}
+                  onSelect={(currentValue) => {
+                    setRoomNumber(currentValue)
+                    setRoomOpen(false)
+                  }}
+                  className={`flex items-center justify-between mx-2 px-3 py-2.5 rounded-lg cursor-pointer ${roomNumber === room ? 'bg-primary/10' : ''
+                    }`}
+                >
+                  <span className="flex items-center gap-3">
+                    <Monitor className="w-4 h-4" />
+                    <span className={roomNumber === room ? 'font-medium' : ''}>
+                      Room {room}
+                    </span>
+                  </span>
+                  {roomNumber === room && (
+                    <CheckCircle2 className="h-4 w-4" />
+                  )}
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          </CommandList>
+        </CommandDialog>
       </section>
 
       {/* How It Works Section */}
@@ -1252,10 +1307,10 @@ export default function Home() {
                 variants={scaleUp}
                 className="relative"
               >
-                <div className="glass-card rounded-3xl p-5 md:p-8 text-center relative overflow-hidden group">
+                <div className="glass-card rounded-[45px] p-6 md:p-9 text-center relative overflow-hidden group">
                   {/* Step Number */}
-                  <div className="absolute -top-4 -right-4 w-16 h-16 gradient-primary rounded-2xl flex items-center justify-center text-2xl font-bold text-white glow-sm rotate-12 group-hover:rotate-0 transition-transform duration-300">
-                    {item.step}
+                  <div className="absolute -top-3 -right-3 w-16 h-16 gradient-primary rounded-[1.75rem] flex items-center justify-center text-2xl font-bold text-white rotate-12 group-hover:rotate-0 transition-transform duration-300">
+                    <span className="translate-x-[-3px] translate-y-[3px]">{item.step}</span>
                   </div>
 
                   {/* Icon */}
@@ -1264,7 +1319,7 @@ export default function Home() {
                   </div>
 
                   <h3 className="text-xl font-semibold text-foreground mb-3">{item.title}</h3>
-                  <p className="text-muted-foreground leading-relaxed">{item.description}</p>
+                  <p className="text-muted-foreground leading-relaxed text-sm md:text-base">{item.description}</p>
                 </div>
 
                 {/* Connector Line */}
@@ -1314,7 +1369,7 @@ export default function Home() {
             {features.map((feature, index) => (
               <div
                 key={feature.title}
-                className="feature-scroll-card bg-card border border-border rounded-3xl p-6 md:p-8 group relative overflow-hidden flex-shrink-0 cursor-pointer hover:shadow-xl hover:shadow-primary/10 transition-all duration-300"
+                className="feature-scroll-card bg-card border border-border rounded-[45px] p-6 md:p-8 group relative overflow-hidden flex-shrink-0 cursor-pointer hover:shadow-xl hover:shadow-primary/10 transition-all duration-300"
                 style={{
                   width: 'clamp(280px, 85vw, 400px)',
                   minHeight: '240px',
@@ -1343,7 +1398,7 @@ export default function Home() {
             whileInView="visible"
             viewport={{ once: true, amount: 0.2 }}
             variants={staggerContainer}
-            className="cta-glow glass-card rounded-3xl p-6 md:p-12 text-center relative overflow-hidden shimmer-border bg-gradient-to-br from-primary/5 via-transparent to-accent/5"
+            className="cta-glow glass-card rounded-[45px] p-6 md:p-12 text-center relative overflow-hidden shimmer-border bg-gradient-to-br from-primary/5 via-transparent to-accent/5"
           >
             {/* Decorative elements */}
             <div className="absolute top-0 left-0 w-full h-full overflow-hidden pointer-events-none">

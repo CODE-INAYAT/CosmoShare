@@ -879,16 +879,16 @@ function OneShareInner() {
         setTransferComplete(false)
         setForceUploadProgress(false)
         setJoinError(null)
-        
+
         webrtc.cleanup()
 
         try {
             if (codeShareMode) {
                 if (!codeShareText.trim()) throw new Error('Please write code to share')
-                
+
                 setUploadProgress(50)
                 uploadProgressTargetRef.current = 50
-                
+
                 const resp = await fetch('/api/whatsapp/share', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -903,7 +903,7 @@ function OneShareInner() {
                     const err = await resp.json().catch(() => ({}));
                     throw new Error(err.error || `HTTP error ${resp.status}`);
                 }
-                
+
                 setUploadProgress(100)
                 uploadProgressTargetRef.current = 100
             } else {
@@ -1218,7 +1218,7 @@ function OneShareInner() {
                                         whileHover={{ scale: 1.02 }}
                                         whileTap={{ scale: 0.98 }}
                                         onClick={() => setMode('send')}
-                                        className="glass-card rounded-2xl p-6 text-left transition-all duration-300 hover:ring-2 hover:ring-primary hover:shadow-lg hover:shadow-primary/20"
+                                        className="glass-card rounded-[45px] p-6 text-left transition-all duration-300 hover:ring-2 hover:ring-primary hover:shadow-lg hover:shadow-primary/20"
                                     >
                                         <div className="w-14 h-14 rounded-xl gradient-primary flex items-center justify-center mb-4 glow-sm">
                                             <Upload className="w-7 h-7 text-white" />
@@ -1233,7 +1233,7 @@ function OneShareInner() {
                                         whileHover={{ scale: 1.02 }}
                                         whileTap={{ scale: 0.98 }}
                                         onClick={() => setMode('receive')}
-                                        className="glass-card rounded-2xl p-6 text-left transition-all duration-300 hover:ring-2 hover:ring-primary hover:shadow-lg hover:shadow-primary/20"
+                                        className="glass-card rounded-[45px] p-6 text-left transition-all duration-300 hover:ring-2 hover:ring-primary hover:shadow-lg hover:shadow-primary/20"
                                     >
                                         <div className="w-14 h-14 rounded-xl gradient-primary flex items-center justify-center mb-4 glow-sm">
                                             <Download className="w-7 h-7 text-white" />
@@ -1623,9 +1623,8 @@ function OneShareInner() {
                                                             <motion.div
                                                                 initial={{ scale: 0 }}
                                                                 animate={{ scale: 1 }}
-                                                                className={`w-20 h-20 sm:w-22 sm:h-22 lg:w-24 lg:h-24 rounded-full bg-gradient-to-br ${
-                                                                    isWhatsAppShare ? 'from-[#25D366] to-[#128C7E]' : 'from-emerald-400 to-emerald-600'
-                                                                } flex items-center justify-center glow-md shadow-lg shadow-emerald-500/20`}
+                                                                className={`w-20 h-20 sm:w-22 sm:h-22 lg:w-24 lg:h-24 rounded-full bg-gradient-to-br ${isWhatsAppShare ? 'from-[#25D366] to-[#128C7E]' : 'from-emerald-400 to-emerald-600'
+                                                                    } flex items-center justify-center glow-md shadow-lg shadow-emerald-500/20`}
                                                             >
                                                                 {isWhatsAppShare ? (
                                                                     <WhatsAppIcon className="w-10 h-10 sm:w-11 sm:h-11 lg:w-12 lg:h-12 text-white" />
@@ -1894,12 +1893,12 @@ function OneShareInner() {
                                                     </DialogDescription>
                                                 </DialogHeader>
                                                 <div className={`mt-4 p-4 rounded-xl border max-h-80 overflow-y-auto ${receivedFiles.length === 0
-                                                        ? 'bg-slate-800 border-slate-600'
-                                                        : 'bg-secondary/50 border-border'
+                                                    ? 'bg-slate-800 border-slate-600'
+                                                    : 'bg-secondary/50 border-border'
                                                     }`}>
                                                     <pre className={`whitespace-pre-wrap leading-relaxed text-sm ${receivedFiles.length === 0
-                                                            ? 'text-slate-200'
-                                                            : 'text-foreground'
+                                                        ? 'text-slate-200'
+                                                        : 'text-foreground'
                                                         }`} style={{ fontFamily: receivedFiles.length === 0 ? 'Consolas, Monaco, monospace' : 'inherit' }}>
                                                         {receivedMessage}
                                                     </pre>
