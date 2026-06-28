@@ -1413,3 +1413,19 @@ input[type="file"],
     transition-duration: 0.01ms !important;
   }
 }
+
+/* Navbar slide-down animation without leaving a permanent transform or will-change property */
+@keyframes navSlideDown {
+  0% {
+    transform: translateY(-20px);
+    opacity: 0;
+  }
+  100% {
+    transform: none;
+    opacity: 1;
+  }
+}
+
+.nav-slide-down {
+  animation: navSlideDown 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}

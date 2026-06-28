@@ -229,6 +229,7 @@ export default function Home() {
   const [roomOpen, setRoomOpen] = useState(false)
   const [supportOpen, setSupportOpen] = useState(false)
   const [portalTab, setPortalTab] = useState<'oneshare' | 'labshare'>('oneshare')
+  const [isNavAnimated, setIsNavAnimated] = useState(true)
   const router = useRouter()
 
   // Refs for GSAP animations
@@ -248,6 +249,12 @@ export default function Home() {
     if (AUTO_LOGIN_ENABLED) setPassword(hashPassword())
     // Track unique visitor per session
     trackVisitor()
+
+    // Clear entrance animation class from navbar after completion (600ms + buffer)
+    const timer = setTimeout(() => {
+      setIsNavAnimated(false)
+    }, 1000)
+    return () => clearTimeout(timer)
   }, [])
 
   // Prefetch destination routes so bundles are cached before user clicks
@@ -662,22 +669,15 @@ export default function Home() {
       </div>
 
       {/* Navbar */}
-      <motion.nav
+      <nav
         ref={navRef}
-        initial={{ y: -20, opacity: 0 }}
-        animate={{ y: 0, opacity: 1 }}
-        transition={{ duration: 0.6 }}
-        onAnimationComplete={() => {
-          if (navRef.current) {
-            navRef.current.style.transform = 'none'
-            navRef.current.style.willChange = 'auto'
-          }
-        }}
-        className="fixed top-0 left-0 right-0 z-50 flex justify-center pointer-events-none"
+        className={`fixed top-0 left-0 right-0 z-50 flex justify-center pointer-events-none ${
+          isNavAnimated ? 'nav-slide-down' : ''
+        }`}
       >
         <div
-          className={`glass flex items-center justify-between pointer-events-auto transition-all duration-500 cubic-bezier(0.16, 1, 0.3, 1) ${isScrolled
-              ? 'w-full max-w-full rounded-none px-6 py-2 border-t-0 border-l-0 border-r-0 border-b border-border/20 shadow-md mt-0'
+          className={`flex items-center justify-between pointer-events-auto transition-all duration-500 cubic-bezier(0.16, 1, 0.3, 1) backdrop-blur-md bg-white/70 dark:bg-slate-950/60 ${isScrolled
+              ? 'w-full max-w-full rounded-none px-6 py-2 border-0 border-b border-border/20 shadow-md mt-0'
               : 'w-[calc(100%-2rem)] max-w-7xl rounded-2xl px-6 py-2.5 border border-border/10 mt-4'
             }`}
         >
@@ -704,7 +704,7 @@ export default function Home() {
             </Button>
           </div>
         </div>
-      </motion.nav>
+      </nav>
 
       {/* Hero Section */}
       <section ref={heroRef} className="relative pt-32 pb-20 px-4 min-h-screen flex items-center">
@@ -916,8 +916,8 @@ export default function Home() {
                     <CardContent className="p-6 pt-2 pb-8">
                       <div className="space-y-3 mb-6">
                         {[
-                          { text: 'Direct device-to-device transfer via WebRTC', icon: Zap },
-                          { text: 'No cloud storage, files are completely private', icon: Shield },
+                          { text: 'Secure direct device-to-device file transfer', icon: Zap },
+                          { text: 'No server storage, files are completely private', icon: Shield },
                           { text: 'Instant connection via QR codes or numeric keys', icon: QrCode }
                         ].map((item, idx) => {
                           const Icon = item.icon

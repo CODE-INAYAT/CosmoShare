@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, Suspense } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
+import NumberFlow from '@number-flow/react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useTheme } from 'next-themes'
 import { io } from 'socket.io-client'
@@ -272,7 +273,7 @@ function OneShareInner() {
                 const elapsed = performance.now() - startedAt
                 const uiDone = uiUploadProgressRef.current >= 99.8
                 if (elapsed >= minVisibleMs && uiDone) {
-                    resolve()
+                    setTimeout(resolve, 600)
                 } else {
                     requestAnimationFrame(check)
                 }
@@ -1506,7 +1507,11 @@ function OneShareInner() {
                                                 ? (transferComplete ? 'Your items were sent successfully' : 'Please wait while we upload your files.')
                                                 : multiShareEnabled
                                                     ? (multiShareReceivers.length > 0
-                                                        ? `${multiShareReceivers.filter(r => r.status === 'completed').length} of ${multiShareReceivers.length} receivers completed`
+                                                        ? (
+                                                            <span className="inline-flex items-center gap-1">
+                                                                <NumberFlow value={multiShareReceivers.filter(r => r.status === 'completed').length} /> of {multiShareReceivers.length} receivers completed
+                                                            </span>
+                                                        )
                                                         : 'Share the code — multiple users can join')
                                                     : (transferComplete
                                                         ? 'All files have been sent successfully'
@@ -1519,7 +1524,22 @@ function OneShareInner() {
                                             <div className="flex justify-center mt-2">
                                                 <Badge variant="outline" className={`gap-1.5 px-3 py-1 text-sm font-mono ${sessionTimeLeft === 'Expired' ? 'text-destructive border-destructive' : 'text-violet-500 border-violet-500/40'}`}>
                                                     <Timer className="w-3.5 h-3.5" />
-                                                    {sessionTimeLeft}
+                                                    {(() => {
+                                                        if (sessionTimeLeft === 'Expired') return 'Expired'
+                                                        const parts = sessionTimeLeft.split(':')
+                                                        if (parts.length === 2) {
+                                                            const mins = parseInt(parts[0], 10)
+                                                            const secs = parseInt(parts[1], 10)
+                                                            if (!isNaN(mins) && !isNaN(secs)) {
+                                                                return (
+                                                                    <span className="flex items-center">
+                                                                        <NumberFlow value={mins} />:<NumberFlow value={secs} format={{ minimumIntegerDigits: 2 }} />
+                                                                    </span>
+                                                                )
+                                                            }
+                                                        }
+                                                        return sessionTimeLeft
+                                                    })()}
                                                 </Badge>
                                             </div>
                                         )}
@@ -1657,7 +1677,9 @@ function OneShareInner() {
                                                                 />
                                                             </svg>
                                                             <div className="absolute inset-0 flex flex-col items-center justify-center">
-                                                                <div className="text-2xl font-bold text-primary">{Math.round(uiUploadProgress)}%</div>
+                                                                <div className="text-2xl font-bold text-primary flex items-center">
+                                                                    <NumberFlow value={Math.round(uiUploadProgress)} />%
+                                                                </div>
                                                             </div>
                                                         </div>
                                                     )}
@@ -1944,7 +1966,9 @@ function OneShareInner() {
                                                                         })()}
                                                                     </div>
                                                                     <div className="mt-1 text-[11px] text-muted-foreground flex justify-between">
-                                                                        <span>{p.total ? Math.round((p.received / p.total) * 100) : 0}%</span>
+                                                                        <span className="inline-flex items-center">
+                                                                            <NumberFlow value={p.total ? Math.min(100, Math.round((p.received / p.total) * 100)) : 0} />%
+                                                                        </span>
                                                                         <span>{formatBytes(p.received)} / {formatBytes(p.total)}</span>
                                                                     </div>
                                                                 </div>

@@ -1,5 +1,3 @@
-export const runtime = 'edge'
-
 import { NextApiRequest, NextApiResponse } from 'next'
 import { NextApiResponseSocketIO } from '@/lib/socket'
 import { Server as ServerIO } from 'socket.io'

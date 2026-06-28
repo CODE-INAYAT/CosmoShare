@@ -3,6 +3,7 @@ export const runtime = 'edge'
 
 import { generateGradient } from '@/lib/avatarUtils'
 import { useState, useEffect, useRef, Suspense, useMemo } from 'react'
+import NumberFlow from '@number-flow/react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -753,7 +754,9 @@ function AdminDashboardInner() {
               />
               <Badge variant="outline" className="flex items-center gap-1 sm:gap-1.5 px-2 sm:px-2.5 py-1 text-xs">
                 <Users className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
-                {onlineUsers.length} <span className="hidden sm:inline">Students</span>
+                <span className="flex items-center gap-1">
+                  <NumberFlow value={onlineUsers.length} /> <span className="hidden sm:inline">Students</span>
+                </span>
               </Badge>
             </div>
             <AlertDialog open={leaveRoomDialogOpen} onOpenChange={setLeaveRoomDialogOpen}>
@@ -1088,7 +1091,9 @@ function AdminDashboardInner() {
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-xs sm:text-sm font-medium text-muted-foreground">Total Requests</p>
-                    <p className="text-2xl sm:text-3xl font-bold mt-1">{printRequests.length}</p>
+                    <p className="text-2xl sm:text-3xl font-bold mt-1 flex items-center">
+                      <NumberFlow value={printRequests.length} />
+                    </p>
                   </div>
                   <div className="p-2 sm:p-3 bg-primary/10 rounded-lg sm:rounded-xl">
                     <FileText className="w-5 h-5 sm:w-6 sm:h-6 text-primary" />
@@ -1100,7 +1105,9 @@ function AdminDashboardInner() {
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-xs sm:text-sm font-medium text-muted-foreground">Pending</p>
-                    <p className="text-2xl sm:text-3xl font-bold text-orange-500 mt-1">{pendingCount}</p>
+                    <p className="text-2xl sm:text-3xl font-bold text-orange-500 mt-1 flex items-center">
+                      <NumberFlow value={pendingCount} />
+                    </p>
                   </div>
                   <div className="p-2 sm:p-3 bg-orange-500/10 rounded-lg sm:rounded-xl">
                     <Clock className="w-5 h-5 sm:w-6 sm:h-6 text-orange-500" />
@@ -1112,7 +1119,9 @@ function AdminDashboardInner() {
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-xs sm:text-sm font-medium text-muted-foreground">Printed</p>
-                    <p className="text-2xl sm:text-3xl font-bold text-green-500 mt-1">{printedCount}</p>
+                    <p className="text-2xl sm:text-3xl font-bold text-green-500 mt-1 flex items-center">
+                      <NumberFlow value={printedCount} />
+                    </p>
                   </div>
                   <div className="p-2 sm:p-3 bg-green-500/10 rounded-lg sm:rounded-xl">
                     <Check className="w-5 h-5 sm:w-6 sm:h-6 text-green-500" />
@@ -1124,7 +1133,9 @@ function AdminDashboardInner() {
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-xs sm:text-sm font-medium text-muted-foreground">Online Now</p>
-                    <p className="text-2xl sm:text-3xl font-bold mt-1">{onlineUsers.length}</p>
+                    <p className="text-2xl sm:text-3xl font-bold mt-1 flex items-center">
+                      <NumberFlow value={onlineUsers.length} />
+                    </p>
                   </div>
                   <div className="p-2 sm:p-3 bg-accent/10 rounded-lg sm:rounded-xl">
                     <Users className="w-5 h-5 sm:w-6 sm:h-6 text-accent" />
@@ -1249,7 +1260,7 @@ function AdminDashboardInner() {
                           <AlertDialogHeader>
                             <AlertDialogTitle>Mark all pending as printed?</AlertDialogTitle>
                             <AlertDialogDescription>
-                              This will mark {pendingCount} pending request(s) as printed. You can’t undo this action.
+                              This will mark <span className="inline-flex items-center"><NumberFlow value={pendingCount} /></span> pending request(s) as printed. You can’t undo this action.
                             </AlertDialogDescription>
                           </AlertDialogHeader>
                           <AlertDialogFooter>
@@ -1309,7 +1320,7 @@ function AdminDashboardInner() {
                       <div className="mt-1 text-[11px] text-muted-foreground flex justify-between">
                         {(() => {
                           const pct = p.total ? Math.min(100, Math.round((p.received / p.total) * 100)) : 0
-                          return <span>{pct}%</span>
+                          return <span className="inline-flex items-center"><NumberFlow value={pct} />%</span>
                         })()}
                         <span>{p.fileType === 'link' ? '' : (p.total ? `${formatBytes(p.received)} / ${formatBytes(p.total)}` : '')}</span>
                       </div>
@@ -1347,7 +1358,7 @@ function AdminDashboardInner() {
                 >
                   <Clock className="w-4 h-4 mr-2" />
                   Pending only
-                  <span className="ml-auto text-xs text-muted-foreground">{pendingDownloadableCount}</span>
+                  <span className="ml-auto text-xs text-muted-foreground flex items-center"><NumberFlow value={pendingDownloadableCount} /></span>
                 </Button>
                 <Button
                   onClick={() => { queueDownloads('all'); setDownloadDialogOpen(false); setSpeedDialOpen(false) }}
@@ -1356,7 +1367,7 @@ function AdminDashboardInner() {
                 >
                   <Download className="w-4 h-4 mr-2" />
                   All files
-                  <span className="ml-auto text-xs text-muted-foreground">{allDownloadableCount}</span>
+                  <span className="ml-auto text-xs text-muted-foreground flex items-center"><NumberFlow value={allDownloadableCount} /></span>
                 </Button>
               </div>
               <p className="text-xs text-muted-foreground">

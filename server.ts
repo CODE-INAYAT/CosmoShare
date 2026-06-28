@@ -15,6 +15,7 @@ async function createCustomServer() {
     const nextApp = next({ 
       dev,
       dir: process.cwd(),
+      turbopack: false,
       // In production, use the current directory where .next is located
       conf: dev ? undefined : { distDir: './.next' }
     });

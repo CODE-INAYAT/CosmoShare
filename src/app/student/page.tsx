@@ -4,6 +4,7 @@ export const runtime = 'edge'
 import { generateGradient } from '@/lib/avatarUtils'
 import { useState, useEffect, useRef, Suspense } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
+import NumberFlow from '@number-flow/react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -215,7 +216,7 @@ function StudentDashboardInner() {
       const scrollHeight = document.documentElement.scrollHeight
       const scrollTop = document.documentElement.scrollTop || document.body.scrollTop
       const clientHeight = document.documentElement.clientHeight
-      
+
       // If we are within 120px of the bottom of the page, collapse the FAB text
       if (scrollHeight - scrollTop - clientHeight < 120) {
         setIsNearBottom(true)
@@ -229,10 +230,10 @@ function StudentDashboardInner() {
       } else if (scrollTop < lastScrollTopRef.current || scrollTop <= 10) {
         setIsScrollingDown(false)
       }
-      
+
       lastScrollTopRef.current = scrollTop <= 0 ? 0 : scrollTop
     }
-    
+
     window.addEventListener('scroll', handleScroll, { passive: true })
     handleScroll()
     return () => window.removeEventListener('scroll', handleScroll)
@@ -297,7 +298,7 @@ function StudentDashboardInner() {
         const elapsed = performance.now() - startedAt
         const uiDone = uiProgressRef.current >= 99.8
         if (elapsed >= minVisibleMs && uiDone) {
-          resolve()
+          setTimeout(resolve, 600)
         } else {
           requestAnimationFrame(check)
         }
@@ -1510,7 +1511,6 @@ function StudentDashboardInner() {
         await ensureProgressComplete(codeOutcome === 'failed' ? 400 : 1200)
         setForceProgress(false)
         setIsUploading(false)
-        setUiProgress(0)
         setUploadProgress(0)
         setTransferRecipients([])
         setSkipDialogOpen(false)
@@ -1886,7 +1886,7 @@ function StudentDashboardInner() {
     setForceProgress(false)
     transferCancelledRef.current = false
     uploadStartAtRef.current = performance.now()
-    
+
     const lastFour = phoneNumber.slice(-4)
     setTransferRecipients([
       { id: 'whatsapp', name: 'WhatsApp', uniqueId: `****${lastFour}`, status: 'sending' }
@@ -1895,9 +1895,9 @@ function StudentDashboardInner() {
     try {
       if (codeShareMode) {
         if (!codeShareText.trim()) throw new Error('Please write code to share')
-        
+
         setUploadProgress(50)
-        
+
         const resp = await fetch('/api/whatsapp/share', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -1912,7 +1912,7 @@ function StudentDashboardInner() {
           const err = await resp.json().catch(() => ({}));
           throw new Error(err.error || `HTTP error ${resp.status}`);
         }
-        
+
         setUploadProgress(100)
       } else {
         if (selectedFiles.length === 0 && !linkUrl) {
@@ -1992,21 +1992,10 @@ function StudentDashboardInner() {
         }
       }
 
-      setForceProgress(true)
-      setUploadProgress(100)
-      
-      await new Promise<void>((resolve) => {
-        const check = setInterval(() => {
-          if (uiProgressRef.current >= 99.8) {
-            clearInterval(check)
-            resolve()
-          }
-        }, 50)
-      })
-
+      await ensureProgressComplete(1200)
       setForceProgress(false)
       setIsUploading(false)
-      
+
       setTransferRecipients([
         { id: 'whatsapp', name: 'WhatsApp', uniqueId: `****${lastFour}`, status: 'completed' }
       ])
@@ -2218,7 +2207,9 @@ function StudentDashboardInner() {
             />
             <Badge variant="outline" className="flex items-center gap-1.5 px-2.5 py-1 text-xs">
               <Users className="w-3.5 h-3.5" />
-              {onlineUsers.length + 1 + (adminId ? 1 : 0)} Online
+              <span className="flex items-center gap-1">
+                <NumberFlow value={onlineUsers.length + 1 + (adminId ? 1 : 0)} /> Online
+              </span>
             </Badge>
             <AlertDialog open={leaveRoomDialogOpen} onOpenChange={setLeaveRoomDialogOpen}>
               <AlertDialogTrigger asChild>
@@ -2324,8 +2315,8 @@ function StudentDashboardInner() {
                                 />
                               </svg>
                               <div className="absolute inset-0 flex flex-col items-center justify-center">
-                                <span className={`text-base max-sm:text-sm font-mono font-bold leading-none ${autoShareTimeLeft <= 60 ? 'text-red-500' : autoShareTimeLeft <= 300 ? 'text-amber-500' : 'text-foreground'}`}>
-                                  {Math.floor(autoShareTimeLeft / 60)}:{(autoShareTimeLeft % 60).toString().padStart(2, '0')}
+                                <span className={`text-base max-sm:text-sm font-mono font-bold leading-none flex items-center ${autoShareTimeLeft <= 60 ? 'text-red-500' : autoShareTimeLeft <= 300 ? 'text-amber-500' : 'text-foreground'}`}>
+                                  <NumberFlow value={Math.floor(autoShareTimeLeft / 60)} />:<NumberFlow value={autoShareTimeLeft % 60} format={{ minimumIntegerDigits: 2 }} />
                                 </span>
                                 <span className="text-[10px] max-sm:text-[8px] text-muted-foreground leading-none mt-1 max-sm:mt-0.5">remaining</span>
                               </div>
@@ -2384,19 +2375,17 @@ function StudentDashboardInner() {
                 <div className="flex justify-center w-full">
                   <div
                     onClick={() => setAllowReshare(!allowReshare)}
-                    className={`inline-flex items-center gap-3 px-4 py-2 rounded-full border cursor-pointer select-none transition-all duration-300 hover:scale-[1.01] active:scale-95 ${
-                      allowReshare
-                        ? 'bg-primary/5 dark:bg-primary/10 border-primary/20 dark:border-primary/30 text-foreground'
-                        : 'bg-muted/10 border-border/40 hover:bg-muted/20 text-muted-foreground hover:text-foreground'
-                    }`}
+                    className={`inline-flex items-center gap-3 px-4 py-2 rounded-full border cursor-pointer select-none transition-all duration-300 hover:scale-[1.01] active:scale-95 ${allowReshare
+                      ? 'bg-primary/5 dark:bg-primary/10 border-primary/20 dark:border-primary/30 text-foreground'
+                      : 'bg-muted/10 border-border/40 hover:bg-muted/20 text-muted-foreground hover:text-foreground'
+                      }`}
                   >
                     <span className="text-xs font-medium">Allow Recipient to Reshare</span>
                     <div
-                      className={`w-4 h-4 rounded-full flex items-center justify-center shrink-0 transition-all duration-200 ${
-                        allowReshare
-                          ? 'bg-primary text-primary-foreground scale-100'
-                          : 'border border-muted-foreground/45 scale-95'
-                      }`}
+                      className={`w-4 h-4 rounded-full flex items-center justify-center shrink-0 transition-all duration-200 ${allowReshare
+                        ? 'bg-primary text-primary-foreground scale-100'
+                        : 'border border-muted-foreground/45 scale-95'
+                        }`}
                     >
                       {allowReshare && <Check className="w-2.5 h-2.5 stroke-[3]" />}
                     </div>
@@ -2510,8 +2499,8 @@ function StudentDashboardInner() {
                           {/* Selected files below dropzone */}
                           {selectedFiles.length > 0 && (
                             <div className="space-y-2">
-                              <Label>
-                                {`Selected ${selectedFiles.length === 1 ? 'File' : 'Files'} (${selectedFiles.length} total, ${formatFileSize(selectedFiles.reduce((sum, f) => sum + f.size, 0))})`}
+                              <Label className="flex items-center flex-wrap gap-1">
+                                Selected {selectedFiles.length === 1 ? 'File' : 'Files'} (<NumberFlow value={selectedFiles.length} /> total, {formatFileSize(selectedFiles.reduce((sum, f) => sum + f.size, 0))})
                               </Label>
                               <div className="max-h-32 overflow-y-auto space-y-2">
                                 {selectedFiles.map((file, index) => (
@@ -3067,7 +3056,7 @@ function StudentDashboardInner() {
                       >
                         <div className="flex items-center gap-2">
                           <span className="text-sm font-medium">{allSelected ? 'Deselect All' : 'Select All'}</span>
-                          <span className="text-xs text-muted-foreground">({filteredUsers.length} users)</span>
+                          <span className="text-xs text-muted-foreground flex items-center gap-1">(<NumberFlow value={filteredUsers.length} /> users)</span>
                         </div>
                         <div className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 transition-colors ${allSelected ? 'bg-primary' : 'border-2 border-muted-foreground/30'}`}>
                           {allSelected && <Check className="w-3 h-3 text-primary-foreground" />}
@@ -3159,7 +3148,7 @@ function StudentDashboardInner() {
                   }}
                   disabled={selectedRecipients.length === 0}
                 >
-                  Confirm & Share ({selectedRecipients.length})
+                  Confirm & Share (<span className="inline-flex items-center"><NumberFlow value={selectedRecipients.length} /></span>)
                 </Button>
               </div>
             </div>
@@ -3261,9 +3250,20 @@ function StudentDashboardInner() {
             </DialogHeader>
             <div className="space-y-2 max-h-64 overflow-y-auto">
               {offlineUsersInfo.map(u => (
-                <div key={u.id} className="flex items-center justify-between p-2 bg-muted/50 rounded">
-                  <div className="flex items-center gap-2">
-                    <div className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-medium" style={{ backgroundImage: generateGradient(u.name) }}>{u.name.charAt(0).toUpperCase()}</div>
+                <div key={u.id} className="flex items-center justify-between p-2 bg-muted/50 rounded-3xl">
+                  <div className="flex items-center gap-3">
+                    {u.uniqueId === 'ADMIN' ? (
+                      <div className="w-8 h-8 rounded-full bg-gradient-to-br from-emerald-400 to-cyan-500 flex items-center justify-center text-white shrink-0 animate-in fade-in-50 duration-300">
+                        <Printer className="w-3.5 h-3.5" />
+                      </div>
+                    ) : (
+                      <div
+                        className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-medium shrink-0"
+                        style={{ backgroundImage: generateGradient(u.name) }}
+                      >
+                        {u.name.charAt(0).toUpperCase()}
+                      </div>
+                    )}
                     <div>
                       <p className="text-sm font-medium">{u.name}</p>
                       <p className="text-xs text-muted-foreground">{u.uniqueId}</p>
@@ -3366,7 +3366,9 @@ function StudentDashboardInner() {
                   />
                 </svg>
                 <div className="absolute inset-0 flex flex-col items-center justify-center">
-                  <div className="text-2xl font-bold text-primary">{Math.round(uiProgress)}%</div>
+                  <div className="text-2xl font-bold text-primary flex items-center">
+                    <NumberFlow value={Math.round(uiProgress)} />%
+                  </div>
                   <div className="text-xs tracking-wide text-muted-foreground mt-1">SENDING</div>
                 </div>
               </div>
@@ -3408,8 +3410,8 @@ function StudentDashboardInner() {
                 <div className="w-full space-y-2">
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Recipients</span>
-                    <span className="text-xs text-muted-foreground">
-                      {transferRecipients.filter(r => r.status === 'completed').length}/{transferRecipients.length}
+                    <span className="text-xs text-muted-foreground flex items-center gap-0.5">
+                      <NumberFlow value={transferRecipients.filter(r => r.status === 'completed').length} />/{transferRecipients.length}
                     </span>
                   </div>
                   <div className="max-h-36 overflow-y-auto space-y-1.5">
@@ -3863,37 +3865,31 @@ function StudentDashboardInner() {
             <TooltipProvider>
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <div className={`group relative inline-block transition-transform duration-300 ease-in-out ${
-                    isUploading || autoShareActive ? 'cursor-not-allowed' : 'cursor-pointer'
-                  } ${
-                    isScrollingDown ? 'translate-x-[50px] sm:translate-x-0' : 'translate-x-0'
-                  } hover:translate-x-0 active:translate-x-0 focus-within:translate-x-0`}>
+                  <div className={`group relative inline-block transition-transform duration-300 ease-in-out ${isUploading || autoShareActive ? 'cursor-not-allowed' : 'cursor-pointer'
+                    } ${isScrollingDown ? 'translate-x-[50px] sm:translate-x-0' : 'translate-x-0'
+                    } hover:translate-x-0 active:translate-x-0 focus-within:translate-x-0`}>
                     <button
                       onClick={() => preflightAndMaybeShare(true)}
                       disabled={isUploading || autoShareActive}
-                      className={`h-12 rounded-full shadow-lg flex items-center justify-center cursor-pointer gradient-primary text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 transition-all duration-300 ease-in-out disabled:opacity-50 disabled:cursor-not-allowed ${
-                        isNearBottom || isScrollingDown ? 'w-12 px-0 gap-0' : 'w-12 px-0 gap-0 sm:w-auto sm:px-5 sm:gap-2'
-                      }`}
+                      className={`h-12 rounded-full shadow-lg flex items-center justify-center cursor-pointer gradient-primary text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 transition-all duration-300 ease-in-out disabled:opacity-50 disabled:cursor-not-allowed ${isNearBottom || isScrollingDown ? 'w-12 px-0 gap-0' : 'w-12 px-0 gap-0 sm:w-auto sm:px-5 sm:gap-2'
+                        }`}
                     >
-                      <Printer className={`w-5 h-5 shrink-0 transition-all duration-300 ${
-                        isScrollingDown 
-                          ? 'opacity-0 scale-75 sm:opacity-100 sm:scale-100 group-hover:opacity-100 group-hover:scale-100 group-active:opacity-100 group-active:scale-100' 
-                          : 'opacity-100 scale-100'
-                      }`} />
-                      <span className={`hidden sm:inline-block transition-all duration-300 ease-in-out overflow-hidden whitespace-nowrap text-xs font-semibold ${
-                        isNearBottom || isScrollingDown ? 'sm:max-w-0 sm:opacity-0 sm:ml-0' : 'sm:max-w-[150px] sm:opacity-100 sm:ml-1.5'
-                      }`}>
+                      <Printer className={`w-5 h-5 shrink-0 transition-all duration-300 ${isScrollingDown
+                        ? 'opacity-0 scale-75 sm:opacity-100 sm:scale-100 group-hover:opacity-100 group-hover:scale-100 group-active:opacity-100 group-active:scale-100'
+                        : 'opacity-100 scale-100'
+                        }`} />
+                      <span className={`hidden sm:inline-block transition-all duration-300 ease-in-out overflow-hidden whitespace-nowrap text-xs font-semibold ${isNearBottom || isScrollingDown ? 'sm:max-w-0 sm:opacity-0 sm:ml-0' : 'sm:max-w-[150px] sm:opacity-100 sm:ml-1.5'
+                        }`}>
                         Submit for Print
                       </span>
                     </button>
-                    
+
                     {/* Dynamic notification/count badge */}
                     {pendingCount > 0 && (
-                      <span className={`absolute -top-1.5 -right-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-white text-[10px] font-bold border-2 border-background animate-scale-in shadow-md transition-all duration-300 ${
-                        isScrollingDown
-                          ? 'opacity-0 scale-75 sm:opacity-100 sm:scale-100 group-hover:opacity-100 group-hover:scale-100 group-active:opacity-100 group-active:scale-100'
-                          : 'opacity-100 scale-100'
-                      }`}>
+                      <span className={`absolute -top-1.5 -right-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-white text-[10px] font-bold border-2 border-background animate-scale-in shadow-md transition-all duration-300 ${isScrollingDown
+                        ? 'opacity-0 scale-75 sm:opacity-100 sm:scale-100 group-hover:opacity-100 group-hover:scale-100 group-active:opacity-100 group-active:scale-100'
+                        : 'opacity-100 scale-100'
+                        }`}>
                         {pendingCount}
                       </span>
                     )}
@@ -3937,7 +3933,7 @@ function StudentDashboardInner() {
                     <div className="mt-1 text-xs text-neutral-600 dark:text-neutral-400 flex justify-between">
                       {(() => {
                         const pct = p.total ? Math.min(100, Math.round((p.received / p.total) * 100)) : 0
-                        return <span>{pct}%</span>
+                        return <span className="inline-flex items-center"><NumberFlow value={pct} />%</span>
                       })()}
                       <span>{p.fileType === 'link' ? '' : (p.total ? `${formatBytes(p.received)} / ${formatBytes(p.total)}` : '')}</span>
                     </div>
