@@ -26,7 +26,7 @@ async function createCustomServer() {
     // Create HTTP server that will handle both Next.js and Socket.IO
     const server = createServer((req, res) => {
       // Skip socket.io requests from Next.js handler
-      if (req.url?.startsWith('/api/socketio')) {
+      if (req.url?.startsWith('/api/socket/io')) {
         return;
       }
       handle(req, res);
@@ -39,7 +39,7 @@ async function createCustomServer() {
       .filter(Boolean);
 
     const io = new Server(server, {
-      path: '/api/socketio',
+      path: '/api/socket/io',
       cors: {
         origin: allowed.includes('*') ? '*' : allowed,
         methods: ['GET', 'POST'],
@@ -52,7 +52,7 @@ async function createCustomServer() {
     // Start the server
     server.listen(currentPort, hostname, () => {
       console.log(`> Ready on http://${hostname}:${currentPort}`);
-      console.log(`> Socket.IO server running at ws://${hostname}:${currentPort}/api/socketio`);
+      console.log(`> Socket.IO server running at ws://${hostname}:${currentPort}/api/socket/io`);
       if (process.env.ALLOWED_ORIGINS) {
         console.log(`> CORS allowed origins: ${process.env.ALLOWED_ORIGINS}`);
       }
