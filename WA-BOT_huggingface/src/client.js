@@ -94,6 +94,22 @@ client.on("auth_failure", (msg) => {
   emailService.sendOfflineAlert(`WhatsApp Authentication Failure: ${msg}`);
 });
 
+// ─── Internal State Change (auth timeout / unpaired / conflict) ──────
+// whatsapp-web.js does NOT always surface these as a clean 'disconnected'
+// event (e.g. the recurring "auth timeout" unhandled rejection). Catch the
+// internal 'change_state' event and route it into the same recovery path so
+// the bot does not sit in a zombie "CONNECTED" state with a dead page.
+client.on("change_state", (state) => {
+  logger.info("WhatsApp internal state changed", { state });
+  // These states indicate the session/page is no longer usable.
+  if (state === "UNPAIRED" || state === "TIMEOUT" || state === "CONFLICT") {
+    if (global.botStatus === "CONNECTED" || global.botStatus === "AUTHENTICATED") {
+      logger.warn("WhatsApp session unusable, triggering recovery...", { state });
+      client.emit("disconnected", `state_change:${state}`);
+    }
+  }
+});
+
 // ─── Disconnected ───────────────────────────────────────────────────
 let reconnectAttempts = 0;
 const MAX_RECONNECT_ATTEMPTS = 5;
@@ -102,10 +118,16 @@ const RECONNECT_DELAY_MS = 10000;
 client.on("disconnected", (reason) => {
   logger.warn("⚠️ WhatsApp client disconnected", { reason });
   global.latestQrCode = null;
+  // Guard: avoid acting twice if multiple sources (change_state, liveness
+  // probe, real disconnect) fire for the same incident.
+  const wasConnected = global.botStatus !== "DISCONNECTED";
   global.botStatus = "DISCONNECTED";
 
-  // Alert the admin via email
-  emailService.sendOfflineAlert(`WhatsApp disconnected: ${reason}`);
+  // Only alert + reconnect once per incident (wasConnected is false on the
+  // duplicate fires that arrive after we already set DISCONNECTED).
+  if (wasConnected) {
+    emailService.sendOfflineAlert(`WhatsApp disconnected: ${reason}`).catch(() => {});
+  }
 
   if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
     reconnectAttempts++;

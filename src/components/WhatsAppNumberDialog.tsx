@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger } from '@/components/ui/select'
 import { whatsappConfig } from '@/config/whatsapp'
+import featuresConfig from '../../WA-BOT_huggingface/config/featuresConfig.json'
 import WhatsAppIcon from './WhatsAppIcon'
 import { useIsMobile } from '@/hooks/use-mobile'
 import { Drawer, DrawerContent, DrawerTitle, DrawerDescription } from '@/components/ui/drawer'
@@ -18,13 +19,17 @@ interface WhatsAppNumberDialogProps {
   onClose: () => void
   onConfirm: (fullNumber: string) => void
   totalFileSize?: number
+  fileCount?: number
 }
 
-export default function WhatsAppNumberDialog({ isOpen, onClose, onConfirm, totalFileSize = 0 }: WhatsAppNumberDialogProps) {
+export default function WhatsAppNumberDialog({ isOpen, onClose, onConfirm, totalFileSize = 0, fileCount = 0 }: WhatsAppNumberDialogProps) {
   const [selectedCountry, setSelectedCountry] = useState(whatsappConfig.countries[0])
   const [realValue, setRealValue] = useState('')
   const isSizeLimitExceeded = totalFileSize > 50 * 1024 * 1024
-  const [isFocused, setIsFocused] = useState(!isSizeLimitExceeded)
+  const maxFileShareLimit = featuresConfig.MAX_FILE_SHARE_LIMIT
+  const isFileLimitExceeded = fileCount > maxFileShareLimit
+  const isShareDisabled = isSizeLimitExceeded || isFileLimitExceeded
+  const [isFocused, setIsFocused] = useState(!isShareDisabled)
   const inputRef = useRef<HTMLInputElement>(null)
   const isMobile = useIsMobile()
 
@@ -34,7 +39,7 @@ export default function WhatsAppNumberDialog({ isOpen, onClose, onConfirm, total
 
     if (isOpen) {
       setRealValue('')
-      const isExceeded = totalFileSize > 50 * 1024 * 1024
+      const isExceeded = totalFileSize > 50 * 1024 * 1024 || fileCount > featuresConfig.MAX_FILE_SHARE_LIMIT
       setIsFocused(!isExceeded)
       if (typeof window !== 'undefined') {
         const savedCountryCode = localStorage.getItem('cosmoshare_wa_country_code') || '+91'
@@ -54,7 +59,7 @@ export default function WhatsAppNumberDialog({ isOpen, onClose, onConfirm, total
     return () => {
       if (timerId) clearTimeout(timerId)
     }
-  }, [isOpen, totalFileSize])
+  }, [isOpen, totalFileSize, fileCount])
 
   const countries = whatsappConfig.enableMultiCountrySelector
     ? whatsappConfig.countries
@@ -112,6 +117,18 @@ export default function WhatsAppNumberDialog({ isOpen, onClose, onConfirm, total
             </div>
           </div>
         )}
+        {isFileLimitExceeded && (
+          <div className="flex items-start gap-2.5 p-3.5 bg-destructive/10 dark:bg-destructive/15 border border-destructive/20 text-destructive rounded-lg w-full mt-2 animate-in fade-in-50 slide-in-from-top-1 duration-200">
+            <AlertCircle className="w-4.5 h-4.5 shrink-0 mt-0.5 text-destructive" />
+            <div className="flex flex-col gap-0.5 text-left">
+              <span className="text-xs font-bold uppercase tracking-wider">File Limit Exceeded</span>
+              <span className="text-xs text-destructive/95 leading-normal">
+                WhatsApp sharing is unavailable because the selected files ({fileCount}) exceed the {maxFileShareLimit} file limit.
+                <span className="block mt-1 text-[11px] opacity-80 font-medium">Note: Please select {maxFileShareLimit} or fewer files to share.</span>
+              </span>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Body */}
@@ -123,7 +140,7 @@ export default function WhatsAppNumberDialog({ isOpen, onClose, onConfirm, total
           <div className="flex flex-col sm:flex-row gap-2.5 items-center justify-center w-full">
             {/* Country Selector */}
             <Select
-              disabled={isSizeLimitExceeded}
+              disabled={isShareDisabled}
               value={selectedCountry.code}
               onValueChange={(code) => {
                 const country = whatsappConfig.countries.find(c => c.code === code)
@@ -163,14 +180,14 @@ export default function WhatsAppNumberDialog({ isOpen, onClose, onConfirm, total
             {/* Styled Interactive Input Container */}
             <div
               className={`relative w-full max-w-[280px] sm:max-w-none sm:flex-1 h-10 border rounded-md flex items-center px-3 font-mono text-sm transition-all duration-200 ${
-                isSizeLimitExceeded
+                isShareDisabled
                   ? 'border-border/20 bg-secondary/20 dark:bg-secondary/10 opacity-50 cursor-not-allowed'
                   : isFocused
                   ? 'border-emerald-500 ring-1 ring-emerald-500 bg-secondary/50 dark:bg-secondary/30'
                   : 'border-border/50 bg-secondary/50 dark:bg-secondary/30'
               }`}
               onClick={() => {
-                if (!isSizeLimitExceeded) {
+                if (!isShareDisabled) {
                   inputRef.current?.focus()
                 }
               }}
@@ -199,7 +216,7 @@ export default function WhatsAppNumberDialog({ isOpen, onClose, onConfirm, total
                 </AnimatePresence>
 
                 {/* Blinking Cursor */}
-                {isFocused && !isSizeLimitExceeded && (
+                {isFocused && !isShareDisabled && (
                   <motion.span
                     animate={{ opacity: [1, 0] }}
                     transition={{ repeat: Infinity, duration: 0.8 }}
@@ -210,7 +227,7 @@ export default function WhatsAppNumberDialog({ isOpen, onClose, onConfirm, total
                 {/* Placeholder */}
                 {!realValue && (
                   <span className="text-muted-foreground/50 font-sans text-xs sm:text-sm pointer-events-none select-none">
-                    {isSizeLimitExceeded ? 'Sharing unavailable' : 'Enter WhatsApp number'}
+                    {isShareDisabled ? 'Sharing unavailable' : 'Enter WhatsApp number'}
                   </span>
                 )}
               </div>
@@ -225,12 +242,12 @@ export default function WhatsAppNumberDialog({ isOpen, onClose, onConfirm, total
                   const clean = e.target.value.replace(/\D/g, '').slice(0, 10)
                   setRealValue(clean)
                 }}
-                onFocus={() => !isSizeLimitExceeded && setIsFocused(true)}
+                onFocus={() => !isShareDisabled && setIsFocused(true)}
                 onBlur={() => setIsFocused(false)}
                 className="absolute inset-0 w-full h-full opacity-0 cursor-text disabled:cursor-not-allowed"
                 maxLength={10}
                 autoComplete="off"
-                disabled={isSizeLimitExceeded}
+                disabled={isShareDisabled}
               />
             </div>
           </div>
@@ -244,7 +261,7 @@ export default function WhatsAppNumberDialog({ isOpen, onClose, onConfirm, total
         </Button>
         <Button
           onClick={handleConfirm}
-          disabled={realValue.length !== 10 || isSizeLimitExceeded}
+          disabled={realValue.length !== 10 || isShareDisabled}
           className="flex-1 sm:flex-none"
         >
           Confirm & Share

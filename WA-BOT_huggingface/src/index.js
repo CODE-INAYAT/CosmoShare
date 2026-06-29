@@ -12,6 +12,7 @@ const path = require('path');
 const express = require('express');
 const qrcodeLib = require('qrcode');
 const config = require('./config');
+const featuresConfig = require('../config/featuresConfig.json');
 const logger = require('./utils/logger');
 const client = require('./client');
 const { createMessageHandler } = require('./handlers/messageHandler');
@@ -83,20 +84,24 @@ _loadGreetings();
 
 async function sendDailyGreetingIfNeeded(cleanNumber) {
   if (shouldSendGreeting(cleanNumber)) {
-    let nameVal = getSavedName(cleanNumber.replace(/\D/g, ''));
-    if (!nameVal) {
-      try {
-        const contact = await client.getContactById(cleanNumber);
-        nameVal = contact.pushname || contact.name || contact.shortName;
-      } catch (err) {
-        logger.warn('Failed to fetch contact details for name', { error: err.message });
+    if (featuresConfig.REMOVE_NAME_FROM_GREETING) {
+      await client.sendMessage(cleanNumber, `👋 *Hi!* Welcome to CosmoShare. Here is the resource shared from the web portal:`);
+    } else {
+      let nameVal = getSavedName(cleanNumber.replace(/\D/g, ''));
+      if (!nameVal) {
+        try {
+          const contact = await client.getContactById(cleanNumber);
+          nameVal = contact.pushname || contact.name || contact.shortName;
+        } catch (err) {
+          logger.warn('Failed to fetch contact details for name', { error: err.message });
+        }
       }
+      let formattedName = 'there';
+      if (nameVal) {
+        formattedName = nameVal.charAt(0).toUpperCase() + nameVal.slice(1).toLowerCase();
+      }
+      await client.sendMessage(cleanNumber, `👋 *Hi ${formattedName}!* Welcome to CosmoShare. Here is the resource shared from the web portal:`);
     }
-    let formattedName = 'there';
-    if (nameVal) {
-      formattedName = nameVal.charAt(0).toUpperCase() + nameVal.slice(1).toLowerCase();
-    }
-    await client.sendMessage(cleanNumber, `👋 *Hi ${formattedName}!* Welcome to CosmoShare. Here is the resource shared from the web portal:`);
   }
 }
 
@@ -113,6 +118,34 @@ function ensureDirectories() {
       fs.mkdirSync(dir, { recursive: true });
       logger.debug('Created directory', { dir });
     }
+  }
+}
+
+/**
+ * Verify the WhatsApp client is truly usable before attempting to send.
+ * The cached `client.info` survives a dead Puppeteer page, so we additionally
+ * probe the page itself. This turns a confusing `getChat` stack trace into a
+ * clear, actionable error for callers (and triggers recovery via 'disconnected').
+ *
+ * @param {boolean} [emitRecover=true] - if the page is dead, emit 'disconnected'
+ *   so the existing recovery path runs.
+ * @returns {Promise<void>} resolves if alive; throws a descriptive Error if not.
+ */
+async function ensureClientAlive(emitRecover = true) {
+  const info = client.info;
+  if (!info || !info.wid) {
+    throw new Error('WhatsApp bot is offline or not linked. Please scan the QR code to link it first.');
+  }
+  try {
+    // Actually execute JS inside the Puppeteer page to confirm it's alive.
+    await client.pupPage.evaluate(() => true);
+  } catch (err) {
+    if (emitRecover && global.botStatus !== 'DISCONNECTED') {
+      logger.error('Puppeteer page is dead during pre-check, triggering recovery...', { error: err.message });
+      global.botStatus = 'DISCONNECTED';
+      client.emit('disconnected', 'puppeteer_page_dead');
+    }
+    throw new Error('WhatsApp bot session has expired. A recovery/restart has been triggered — please retry shortly.');
   }
 }
 
@@ -527,10 +560,11 @@ function startHealthServer() {
         return res.status(400).json({ error: 'x-phone-number header is required' });
       }
 
-      // Check if WhatsApp bot is connected
-      const info = client.info;
-      if (!info || !info.wid) {
-        return res.status(503).json({ error: 'WhatsApp bot is offline or not linked. Please scan the QR code to link it first.' });
+      // Check if WhatsApp bot is truly connected (probes the Puppeteer page).
+      try {
+        await ensureClientAlive();
+      } catch (err) {
+        return res.status(503).json({ error: err.message });
       }
 
       // Clean phone number
@@ -582,10 +616,11 @@ function startHealthServer() {
         return res.status(400).json({ error: 'Phone number is required' });
       }
 
-      // Check if WhatsApp bot is connected
-      const info = client.info;
-      if (!info || !info.wid) {
-        return res.status(503).json({ error: 'WhatsApp bot is offline or not linked. Please scan the QR code to link it first.' });
+      // Check if WhatsApp bot is truly connected (probes the Puppeteer page).
+      try {
+        await ensureClientAlive();
+      } catch (err) {
+        return res.status(503).json({ error: err.message });
       }
 
       // Clean phone number (keep only digits)
@@ -613,7 +648,11 @@ function startHealthServer() {
         await client.sendMessage(cleanNumber, `Below is a shared *Link* from CosmoShare 👇`);
         
         // Chat bubble 2: Link
-        await client.sendMessage(cleanNumber, linkUrl);
+        const sendOptions = {};
+        if (featuresConfig.ENABLE_LINK_PREVIEW === false) {
+          sendOptions.linkPreview = false;
+        }
+        await client.sendMessage(cleanNumber, linkUrl, sendOptions);
         
         // Chat bubble 3: Note
         if (message) {
@@ -694,14 +733,32 @@ function startHealthServer() {
     res.redirect('/');
   });
 
-  // Health endpoint (public)
-  app.get('/health', (req, res) => {
+  // Health endpoint (public) — probes the Puppeteer page, not just cached info.
+  app.get('/health', async (req, res) => {
     const info = client.info;
     const pauseState = pauseService.getState();
+
+    // `client.info` is cached at auth time and survives a dead page, so probe
+    // the page itself to report the true connection state.
+    let isAlive = false;
+    if (info && info.wid) {
+      try {
+        await client.pupPage.evaluate(() => true);
+        isAlive = true;
+      } catch {
+        // Page context is dead → not really connected.
+        isAlive = false;
+        if (global.botStatus === 'CONNECTED') {
+          // Don't claim CONNECTED if the page is dead.
+          global.botStatus = 'DISCONNECTED';
+        }
+      }
+    }
+
     res.json({
       status: 'ok',
       uptime: Math.floor((Date.now() - startTime) / 1000),
-      connectedToWhatsApp: !!(info && info.wid),
+      connectedToWhatsApp: isAlive,
       botStatus: global.botStatus,
       isPaused: pauseService.isPaused(),
       pauseType: pauseState.pauseType,
@@ -814,6 +871,21 @@ function startHealthServer() {
   // Start Express server
   app.listen(config.health.port, () => {
     logger.info(`Admin Dashboard is running at http://localhost:${config.health.port}`);
+
+    // Periodic Puppeteer page liveness probe.
+    // `client.info` is cached and survives a dead page; this probe is what
+    // actually detects the zombie state (e.g. after an "auth timeout" that does
+    // NOT emit 'disconnected') and routes it into recovery.
+    setInterval(async () => {
+      if (global.botStatus !== 'CONNECTED' && global.botStatus !== 'AUTHENTICATED') return;
+      try {
+        await client.pupPage.evaluate(() => true);
+      } catch (err) {
+        logger.error('Puppeteer page is dead, triggering recovery...', { error: err.message });
+        global.botStatus = 'DISCONNECTED';
+        client.emit('disconnected', 'puppeteer_page_dead');
+      }
+    }, 60000).unref();
   });
 }
 
@@ -1026,7 +1098,18 @@ process.on('uncaughtException', async (err) => {
 });
 
 process.on('unhandledRejection', (reason) => {
-  logger.error('Unhandled rejection', { reason: reason instanceof Error ? reason.message : reason });
+  const msg = reason instanceof Error ? reason.message : String(reason);
+  logger.error('Unhandled rejection', { reason: msg });
+
+  // Auth-related rejections (e.g. the recurring "auth timeout") do NOT trigger
+  // whatsapp-web.js's 'disconnected' event, so the bot would otherwise stay in a
+  // zombie "CONNECTED" state. Detect them and route into recovery.
+  if (/auth|timeout|UNPAIRED/i.test(msg) &&
+      (global.botStatus === 'CONNECTED' || global.botStatus === 'AUTHENTICATED')) {
+    logger.warn('Auth-related rejection detected, triggering recovery...', { reason: msg });
+    global.botStatus = 'DISCONNECTED';
+    client.emit('disconnected', `unhandled:${msg}`);
+  }
 });
 
 // ─── Run ────────────────────────────────────────────────────────────

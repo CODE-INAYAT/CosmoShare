@@ -199,25 +199,64 @@ function getLabShareUrl(roomNumber) {
 }
 
 /**
- * Create a SignalingClient connected to the correct shard for OneShare.
+ * Create a SignalingClient connected to a OneShare shard, with ring-order
+ * fallback across ALL configured shards (matches the web portal's
+ * getOneShareSignalingUrls behaviour). If the primary shard is overloaded
+ * (Cloudflare Durable Object free-tier limits surface as "WebSocket was closed
+ * before the connection was established"), the remaining shards are tried in
+ * the same deterministic ring order both sides compute, so sender + receiver
+ * converge on the same healthy shard.
  */
 async function connectForOneShare(code) {
-  const url = getOneShareUrl(code);
-  if (!url) throw new Error('No signaling URLs configured');
-  const client = new SignalingClient(url);
-  await client.connect();
-  return client;
+  const urls = config.signaling.oneShareUrls;
+  if (urls.length === 0) throw new Error('No signaling URLs configured');
+
+  const primary = djb2Hash(code) % urls.length;
+  let lastErr = null;
+  for (let i = 0; i < urls.length; i++) {
+    const idx = (primary + i) % urls.length;
+    const url = normaliseWs(urls[idx]);
+    const client = new SignalingClient(url);
+    try {
+      await client.connect();
+      if (i > 0) logger.info('Connected to fallback OneShare shard', { shard: idx, url, primary });
+      return client;
+    } catch (err) {
+      lastErr = err;
+      logger.warn('OneShare shard connection failed, trying next', { shard: idx, url, error: err.message });
+      client.destroy();
+    }
+  }
+  throw new Error('All OneShare signaling shards unreachable' + (lastErr ? `: ${lastErr.message}` : ''));
 }
 
 /**
- * Create a SignalingClient connected to the correct shard for Lab Share.
+ * Create a SignalingClient connected to a Lab Share shard, with ring-order
+ * fallback across ALL configured shards (matches the web portal's
+ * getLabSignalingUrls behaviour).
  */
 async function connectForLabShare(roomNumber) {
-  const url = getLabShareUrl(roomNumber);
-  if (!url) throw new Error('No signaling URLs configured');
-  const client = new SignalingClient(url);
-  await client.connect();
-  return client;
+  const urls = config.signaling.labUrls;
+  if (urls.length === 0) throw new Error('No signaling URLs configured');
+
+  const primary = djb2Hash(roomNumber) % urls.length;
+  let lastErr = null;
+  for (let i = 0; i < urls.length; i++) {
+    const idx = (primary + i) % urls.length;
+    const wsBase = normaliseWs(urls[idx]);
+    const url = `${wsBase}?room=${encodeURIComponent(roomNumber)}`;
+    const client = new SignalingClient(url);
+    try {
+      await client.connect();
+      if (i > 0) logger.info('Connected to fallback Lab Share shard', { shard: idx, url, primary });
+      return client;
+    } catch (err) {
+      lastErr = err;
+      logger.warn('Lab Share shard connection failed, trying next', { shard: idx, url, error: err.message });
+      client.destroy();
+    }
+  }
+  throw new Error('All Lab Share signaling shards unreachable' + (lastErr ? `: ${lastErr.message}` : ''));
 }
 
 module.exports = {

@@ -3959,6 +3959,7 @@ function StudentDashboardInner() {
         onClose={() => setWhatsAppDialogOpen(false)}
         onConfirm={handleWhatsAppConfirm}
         totalFileSize={selectedFiles.reduce((sum, f) => sum + f.size, 0)}
+        fileCount={selectedFiles.length}
       />
     </div >
   )

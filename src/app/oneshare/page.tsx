@@ -194,7 +194,7 @@ function OneShareInner() {
     const [codeShareText, setCodeShareText] = useState('')
     const [shareMode, setShareMode] = useState<'files' | 'links'>('files')
     const [codeShareMode, setCodeShareMode] = useState(false)
-    const [multiShareEnabled, setMultiShareEnabled] = useState(false)
+    const [multiShareEnabled, setMultiShareEnabled] = useState(true)
     const [sessionExpiry, setSessionExpiry] = useState<number | null>(null)
     const [sessionTimeLeft, setSessionTimeLeft] = useState<string>('')
     const [multiShareReceivers, setMultiShareReceivers] = useState<Array<{ id: string; status: 'connecting' | 'sending' | 'completed' | 'failed' }>>([])
@@ -1302,9 +1302,9 @@ function OneShareInner() {
                                                 </div>
                                                 <div>
                                                     <label htmlFor="multi-share-toggle" className="text-sm font-medium cursor-pointer">
-                                                        MultiShare
+                                                        Multi-User Sharing
                                                     </label>
-                                                    <p className="text-xs text-muted-foreground">Multiple users can download (5 min)</p>
+                                                    <p className="text-xs text-muted-foreground">Allows multiple users to download using this single code (5 min)</p>
                                                 </div>
                                             </div>
                                             <Switch
@@ -1495,7 +1495,7 @@ function OneShareInner() {
                                             {isWhatsAppShare
                                                 ? (transferComplete ? 'Shared to WhatsApp!' : 'Sharing to WhatsApp...')
                                                 : multiShareEnabled
-                                                    ? (multiShareReceivers.length > 0 ? 'MultiShare Active' : 'MultiShare — Waiting')
+                                                    ? (multiShareReceivers.length > 0 ? 'Multi-User Sharing Active' : 'Multi-User Sharing — Waiting')
                                                     : (transferComplete
                                                         ? 'Transfer Complete!'
                                                         : receiverConnected
@@ -2069,6 +2069,7 @@ function OneShareInner() {
                 onClose={() => setWhatsAppDialogOpen(false)}
                 onConfirm={handleWhatsAppConfirm}
                 totalFileSize={selectedFiles.reduce((sum, f) => sum + f.size, 0)}
+                fileCount={selectedFiles.length}
             />
         </div >
     )
