@@ -47,6 +47,7 @@ import {
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { toast } from '@/hooks/use-toast'
+import { SHOW_SHARING_METHOD } from '@/config/sharingMethod'
 
 interface RecipientInfo { id: string; name: string; uniqueId: string }
 
@@ -850,7 +851,7 @@ function FilePreviewInner({ file, senderName, senderUniqueId, recipients, timest
               )
             })()}</span>
           )}
-          {file.method && <span className="hidden sm:inline text-primary dark:text-primary font-medium">Method : {file.method}</span>}
+          {SHOW_SHARING_METHOD && file.method && <span className="hidden sm:inline text-primary dark:text-primary font-medium">Method : {file.method}</span>}
         </div>
       </CardContent>
       {/* Delete confirmation dialog triggered from meatballs menu */}

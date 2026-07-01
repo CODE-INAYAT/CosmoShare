@@ -952,30 +952,30 @@ function AdminDashboardInner() {
                           </button>
                         </div>
                         <div className="w-fit">
-                        <TooltipProvider>
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <div className={`inline-flex items-center gap-1.5 sm:gap-2 px-2 sm:px-2.5 py-1 sm:py-1.5 rounded-lg border shadow-sm transition-colors ${autoDownload
-                                ? 'bg-emerald-50 border-emerald-200 dark:bg-emerald-950/30 dark:border-emerald-800'
-                                : 'bg-card'
-                                }`}>
-                                <Download className={`w-3 h-3 sm:w-3.5 sm:h-3.5 transition-colors ${autoDownload ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground'
-                                  }`} />
-                                <span className={`text-xs font-medium transition-colors ${autoDownload ? 'text-emerald-700 dark:text-emerald-300' : ''
-                                  }`}>Auto-Download</span>
-                                <Switch
-                                  id="auto-download-admin"
-                                  checked={autoDownload}
-                                  onCheckedChange={setAutoDownload}
-                                  className="scale-75"
-                                />
-                              </div>
-                            </TooltipTrigger>
-                            <TooltipContent side="bottom" className="max-w-[200px] text-center">
-                              <p className="text-xs">When enabled, received files are automatically downloaded to your device</p>
-                            </TooltipContent>
-                          </Tooltip>
-                        </TooltipProvider>
+                          <TooltipProvider>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <div className={`inline-flex items-center gap-1.5 sm:gap-2 px-2 sm:px-2.5 py-1 sm:py-1.5 rounded-lg border shadow-sm transition-colors ${autoDownload
+                                  ? 'bg-emerald-50 border-emerald-200 dark:bg-emerald-950/30 dark:border-emerald-800'
+                                  : 'bg-card'
+                                  }`}>
+                                  <Download className={`w-3 h-3 sm:w-3.5 sm:h-3.5 transition-colors ${autoDownload ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground'
+                                    }`} />
+                                  <span className={`text-xs font-medium transition-colors ${autoDownload ? 'text-emerald-700 dark:text-emerald-300' : ''
+                                    }`}>Auto-Download</span>
+                                  <Switch
+                                    id="auto-download-admin"
+                                    checked={autoDownload}
+                                    onCheckedChange={setAutoDownload}
+                                    className="scale-75"
+                                  />
+                                </div>
+                              </TooltipTrigger>
+                              <TooltipContent side="bottom" className="max-w-[200px] text-center">
+                                <p className="text-xs">When enabled, received files are automatically downloaded to your device</p>
+                              </TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
                         </div>
                       </div>
                     </div>
@@ -1220,7 +1220,7 @@ function AdminDashboardInner() {
                   onClick={() => { handleRefreshSocket(); setSpeedDialOpen(false) }}
                 >
                   <RefreshCw className="w-4 h-4 mr-2" />
-                  Refresh socket state
+                  Refresh
                 </Button>
 
                 <Tooltip>

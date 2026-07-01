@@ -19,11 +19,11 @@ export const metadata: Metadata = {
     template: "%s | CosmoShare",
   },
   description:
-    "Share files instantly with peers in your lab room using WebRTC peer-to-peer transfers. No uploads, no size limits — just fast, encrypted, cross-platform sharing and smart print queues.",
+    "Share files instantly with peers in your lab room using direct browser-to-browser peer-to-peer transfers. No uploads, no size limits — just fast, encrypted, cross-platform sharing and smart print queues.",
   metadataBase: new URL("https://cosmoshare.pages.dev"),
   keywords: [
     "CosmoShare",
-    "WebRTC",
+    "Direct Sharing",
     "P2P",
     "File Sharing",
     "Lab",
@@ -39,7 +39,7 @@ export const metadata: Metadata = {
     siteName: "CosmoShare",
     title: "CosmoShare — Instant P2P File Sharing for Lab Environments",
     description:
-      "Share files instantly with peers in your lab room using WebRTC. No uploads, no size limits, end-to-end encrypted.",
+      "Share files instantly with peers in your lab room using direct peer-to-peer sharing. No uploads, no size limits, end-to-end encrypted.",
     images: [
       {
         url: "/og-image.jpg",
@@ -76,6 +76,17 @@ export default function RootLayout({
     <html lang="en" suppressHydrationWarning className={plusJakartaSans.className}>
       <head>
         <meta name="theme-color" content="#10b981" />
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{
+            __html: JSON.stringify({
+              "@context": "https://schema.org",
+              "@type": "WebSite",
+              "name": "CosmoShare",
+              "url": "https://cosmoshare.pages.dev"
+            })
+          }}
+        />
       </head>
       <body className={`${plusJakartaSans.variable} antialiased`}>
         <ThemeProvider
