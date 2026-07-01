@@ -729,10 +729,10 @@ export default function Home() {
               </p>
 
               {/* CTA Buttons */}
-              <div className="hero-cta flex flex-col sm:flex-row gap-4 justify-center lg:justify-start">
+              <div className="hero-cta flex flex-col items-center sm:flex-row gap-4 justify-center lg:justify-start">
                 <Button
                   size="lg"
-                  className="gradient-primary text-white px-6 md:px-8 py-4 md:py-6 text-base md:text-lg rounded-xl glow-button hover:opacity-90 transition-all group magnetic-btn"
+                  className="gradient-primary text-white w-64 sm:w-auto px-6 md:px-8 h-12 sm:h-auto py-0 sm:py-4 md:py-6 text-base md:text-lg font-semibold sm:font-medium rounded-xl glow-button hover:opacity-90 transition-all group magnetic-btn"
                   onClick={() => document.getElementById('portal')?.scrollIntoView({ behavior: 'smooth' })}
                 >
                   Get Started Free
@@ -741,7 +741,7 @@ export default function Home() {
                 <Button
                   size="lg"
                   variant="outline"
-                  className="border-border hover:bg-secondary px-6 md:px-8 py-4 md:py-6 text-base md:text-lg rounded-xl transition-all"
+                  className="border-border hover:bg-secondary w-64 sm:w-auto px-6 md:px-8 h-12 sm:h-auto py-0 sm:py-4 md:py-6 text-base md:text-lg font-semibold sm:font-medium rounded-xl transition-all"
                   onClick={() => document.getElementById('how-it-works')?.scrollIntoView({ behavior: 'smooth' })}
                 >
                   <Layers className="w-5 h-5 mr-2" />
