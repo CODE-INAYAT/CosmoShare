@@ -671,14 +671,13 @@ export default function Home() {
       {/* Navbar */}
       <nav
         ref={navRef}
-        className={`fixed top-0 left-0 right-0 z-50 flex justify-center pointer-events-none ${
-          isNavAnimated ? 'nav-slide-down' : ''
-        }`}
+        className={`fixed top-0 left-0 right-0 z-50 flex justify-center pointer-events-none ${isNavAnimated ? 'nav-slide-down' : ''
+          }`}
       >
         <div
           className={`flex items-center justify-between pointer-events-auto transition-all duration-500 cubic-bezier(0.16, 1, 0.3, 1) backdrop-blur-md bg-white/70 dark:bg-slate-950/60 ${isScrolled
-              ? 'w-full max-w-full rounded-none px-6 py-2 border-0 border-b border-border/20 shadow-md mt-0'
-              : 'w-[calc(100%-2rem)] max-w-7xl rounded-2xl px-6 py-2.5 border border-border/10 mt-4'
+            ? 'w-full max-w-full rounded-none px-6 py-2 border-0 border-b border-border/20 shadow-md mt-0'
+            : 'w-[calc(100%-2rem)] max-w-7xl rounded-2xl px-6 py-2.5 border border-border/10 mt-4'
             }`}
         >
           <div className="flex items-center gap-3">
@@ -714,11 +713,10 @@ export default function Home() {
             <div className="text-center lg:text-left">
               {/* Main Headline */}
               <h1 className="hero-title text-4xl sm:text-5xl md:text-6xl lg:text-7xl font-bold mb-6 leading-tight tracking-tight">
-                <span className="text-foreground">Share Files </span>
-                <span className="gradient-text-animated">Instantly</span>
-                <br />
-                <span className="text-foreground">In Your </span>
-                <span className="text-primary">Lab Room</span>
+                <span className="gradient-text-animated">Share Smarter. </span>
+                <span className="text-foreground">Share </span>
+                <span className="text-foreground">Anything, </span>
+                <span className="text-primary">Anytime</span>
               </h1>
 
               {/* Subtitle */}
@@ -871,8 +869,8 @@ export default function Home() {
                   setPortalTab(tab.id as 'oneshare' | 'labshare')
                 }}
                 className={`relative px-6 py-2.5 text-sm font-bold rounded-full transition-all duration-200 z-10 ${portalTab === tab.id
-                    ? 'text-white dark:text-white'
-                    : 'text-slate-500 hover:text-slate-850 dark:text-slate-400 dark:hover:text-slate-100'
+                  ? 'text-white dark:text-white'
+                  : 'text-slate-500 hover:text-slate-850 dark:text-slate-400 dark:hover:text-slate-100'
                   }`}
               >
                 {portalTab === tab.id && (
@@ -1414,11 +1412,11 @@ export default function Home() {
             </motion.div>
 
             <motion.h2 variants={fadeUp} className="text-xl sm:text-2xl md:text-4xl font-bold mb-3 md:mb-4 relative leading-tight">
-              Ready to Transform Your <span className="gradient-text">Lab Experience?</span>
+              Ready to Transform Your <span className="gradient-text">Experience?</span>
             </motion.h2>
 
             <motion.p variants={fadeUp} className="text-muted-foreground text-sm sm:text-base md:text-lg mb-6 md:mb-8 max-w-xl mx-auto relative px-2">
-              Join thousands of students and lab admins who are already sharing files faster than ever.
+              Join now and transform the way you share files, links, and code - smarter, faster, and easier than ever.
             </motion.p>
 
             <motion.div variants={fadeUp}>
