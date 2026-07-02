@@ -1,3 +1,4 @@
+//This is for Admin Auto Login Durint Test Mode
 export const AUTO_LOGIN_ENABLED = true
 export const AUTO_LOGIN_PASSWORD = process.env.NEXT_PUBLIC_AUTO_LOGIN_PASSWORD ?? ""
 
