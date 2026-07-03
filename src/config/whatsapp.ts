@@ -1,4 +1,5 @@
 export const whatsappConfig = {
+  showWhatsAppShare: true, //To Enable/Disable WhatsapShare button
   enableMultiCountrySelector: false,
   countries: [
     { name: 'India', code: '+91', flag: '🇮🇳', iso: 'in' },

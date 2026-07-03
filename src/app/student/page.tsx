@@ -11,6 +11,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import WhatsAppIcon from '@/components/WhatsAppIcon'
 import WhatsAppNumberDialog from '@/components/WhatsAppNumberDialog'
+import { whatsappConfig } from '@/config/whatsapp'
 import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
 import { Alert, AlertDescription } from '@/components/ui/alert'
@@ -2451,15 +2452,17 @@ function StudentDashboardInner() {
                           <Send className="w-4 h-4 mr-2" />
                           Send Message
                         </Button>
-                        <Button
-                          variant="secondary"
-                          onClick={() => setWhatsAppDialogOpen(true)}
-                          disabled={isUploading || !codeShareText.trim()}
-                          className="flex-1 text-sm border border-slate-300 dark:border-slate-700 hover:border-slate-400 dark:hover:border-slate-600 transition duration-300"
-                        >
-                          <WhatsAppIcon className="w-4 h-4 mr-2 text-emerald-600 dark:text-emerald-400" />
-                          Share to WhatsApp
-                        </Button>
+                        {whatsappConfig.showWhatsAppShare && (
+                          <Button
+                            variant="secondary"
+                            onClick={() => setWhatsAppDialogOpen(true)}
+                            disabled={isUploading || !codeShareText.trim()}
+                            className="flex-1 text-sm border border-slate-300 dark:border-slate-700 hover:border-slate-400 dark:hover:border-slate-600 transition duration-300"
+                          >
+                            <WhatsAppIcon className="w-4 h-4 mr-2 text-emerald-600 dark:text-emerald-400" />
+                            Share to WhatsApp
+                          </Button>
+                        )}
                       </div>
                     </motion.div>
                   ) : (
@@ -2548,15 +2551,17 @@ function StudentDashboardInner() {
                               <Send className="w-4 h-4 mr-2" />
                               Share Files
                             </Button>
-                            <Button
-                              variant="secondary"
-                              onClick={() => setWhatsAppDialogOpen(true)}
-                              disabled={isUploading || (selectedFiles.length === 0 && !linkUrl)}
-                              className="flex-1 text-sm border border-slate-300 dark:border-slate-700 hover:border-slate-400 dark:hover:border-slate-600 transition duration-300"
-                            >
-                              <WhatsAppIcon className="w-4 h-4 mr-2 text-emerald-600 dark:text-emerald-400" />
-                              Share to WhatsApp
-                            </Button>
+                            {whatsappConfig.showWhatsAppShare && (
+                              <Button
+                                variant="secondary"
+                                onClick={() => setWhatsAppDialogOpen(true)}
+                                disabled={isUploading || (selectedFiles.length === 0 && !linkUrl)}
+                                className="flex-1 text-sm border border-slate-300 dark:border-slate-700 hover:border-slate-400 dark:hover:border-slate-600 transition duration-300"
+                              >
+                                <WhatsAppIcon className="w-4 h-4 mr-2 text-emerald-600 dark:text-emerald-400" />
+                                Share to WhatsApp
+                              </Button>
+                            )}
                           </div>
                         </TabsContent>
 
@@ -2602,15 +2607,17 @@ function StudentDashboardInner() {
                               <Send className="w-4 h-4 mr-2" />
                               Share Files
                             </Button>
-                            <Button
-                              variant="secondary"
-                              onClick={() => setWhatsAppDialogOpen(true)}
-                              disabled={isUploading || (selectedFiles.length === 0 && !linkUrl)}
-                              className="flex-1 text-sm border border-slate-300 dark:border-slate-700 hover:border-slate-400 dark:hover:border-slate-600 transition duration-300"
-                            >
-                              <WhatsAppIcon className="w-4 h-4 mr-2 text-emerald-600 dark:text-emerald-400" />
-                              Share to WhatsApp
-                            </Button>
+                            {whatsappConfig.showWhatsAppShare && (
+                              <Button
+                                variant="secondary"
+                                onClick={() => setWhatsAppDialogOpen(true)}
+                                disabled={isUploading || (selectedFiles.length === 0 && !linkUrl)}
+                                className="flex-1 text-sm border border-slate-300 dark:border-slate-700 hover:border-slate-400 dark:hover:border-slate-600 transition duration-300"
+                              >
+                                <WhatsAppIcon className="w-4 h-4 mr-2 text-emerald-600 dark:text-emerald-400" />
+                                Share to WhatsApp
+                              </Button>
+                            )}
                           </div>
                         </TabsContent>
                       </Tabs>

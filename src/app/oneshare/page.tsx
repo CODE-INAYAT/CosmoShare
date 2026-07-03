@@ -33,6 +33,7 @@ import FullPageLoader from '@/components/FullPageLoader'
 
 import WhatsAppIcon from '@/components/WhatsAppIcon'
 import WhatsAppNumberDialog from '@/components/WhatsAppNumberDialog'
+import { whatsappConfig } from '@/config/whatsapp'
 
 // Hooks
 import { useOneShareWebRTC } from '@/hooks/useOneShareWebRTC'
@@ -1466,15 +1467,17 @@ function OneShareInner() {
                                                 <Hash className="w-4 h-4 mr-2" />
                                                 Generate Share Code
                                             </Button>
-                                            <Button
-                                                variant="secondary"
-                                                className="w-full sm:w-auto border border-slate-300 dark:border-slate-700 hover:border-slate-400 dark:hover:border-slate-600 transition duration-300 animate-in fade-in slide-in-from-bottom-2 duration-200 text-sm"
-                                                disabled={codeShareMode ? !codeShareText.trim() : (selectedFiles.length === 0 && !linkUrl)}
-                                                onClick={() => setWhatsAppDialogOpen(true)}
-                                            >
-                                                <WhatsAppIcon className="w-4 h-4 mr-2 text-emerald-600 dark:text-emerald-400" />
-                                                Share to WhatsApp
-                                            </Button>
+                                            {whatsappConfig.showWhatsAppShare && (
+                                                <Button
+                                                    variant="secondary"
+                                                    className="w-full sm:w-auto border border-slate-300 dark:border-slate-700 hover:border-slate-400 dark:hover:border-slate-600 transition duration-300 animate-in fade-in slide-in-from-bottom-2 duration-200 text-sm"
+                                                    disabled={codeShareMode ? !codeShareText.trim() : (selectedFiles.length === 0 && !linkUrl)}
+                                                    onClick={() => setWhatsAppDialogOpen(true)}
+                                                >
+                                                    <WhatsAppIcon className="w-4 h-4 mr-2 text-emerald-600 dark:text-emerald-400" />
+                                                    Share to WhatsApp
+                                                </Button>
+                                            )}
                                         </div>
                                     </CardContent>
                                 </Card>
