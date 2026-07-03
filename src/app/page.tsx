@@ -54,6 +54,7 @@ import { AUTO_LOGIN_ENABLED, AUTO_LOGIN_PASSWORD, hashPassword, verifyHash } fro
 import { URL_OBFUSCATION_ENABLED, encodeUrlData } from '@/config/urlObfuscation'
 import { SupportDialog } from '@/components/SupportDialog'
 import { trackVisitor } from '@/config/analytics'
+import { StaggeredMenu } from '@/components/StaggeredMenu'
 
 // Register GSAP plugins
 if (typeof window !== 'undefined') {
@@ -216,6 +217,7 @@ function ThemeToggle() {
 }
 
 export default function Home() {
+  const { theme, setTheme, resolvedTheme } = useTheme()
   const [userType, setUserType] = useState<'student' | 'admin'>('student')
   const [roomNumber, setRoomNumber] = useState('')
   const [name, setName] = useState('')
@@ -230,6 +232,7 @@ export default function Home() {
   const [supportOpen, setSupportOpen] = useState(false)
   const [portalTab, setPortalTab] = useState<'oneshare' | 'labshare'>('oneshare')
   const [isNavAnimated, setIsNavAnimated] = useState(true)
+  const [isMenuScrolling, setIsMenuScrolling] = useState(false)
   const router = useRouter()
 
   // Refs for GSAP animations
@@ -471,11 +474,15 @@ export default function Home() {
 
   const scrollToSection = (e: React.MouseEvent<HTMLAnchorElement>, id: string) => {
     e.preventDefault()
+    setIsMenuScrolling(true)
     const element = document.getElementById(id)
     if (element) {
       element.scrollIntoView({ behavior: 'smooth' })
       window.history.pushState(null, '', `#${id}`)
     }
+    setTimeout(() => {
+      setIsMenuScrolling(false)
+    }, 1200)
   }
 
   const generateUniqueId = (name: string) => {
@@ -671,8 +678,7 @@ export default function Home() {
       {/* Navbar */}
       <nav
         ref={navRef}
-        className={`fixed top-0 left-0 right-0 z-50 flex justify-center pointer-events-none ${isNavAnimated ? 'nav-slide-down' : ''
-          }`}
+        className={`fixed top-0 left-0 right-0 z-50 flex justify-center pointer-events-none ${isNavAnimated ? 'nav-slide-down' : ''}`}
       >
         <div
           className={`flex items-center justify-between pointer-events-auto transition-all duration-500 cubic-bezier(0.16, 1, 0.3, 1) backdrop-blur-md bg-white/70 dark:bg-slate-950/60 ${isScrolled
@@ -693,7 +699,14 @@ export default function Home() {
           </div>
 
           <div className="flex items-center gap-3">
-            <ThemeToggle />
+            {/* Desktop ThemeToggle */}
+            <div className="hidden md:flex">
+              <ThemeToggle />
+            </div>
+
+            {/* Mobile Hamburger Menu Portal Target */}
+            <div id="mobile-menu-trigger" className="md:hidden flex items-center" />
+
             <Button
               className="gradient-primary text-white hover:opacity-90 transition-opacity hidden sm:flex glow-button"
               onClick={() => document.getElementById('portal')?.scrollIntoView({ behavior: 'smooth' })}
@@ -704,6 +717,36 @@ export default function Home() {
           </div>
         </div>
       </nav>
+
+      {/* Mobile Staggered Menu Panel Overlay (controlled via Portal for trigger button) */}
+      <StaggeredMenu
+        isFixed={true}
+        logoUrl={resolvedTheme === 'dark' ? '/logoDark.svg' : '/logo.svg'}
+        menuButtonColor={resolvedTheme === 'dark' ? '#fff' : '#0f172a'}
+        openMenuButtonColor={resolvedTheme === 'dark' ? '#fff' : '#0f172a'}
+        accentColor="#14b8a6"
+        colors={resolvedTheme === 'dark' ? ['#022c22', '#0f766e', '#115e59'] : ['#ccfbf1', '#2dd4bf', '#0d9488']}
+        items={[
+          { label: 'Get Started', ariaLabel: 'Get Started Section', link: '#portal' },
+          { label: 'How It Works', ariaLabel: 'How It Works Section', link: '#how-it-works' },
+          { label: 'Features', ariaLabel: 'Features Section', link: '#features' }
+        ]}
+        onItemClick={(item, e) => {
+          e.preventDefault();
+          setIsMenuScrolling(true);
+          const targetId = item.link.replace('#', '');
+          const element = document.getElementById(targetId);
+          if (element) {
+            element.scrollIntoView({ behavior: 'smooth' });
+            window.history.pushState(null, '', item.link);
+          }
+          setTimeout(() => {
+            setIsMenuScrolling(false);
+          }, 1200);
+        }}
+        displaySocials={false}
+        displayItemNumbering={true}
+      />
 
       {/* Hero Section */}
       <section ref={heroRef} className="relative pt-32 pb-20 px-4 min-h-screen flex items-center">
@@ -838,7 +881,7 @@ export default function Home() {
           <motion.div
             initial="hidden"
             whileInView="visible"
-            viewport={{ once: true, amount: 0.8, margin: "-15% 0px -35% 0px" }}
+            viewport={{ once: true, amount: isMenuScrolling ? 0.2 : 0.8, margin: isMenuScrolling ? undefined : "-15% 0px -35% 0px" }}
             variants={fadeUp}
             className="text-center mb-8"
           >
@@ -1274,7 +1317,7 @@ export default function Home() {
           <motion.div
             initial="hidden"
             whileInView="visible"
-            viewport={{ once: true, amount: 0.8, margin: "-15% 0px -35% 0px" }}
+            viewport={{ once: true, amount: isMenuScrolling ? 0.2 : 0.8, margin: isMenuScrolling ? undefined : "-15% 0px -35% 0px" }}
             variants={fadeUp}
             className="text-center mb-16"
           >
@@ -1337,7 +1380,7 @@ export default function Home() {
           <motion.div
             initial="hidden"
             whileInView="visible"
-            viewport={{ once: true, amount: 0.8, margin: "-15% 0px -35% 0px" }}
+            viewport={{ once: true, amount: isMenuScrolling ? 0.2 : 0.8, margin: isMenuScrolling ? undefined : "-15% 0px -35% 0px" }}
             variants={fadeUp}
           >
             <div className="inline-flex items-center gap-2 glass px-4 py-2 rounded-full mb-6">
