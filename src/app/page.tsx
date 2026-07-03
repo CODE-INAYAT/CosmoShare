@@ -721,9 +721,9 @@ export default function Home() {
 
               {/* Subtitle */}
               <p className="hero-subtitle text-lg md:text-xl text-muted-foreground mb-10 max-w-xl mx-auto lg:mx-0 leading-relaxed">
-                Peer-to-peer file sharing designed for lab environments.
-                Share documents, submit print requests, and collaborate
-                seamlessly with your peers.
+                Peer-to-peer sharing for lab environments and beyond.
+                Share files, links, and code, submit print requests,
+                collaborate seamlessly, and do much more.
               </p>
 
               {/* CTA Buttons */}
