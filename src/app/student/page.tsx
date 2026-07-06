@@ -996,7 +996,15 @@ function StudentDashboardInner() {
     // Initialize socket connection using sharded signaling router (with auto-failover)
     const signalingUrls = getLabSignalingUrls(roomNumber)
     let socket: any
-    if (signalingUrls.length > 0) {
+    const hfSignalingUrl = process.env.NEXT_PUBLIC_SIGNALING_HF?.trim()
+    if (hfSignalingUrl) {
+      // Connect to Hugging Face Spaces Socket.IO signaling server (supports private Spaces)
+      const hfToken = process.env.NEXT_PUBLIC_HF_TOKEN?.trim()
+      socket = io(hfSignalingUrl, {
+        path: '/api/socket/io',
+        ...(hfToken ? { extraHeaders: { Authorization: `Bearer ${hfToken}` } } : {}),
+      })
+    } else if (signalingUrls.length > 0) {
       socket = connectSignaling(signalingUrls)
     } else {
       // Fallback to Next.js Socket.IO route when no signaling Worker URL is set

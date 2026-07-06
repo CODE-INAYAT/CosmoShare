@@ -647,8 +647,19 @@ function OneShareInner() {
     useEffect(() => {
         if (!mounted) return
 
+        const hfSignalingUrl = process.env.NEXT_PUBLIC_SIGNALING_HF?.trim()
         const shardInfo = getRandomOneShareShardWithFallbacks()
-        if (shardInfo) {
+        if (hfSignalingUrl) {
+            // Connect to Hugging Face Spaces Socket.IO signaling server (supports private Spaces)
+            const hfToken = process.env.NEXT_PUBLIC_HF_TOKEN?.trim()
+            const sock = io(hfSignalingUrl, {
+                path: '/api/socket/io',
+                ...(hfToken ? { extraHeaders: { Authorization: `Bearer ${hfToken}` } } : {}),
+            }) as any
+            setupSocketListeners(sock)
+            socketRef.current = sock
+            setSocket(sock)
+        } else if (shardInfo) {
             connectToShard(shardInfo.urls, shardInfo.startShardIndex)
         } else {
             // Fallback to local Socket.IO for development
