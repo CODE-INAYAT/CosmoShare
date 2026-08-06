@@ -1,4 +1,4 @@
-export const VIDEO_PREVIEW_ENABLED = true;
+export const VIDEO_PREVIEW_ENABLED = false;
 
 export const VIDEO_CONFIG = {
   oneshare: "https://www.youtube.com/embed/ktoYUycRXTA", // Placeholder, configure real link here
