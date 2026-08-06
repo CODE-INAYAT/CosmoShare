@@ -1,1 +1,1 @@
-export const INSPECT_RESTRICTION_ENABLED = false;
+export const INSPECT_RESTRICTION_ENABLED = true;
