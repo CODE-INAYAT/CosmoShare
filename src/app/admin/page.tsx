@@ -64,6 +64,18 @@ import { formatBytes } from '@/lib/utils'
 import { AUTO_LOGIN_ENABLED, AUTO_LOGIN_PASSWORD, hashPassword, verifyHash } from '@/config/autoLogin'
 import { trackEvent, AnalyticsEvent, trackFileSize, setAnalyticsContext } from '@/config/analytics'
 import { installConsoleMask } from '@/config/urlObfuscation'
+import AnalyticsChart from '@/components/AnalyticsChart'
+import { ENABLE_DUMMY_ANALYTICS, DUMMY_ANALYTICS_DATA } from '@/config/dummyAnalytics'
+import {
+  saveRequestToDB,
+  loadRequestsFromDB,
+  updateRequestPrintedStatusInDB,
+  deleteRequestFromDB,
+  clearAllRequestsFromDB,
+  updateDailyAnalyticsInDB,
+  getAnalyticsForLastNDays,
+  DailyAnalytics
+} from '@/lib/storage'
 
 interface PrintRequest {
   id: string
@@ -116,6 +128,7 @@ function AdminDashboardInner() {
   const blobUrlsRef = useRef<Set<string>>(new Set())
   const [adminUser, setAdminUser] = useState<any>(null)
   const [confirmMarkAllOpen, setConfirmMarkAllOpen] = useState(false)
+  const [confirmClearAllOpen, setConfirmClearAllOpen] = useState(false)
   const [speedDialOpen, setSpeedDialOpen] = useState(false)
   const [leaveRoomDialogOpen, setLeaveRoomDialogOpen] = useState(false)
   const { toast } = useToast()
@@ -123,6 +136,7 @@ function AdminDashboardInner() {
   // Network status
   const { isOnline } = useNetworkStatus()
   const [isPageLoading, setIsPageLoading] = useState(true)
+  const [analyticsHistory, setAnalyticsHistory] = useState<DailyAnalytics[]>([])
 
   // Show loading screen for minimum 1 second
   useEffect(() => {
@@ -130,6 +144,65 @@ function AdminDashboardInner() {
       setIsPageLoading(false)
     }, 3000)
     return () => clearTimeout(timer)
+  }, [])
+
+  // Load initial requests from DB and set up auto-expiration
+  useEffect(() => {
+    const initDB = async () => {
+      try {
+        const stored = await loadRequestsFromDB()
+        const now = Date.now()
+        const validReqs: PrintRequest[] = []
+
+        for (const req of stored) {
+          const reqTime = new Date(req.timestamp).getTime()
+          // 24 hours expiration
+          if (now - reqTime > 86400000) {
+            deleteRequestFromDB(req.id).catch(console.error)
+          } else {
+            let fileUrl: string | undefined = undefined
+            if (req.blob) {
+              fileUrl = URL.createObjectURL(req.blob)
+              if (fileUrl) blobUrlsRef.current.add(fileUrl)
+            }
+            validReqs.push({
+              ...req,
+              timestamp: new Date(req.timestamp),
+              // @ts-ignore
+              fileUrl
+            })
+          }
+        }
+        setPrintRequests(validReqs)
+
+        // Load 7-day analytics
+        if (ENABLE_DUMMY_ANALYTICS) {
+          setAnalyticsHistory(DUMMY_ANALYTICS_DATA)
+        } else {
+          const analyticsData = await getAnalyticsForLastNDays(7)
+          setAnalyticsHistory(analyticsData)
+        }
+      } catch (err) {
+        console.error('[Admin] Error loading DB:', err)
+      }
+    }
+    initDB()
+
+    const interval = setInterval(() => {
+      const now = Date.now()
+      setPrintRequests(prev => {
+        const remaining = prev.filter(req => {
+          const isExpired = (now - req.timestamp.getTime() > 86400000)
+          if (isExpired) {
+            deleteRequestFromDB(req.id).catch(console.error)
+          }
+          return !isExpired
+        })
+        return remaining.length !== prev.length ? remaining : prev
+      })
+    }, 60000) // check every minute
+
+    return () => clearInterval(interval)
   }, [])
 
   const [downloadDialogOpen, setDownloadDialogOpen] = useState(false)
@@ -218,7 +291,7 @@ function AdminDashboardInner() {
         return next
       })
     },
-    onFileComplete: (fromId, fileUrl, meta) => {
+    onFileComplete: (fromId, fileUrl, meta, blob) => {
       const key = `${fromId}:${meta.fileName}:${meta.fileSize}`
       setRecvProgress(prev => {
         const { [key]: _, ...rest } = prev
@@ -258,6 +331,16 @@ function AdminDashboardInner() {
       }
       try { if (typeof fileUrl === 'string' && fileUrl.startsWith('blob:')) blobUrlsRef.current.add(fileUrl) } catch { }
       setPrintRequests(prev => [req, ...prev])
+
+      // Save to IndexedDB
+      saveRequestToDB({
+        ...req,
+        timestamp: req.timestamp.toISOString(),
+        blob
+      }).catch(console.error)
+      updateDailyAnalyticsInDB({ totalRequests: 1, files: 1, pending: 1, totalBytes: meta.fileSize })
+        .then(() => ENABLE_DUMMY_ANALYTICS ? setAnalyticsHistory(DUMMY_ANALYTICS_DATA) : getAnalyticsForLastNDays(7).then(setAnalyticsHistory))
+        .catch(console.error)
 
       // Analytics: track file shared + file size
       trackEvent(AnalyticsEvent.FILE_SHARED)
@@ -314,6 +397,13 @@ function AdminDashboardInner() {
         fileId: senderInfo?.fileId || makeFileId(true, linkUrl),
       }
       setPrintRequests(prev => [req, ...prev])
+      saveRequestToDB({
+        ...req,
+        timestamp: req.timestamp.toISOString(),
+      }).catch(console.error)
+      updateDailyAnalyticsInDB({ totalRequests: 1, links: 1, pending: 1 })
+        .then(() => ENABLE_DUMMY_ANALYTICS ? setAnalyticsHistory(DUMMY_ANALYTICS_DATA) : getAnalyticsForLastNDays(7).then(setAnalyticsHistory))
+        .catch(console.error)
 
       // Analytics: track link shared
       trackEvent(AnalyticsEvent.LINK_SHARED)
@@ -529,6 +619,11 @@ function AdminDashboardInner() {
           : req
       )
     )
+    
+    updateRequestPrintedStatusInDB(requestId, true).catch(console.error)
+    updateDailyAnalyticsInDB({ printed: 1, pending: -1 })
+      .then(() => ENABLE_DUMMY_ANALYTICS ? setAnalyticsHistory(DUMMY_ANALYTICS_DATA) : getAnalyticsForLastNDays(7).then(setAnalyticsHistory))
+      .catch(console.error)
 
     try {
       if (socketRef.current?.emit) {
@@ -543,6 +638,16 @@ function AdminDashboardInner() {
     try {
       toast({ title: 'Marked as printed', description: 'Request marked as printed', variant: 'success' as any })
     } catch { }
+  }
+
+  const handleClearAllRequests = async () => {
+    try {
+      await clearAllRequestsFromDB()
+      setPrintRequests([])
+      toast({ title: 'Cleared', description: 'All received files and links have been cleared.', variant: 'default' as any })
+    } catch (e) {
+      console.error('Failed to clear requests', e)
+    }
   }
 
   const formatFileSize = (bytes: number) => {
@@ -588,6 +693,14 @@ function AdminDashboardInner() {
   const printedCount = printRequests.filter(req => req.isPrinted).length
   const pendingDownloadableCount = printRequests.filter(r => !r.isPrinted && !r.isLink && ((r as any).fileUrl || r.fileData)).length
   const allDownloadableCount = printRequests.filter(r => !r.isLink && ((r as any).fileUrl || r.fileData)).length
+
+  // Derived today stats for KPIs
+  const todayAnalytics = analyticsHistory.length > 0 ? analyticsHistory[analyticsHistory.length - 1] : null
+  const todayTotal = todayAnalytics ? todayAnalytics.totalRequests : printRequests.length
+  const todayPending = todayAnalytics ? todayAnalytics.pending : pendingCount
+  const todayPrinted = todayAnalytics ? todayAnalytics.printed : printedCount
+  const todayBytes = todayAnalytics ? todayAnalytics.totalBytes : 0
+  const completionRate = todayTotal === 0 ? 0 : Math.round((todayPrinted / todayTotal) * 100)
 
   // Actions: refresh socket, batch download, mark all printed
   const handleRefreshSocket = () => {
@@ -1095,62 +1208,92 @@ function AdminDashboardInner() {
           {/* Analytics Tab */}
           <TabsContent value="analytics" className="animate-fade-in">
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 sm:gap-6">
-              <div className="stat-card p-3 sm:p-6 rounded-xl sm:rounded-2xl">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-xs sm:text-sm font-medium text-muted-foreground">Total Requests</p>
-                    <p className="text-2xl sm:text-3xl font-bold mt-1 flex items-center">
-                      <NumberFlow value={printRequests.length} />
-                    </p>
+              <div className="stat-card p-3 sm:p-5 rounded-xl sm:rounded-2xl flex flex-col justify-between">
+                <div className="flex items-start justify-between">
+                  <p className="text-xs sm:text-sm font-medium text-muted-foreground">Today's Total</p>
+                  <div className="p-1.5 sm:p-2 bg-primary/10 rounded-lg">
+                    <FileText className="w-4 h-4 text-primary" />
                   </div>
-                  <div className="p-2 sm:p-3 bg-primary/10 rounded-lg sm:rounded-xl">
-                    <FileText className="w-5 h-5 sm:w-6 sm:h-6 text-primary" />
+                </div>
+                <p className="text-2xl sm:text-3xl font-bold mt-2">
+                  <NumberFlow value={todayTotal} />
+                </p>
+              </div>
+
+              <div className="stat-card p-3 sm:p-5 rounded-xl sm:rounded-2xl flex flex-col justify-between">
+                <div className="flex items-start justify-between">
+                  <p className="text-xs sm:text-sm font-medium text-muted-foreground">Pending</p>
+                  <div className="p-1.5 sm:p-2 bg-orange-500/10 rounded-lg">
+                    <Clock className="w-4 h-4 text-orange-500" />
+                  </div>
+                </div>
+                <p className="text-2xl sm:text-3xl font-bold text-orange-500 mt-2">
+                  <NumberFlow value={todayPending} />
+                </p>
+              </div>
+
+              <div className="stat-card p-3 sm:p-5 rounded-xl sm:rounded-2xl flex flex-col justify-between relative overflow-hidden group">
+                <div className="absolute inset-0 bg-gradient-to-br from-primary/5 to-transparent" />
+                <div className="flex items-center justify-between relative z-10 h-full">
+                  <div className="flex flex-col justify-between h-full">
+                    <p className="text-xs sm:text-sm font-medium text-muted-foreground">Print Progress</p>
+                    <div className="mt-2 space-y-0.5">
+                      <p className="text-sm font-semibold text-foreground">
+                        {todayPrinted} <span className="text-xs font-normal text-muted-foreground">/ {todayTotal}</span>
+                      </p>
+                      <p className="text-xs font-medium text-orange-500 flex items-center gap-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-orange-500 animate-pulse" />
+                        {todayPending} Pending
+                      </p>
+                    </div>
+                  </div>
+                  
+                  <div className="relative w-14 h-14 sm:w-16 sm:h-16 flex-shrink-0">
+                    <svg className="w-full h-full transform -rotate-90 drop-shadow-sm" viewBox="0 0 36 36">
+                      {/* Background Track */}
+                      <path
+                        className="text-border/50"
+                        d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="3.5"
+                      />
+                      {/* Progress Track */}
+                      <path
+                        className="text-primary transition-all duration-1000 ease-out"
+                        strokeDasharray={`${completionRate}, 100`}
+                        d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="3.5"
+                        strokeLinecap="round"
+                      />
+                    </svg>
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      <span className="text-xs sm:text-sm font-bold text-foreground">
+                        <NumberFlow value={completionRate} />%
+                      </span>
+                    </div>
                   </div>
                 </div>
               </div>
 
-              <div className="stat-card p-3 sm:p-6 rounded-xl sm:rounded-2xl">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-xs sm:text-sm font-medium text-muted-foreground">Pending</p>
-                    <p className="text-2xl sm:text-3xl font-bold text-orange-500 mt-1 flex items-center">
-                      <NumberFlow value={pendingCount} />
-                    </p>
-                  </div>
-                  <div className="p-2 sm:p-3 bg-orange-500/10 rounded-lg sm:rounded-xl">
-                    <Clock className="w-5 h-5 sm:w-6 sm:h-6 text-orange-500" />
+              <div className="stat-card p-3 sm:p-5 rounded-xl sm:rounded-2xl flex flex-col justify-between">
+                <div className="flex items-start justify-between">
+                  <p className="text-xs sm:text-sm font-medium text-muted-foreground">Online Now</p>
+                  <div className="p-1.5 sm:p-2 bg-accent/10 rounded-lg">
+                    <Users className="w-4 h-4 text-accent" />
                   </div>
                 </div>
-              </div>
-
-              <div className="stat-card p-3 sm:p-6 rounded-xl sm:rounded-2xl">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-xs sm:text-sm font-medium text-muted-foreground">Printed</p>
-                    <p className="text-2xl sm:text-3xl font-bold text-green-500 mt-1 flex items-center">
-                      <NumberFlow value={printedCount} />
-                    </p>
-                  </div>
-                  <div className="p-2 sm:p-3 bg-green-500/10 rounded-lg sm:rounded-xl">
-                    <Check className="w-5 h-5 sm:w-6 sm:h-6 text-green-500" />
-                  </div>
-                </div>
-              </div>
-
-              <div className="stat-card p-3 sm:p-6 rounded-xl sm:rounded-2xl">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-xs sm:text-sm font-medium text-muted-foreground">Online Now</p>
-                    <p className="text-2xl sm:text-3xl font-bold mt-1 flex items-center">
-                      <NumberFlow value={onlineUsers.length} />
-                    </p>
-                  </div>
-                  <div className="p-2 sm:p-3 bg-accent/10 rounded-lg sm:rounded-xl">
-                    <Users className="w-5 h-5 sm:w-6 sm:h-6 text-accent" />
-                  </div>
-                </div>
+                <p className="text-2xl sm:text-3xl font-bold mt-2">
+                  <NumberFlow value={onlineUsers.length} />
+                </p>
               </div>
             </div>
+
+            {analyticsHistory.length > 0 && (
+              <AnalyticsChart data={analyticsHistory} />
+            )}
           </TabsContent>
 
           {/* Students Tab */}
@@ -1224,7 +1367,7 @@ function AdminDashboardInner() {
               <div className="flex flex-col gap-1">
                 <Button
                   variant="ghost"
-                  className="justify-start hover:bg-white/10 transition-colors"
+                  className="justify-start hover:bg-black/5 dark:hover:bg-white/10 transition-colors"
                   onClick={() => { handleRefreshSocket(); setSpeedDialOpen(false) }}
                 >
                   <RefreshCw className="w-4 h-4 mr-2" />
@@ -1236,7 +1379,7 @@ function AdminDashboardInner() {
                     <div>
                       <Button
                         variant="ghost"
-                        className="justify-start hover:bg-white/10 transition-colors"
+                        className="justify-start hover:bg-black/5 dark:hover:bg-white/10 transition-colors"
                         disabled={allDownloadableCount === 0}
                         onClick={() => { setDownloadDialogOpen(true) }}
                       >
@@ -1253,40 +1396,77 @@ function AdminDashboardInner() {
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <div>
-                      <AlertDialog open={confirmMarkAllOpen} onOpenChange={setConfirmMarkAllOpen}>
-                        <AlertDialogTrigger asChild>
-                          <Button
-                            variant="ghost"
-                            className="justify-start hover:bg-white/10 transition-colors text-orange-500 hover:text-orange-400"
-                            disabled={pendingCount === 0}
-                          >
-                            <Check className="w-4 h-4 mr-2" />
-                            Mark all as printed
-                          </Button>
-                        </AlertDialogTrigger>
-                        <AlertDialogContent className="glass border-white/10">
-                          <AlertDialogHeader>
-                            <AlertDialogTitle>Mark all pending as printed?</AlertDialogTitle>
-                            <AlertDialogDescription>
-                              This will mark <span className="inline-flex items-center"><NumberFlow value={pendingCount} /></span> pending request(s) as printed. You can’t undo this action.
-                            </AlertDialogDescription>
-                          </AlertDialogHeader>
-                          <AlertDialogFooter>
-                            <AlertDialogCancel className="bg-white/5 border-white/10 hover:bg-white/10">Cancel</AlertDialogCancel>
-                            <AlertDialogAction onClick={() => { handleMarkAllPrinted(); setSpeedDialOpen(false) }} className="bg-accent hover:bg-accent/90">Confirm</AlertDialogAction>
-                          </AlertDialogFooter>
-                        </AlertDialogContent>
-                      </AlertDialog>
+                      <Button
+                        variant="ghost"
+                        className="justify-start hover:bg-black/5 dark:hover:bg-white/10 transition-colors text-orange-500 hover:text-orange-600 dark:hover:text-orange-400"
+                        disabled={pendingCount === 0}
+                        onClick={() => { setConfirmMarkAllOpen(true); setSpeedDialOpen(false) }}
+                      >
+                        <Check className="w-4 h-4 mr-2" />
+                        Mark all as printed
+                      </Button>
                     </div>
                   </TooltipTrigger>
                   {pendingCount === 0 && (
                     <TooltipContent side="left" align="center">No pending requests to mark</TooltipContent>
                   )}
                 </Tooltip>
+
+                <div className="my-1 border-t border-black/10 dark:border-white/10" />
+
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <div>
+                      <Button
+                        variant="ghost"
+                        className="justify-start hover:bg-black/5 dark:hover:bg-white/10 transition-colors text-red-500 hover:text-red-600 dark:hover:text-red-400"
+                        disabled={printRequests.length === 0}
+                        onClick={() => { setConfirmClearAllOpen(true); setSpeedDialOpen(false) }}
+                      >
+                        <X className="w-4 h-4 mr-2" />
+                        Clear all files
+                      </Button>
+                    </div>
+                  </TooltipTrigger>
+                  {printRequests.length === 0 && (
+                    <TooltipContent side="left" align="center">No files to clear</TooltipContent>
+                  )}
+                </Tooltip>
               </div>
             </PopoverContent>
           </Popover>
         </TooltipProvider>
+
+        {/* Global Modals for Quick Actions (extracted to root level to prevent z-index/portal bugs) */}
+        <AlertDialog open={confirmMarkAllOpen} onOpenChange={setConfirmMarkAllOpen}>
+          <AlertDialogContent className="bg-card text-card-foreground border-border shadow-2xl">
+            <AlertDialogHeader>
+              <AlertDialogTitle>Mark all pending as printed?</AlertDialogTitle>
+              <AlertDialogDescription>
+                This will mark <span className="inline-flex items-center"><NumberFlow value={pendingCount} /></span> pending request(s) as printed. You can’t undo this action.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel className="bg-white/5 border-white/10 hover:bg-white/10">Cancel</AlertDialogCancel>
+              <AlertDialogAction onClick={() => { handleMarkAllPrinted() }} className="bg-accent hover:bg-accent/90">Confirm</AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
+        <AlertDialog open={confirmClearAllOpen} onOpenChange={setConfirmClearAllOpen}>
+          <AlertDialogContent className="bg-card text-card-foreground border-border shadow-2xl">
+            <AlertDialogHeader>
+              <AlertDialogTitle>Clear all received files and links?</AlertDialogTitle>
+              <AlertDialogDescription>
+                This will permanently delete all <span className="inline-flex items-center"><NumberFlow value={printRequests.length} /></span> received files and links from this device. Analytics data will be preserved. You can’t undo this action.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel className="bg-white/5 border-white/10 hover:bg-white/10">Cancel</AlertDialogCancel>
+              <AlertDialogAction onClick={() => { handleClearAllRequests() }} className="bg-red-500 hover:bg-red-600">Clear All</AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
         {/* Receiving Speed Dial above quick actions */}
         {(Object.keys(recvProgress).length > 0 || (recvCounter.total > 0 && recvCounter.received < recvCounter.total)) && (
           <div className="fixed bottom-24 right-6 z-50">

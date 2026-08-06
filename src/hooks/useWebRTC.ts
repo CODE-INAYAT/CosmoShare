@@ -6,7 +6,7 @@ import SimplePeer from 'simple-peer'
 type ReceiveCallbacks = {
   onFileMetadata?: (fromId: string, meta: { fileName: string; fileSize: number; fileType: string; message?: string; senderName?: string; senderUniqueId?: string; allowReshare?: boolean; fileId?: string; location?: { latitude: number; longitude: number; name: string; address: string }; contact?: { name: string; phone: string } }) => void
   onFileChunk?: (fromId: string, receivedBytes: number, total: number) => void
-  onFileComplete?: (fromId: string, fileBase64: string, meta: { fileName: string; fileSize: number; fileType: string; message?: string; senderName?: string; senderUniqueId?: string; allowReshare?: boolean; fileId?: string; location?: { latitude: number; longitude: number; name: string; address: string }; contact?: { name: string; phone: string } }) => void
+  onFileComplete?: (fromId: string, fileBase64: string, meta: { fileName: string; fileSize: number; fileType: string; message?: string; senderName?: string; senderUniqueId?: string; allowReshare?: boolean; fileId?: string; location?: { latitude: number; longitude: number; name: string; address: string }; contact?: { name: string; phone: string } }, blob?: Blob) => void
   onMessage?: (fromId: string, message: string, sender?: { name?: string; uniqueId?: string; allowReshare?: boolean }) => void
   onLink?: (
     fromId: string,
@@ -242,7 +242,7 @@ export const useWebRTC = (socket: any, roomNumber: string, callbacks: ReceiveCal
             if (state && state.meta) {
               const blob = new Blob(state.buffers as BlobPart[], { type: state.meta.fileType })
               const url = URL.createObjectURL(blob)
-              callbacks.onFileComplete?.(targetId, url, state.meta)
+              callbacks.onFileComplete?.(targetId, url, state.meta, blob)
               recvState.current.delete(targetId)
             }
             return
