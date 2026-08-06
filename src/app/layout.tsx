@@ -15,7 +15,7 @@ const plusJakartaSans = Plus_Jakarta_Sans({
 
 export const metadata: Metadata = {
   title: {
-    default: "CosmoShare — Instant P2P File Sharing for Lab Environments",
+    default: "CosmoShare | Share Smarter. Share Anything, Anytime",
     template: "%s | CosmoShare",
   },
   description:
@@ -37,7 +37,7 @@ export const metadata: Metadata = {
     type: "website",
     url: "https://cosmoshare.pages.dev",
     siteName: "CosmoShare",
-    title: "CosmoShare — Instant P2P File Sharing for Lab Environments",
+    title: "CosmoShare | Share Smarter. Share Anything, Anytime",
     description:
       "Share files instantly with peers in your lab room using direct peer-to-peer sharing. No uploads, no size limits, end-to-end encrypted.",
     images: [
@@ -51,7 +51,7 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: "summary_large_image",
-    title: "CosmoShare — Instant P2P File Sharing for Lab Environments",
+    title: "CosmoShare | Share Smarter. Share Anything, Anytime",
     description:
       "Lightning-fast peer-to-peer file sharing for lab rooms. No uploads, no size limits, cross-platform.",
     images: ["/og-image.jpg"],
