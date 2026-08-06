@@ -43,7 +43,8 @@ import {
   Rocket,
   QrCode,
   HelpCircle,
-  AlertCircle
+  AlertCircle,
+  Play
 } from 'lucide-react'
 import Image from 'next/image'
 import { useRouter } from 'next/navigation'
@@ -55,6 +56,8 @@ import { URL_OBFUSCATION_ENABLED, encodeUrlData } from '@/config/urlObfuscation'
 import { SupportDialog } from '@/components/SupportDialog'
 import { trackVisitor } from '@/config/analytics'
 import { StaggeredMenu } from '@/components/StaggeredMenu'
+import { VIDEO_CONFIG, VIDEO_PREVIEW_ENABLED } from '@/config/videoConfig'
+import { VideoModal } from '@/components/VideoModal'
 
 // Register GSAP plugins
 if (typeof window !== 'undefined') {
@@ -137,6 +140,28 @@ const staggerGrid = {
     }
   }
 }
+
+// How It Works steps data (used when VIDEO_PREVIEW_ENABLED is false)
+const howItWorksSteps = [
+  {
+    step: '1',
+    icon: Upload,
+    title: 'Upload Your Files',
+    description: 'Select and upload any files you want to share. No account or sign-up required — just drag, drop, and go.'
+  },
+  {
+    step: '2',
+    icon: Share2,
+    title: 'Share the Link',
+    description: 'Get an instant shareable link or QR code. Send it to anyone via chat, email, or any messaging platform.'
+  },
+  {
+    step: '3',
+    icon: Download,
+    title: 'Download Anywhere',
+    description: 'Recipients can download files instantly on any device — desktop, tablet, or mobile. Fast, secure, and seamless.'
+  }
+]
 
 // Floating particles component
 function Particles() {
@@ -244,7 +269,9 @@ export default function Home() {
   const ctaRef = useRef<HTMLDivElement>(null)
   const footerRef = useRef<HTMLElement>(null)
   const navRef = useRef<HTMLElement>(null)
+  const videoIndexRef = useRef<'oneshare' | 'labshare'>('oneshare')
   const [showFab, setShowFab] = useState(false)
+  const [activeVideo, setActiveVideo] = useState<string | null>(null)
 
   useEffect(() => {
     setMounted(true)
@@ -383,9 +410,92 @@ export default function Home() {
       // (no GSAP parallax — combining scroll-driven transforms with blur is expensive)
 
       // ============================================
-      // PORTAL, HOW IT WORKS, CTA — animated by framer-motion whileInView in JSX
-      // (IntersectionObserver-based, no scroll listeners needed)
       // ============================================
+      // HOW IT WORKS — Video Card Stack Animation
+      // ============================================
+
+      if (howItWorksRef.current && VIDEO_PREVIEW_ENABLED) {
+        const section = howItWorksRef.current;
+        const previewContainer = section.querySelector('.video-preview-container') as HTMLElement
+        const previewCard = section.querySelector('.video-preview-card') as HTMLElement
+        const oneshareThumbnail = section.querySelector('.oneshare-thumbnail') as HTMLElement
+        const labshareThumbnail = section.querySelector('.labshare-thumbnail') as HTMLElement
+
+        if (previewContainer && previewCard && oneshareThumbnail && labshareThumbnail) {
+          // A long scroll distance creates a controlled, immersive, slow animation
+          const scrollDistance = Math.max(800, window.innerHeight * 1.2);
+
+          // Calculate available space in viewport (accounting for 80px sticky navbar)
+          const navbarHeight = 80;
+          
+          // The true visual center of the viewport (below the navbar)
+          const startTrigger = () => {
+            const availableHeight = window.innerHeight - navbarHeight;
+            const scrollerCenter = navbarHeight + (availableHeight / 2);
+            return `center ${scrollerCenter}px`;
+          };
+
+          // Function to dynamically calculate the perfect scale (UP or DOWN)
+          // Ensures the card fills ~85% of available height but never overflows 90% of screen width.
+          const getTargetScale = () => {
+            const availableHeight = window.innerHeight - navbarHeight;
+            const maxAllowedHeight = availableHeight * 0.85;
+            const maxAllowedWidth = window.innerWidth * 0.9;
+            const scaleY = maxAllowedHeight / (previewCard.offsetHeight || 1);
+            const scaleX = maxAllowedWidth / (previewCard.offsetWidth || 1);
+            return Math.min(scaleX, scaleY);
+          };
+
+          // Apply scale permanently so it maintains the correct size at all times
+          const applyPermanentScale = () => {
+            gsap.set(previewCard, { scale: getTargetScale() });
+          };
+          
+          applyPermanentScale();
+          ScrollTrigger.addEventListener('refreshInit', applyPermanentScale);
+
+          // Pin the entire section exactly when the card is visually centred (accounting for navbar)
+          ScrollTrigger.create({
+            trigger: previewContainer,
+            start: startTrigger,
+            end: () => `+=${scrollDistance}`,
+            pin: section,
+            pinSpacing: true,
+            anticipatePin: 1,
+            invalidateOnRefresh: true,
+          })
+
+          const tl = gsap.timeline({
+            scrollTrigger: {
+              trigger: previewContainer,
+              start: startTrigger,
+              end: () => `+=${scrollDistance}`,
+              scrub: 1.2,
+              invalidateOnRefresh: true,
+              onUpdate: (self) => {
+                // Switch video ref halfway through the fly-through phase
+                const activeIdx = self.progress > 0.5 ? 'labshare' : 'oneshare';
+                if (videoIndexRef.current !== activeIdx) {
+                  videoIndexRef.current = activeIdx;
+                }
+              }
+            }
+          })
+
+          // Fly-through effect takes up the entire scroll duration
+          tl.fromTo(oneshareThumbnail,
+            { scale: 1, opacity: 1 },
+            { scale: 3, opacity: 0, ease: 'power1.inOut' },
+            0
+          )
+          
+          tl.fromTo(labshareThumbnail,
+            { scale: 0.7, opacity: 0 },
+            { scale: 1, opacity: 1, ease: 'power1.inOut' },
+            0
+          )
+        }
+      }
 
       // ============================================
       // FEATURES SECTION - Horizontal Scroll Carousel
@@ -1312,66 +1422,140 @@ export default function Home() {
       </section>
 
       {/* How It Works Section */}
-      <section ref={howItWorksRef} id="how-it-works" className="py-16 md:py-24 px-4 relative scroll-mt-20">
-        <div className="max-w-6xl mx-auto">
-          <motion.div
-            initial="hidden"
-            whileInView="visible"
-            viewport={{ once: true, amount: isMenuScrolling ? 0.2 : 0.8, margin: isMenuScrolling ? undefined : "-15% 0px -35% 0px" }}
-            variants={fadeUp}
-            className="text-center mb-16"
-          >
-            <div className="inline-flex items-center gap-2 glass px-4 py-2 rounded-full mb-6">
-              <Layers className="w-4 h-4 text-primary" />
-              <span className="text-sm text-muted-foreground">Simple Process</span>
-            </div>
-            <h2 className="text-3xl md:text-5xl font-bold mb-4">
-              How It{' '}
-              <span className="gradient-text">Works</span>
-            </h2>
-            <p className="text-muted-foreground text-lg max-w-2xl mx-auto">
-              Share files in three simple steps - no account required
-            </p>
-          </motion.div>
+      {VIDEO_PREVIEW_ENABLED ? (
+        <section ref={howItWorksRef} id="how-it-works" className="py-12 md:py-20 px-4 relative scroll-mt-20">
+          <div className="max-w-5xl mx-auto">
+            <motion.div
+              initial="hidden"
+              whileInView="visible"
+              viewport={{ once: true, amount: isMenuScrolling ? 0.2 : 0.8, margin: isMenuScrolling ? undefined : "-15% 0px -35% 0px" }}
+              variants={fadeUp}
+              className="text-center mb-10"
+            >
+              <div className="inline-flex items-center gap-2 glass px-4 py-2 rounded-full mb-6">
+                <Play className="w-4 h-4 text-primary" />
+                <span className="text-sm text-muted-foreground">See it in action</span>
+              </div>
+              <h2 className="text-3xl md:text-5xl font-bold mb-4">
+                How It{' '}
+                <span className="gradient-text">Works</span>
+              </h2>
+              <p className="text-muted-foreground text-lg max-w-2xl mx-auto">
+                Experience the seamless workflow of OneShare and LabShare
+              </p>
+            </motion.div>
 
-          {/* Steps Grid — staggered reveal */}
-          <motion.div
-            initial="hidden"
-            whileInView="visible"
-            viewport={{ once: true, amount: 0.2 }}
-            variants={staggerGrid}
-            className="grid md:grid-cols-3 gap-8"
-          >
-            {howItWorksSteps.map((item, index) => (
-              <motion.div
-                key={item.step}
-                variants={scaleUp}
-                className="relative"
-              >
-                <div className="glass-card rounded-[45px] p-6 md:p-9 text-center relative overflow-hidden group">
-                  {/* Step Number */}
-                  <div className="absolute -top-3 -right-3 w-16 h-16 gradient-primary rounded-[1.75rem] flex items-center justify-center text-2xl font-bold text-white rotate-12 group-hover:rotate-0 transition-transform duration-300">
-                    <span className="translate-x-[-3px] translate-y-[3px]">{item.step}</span>
+            {/* Unified Video Preview Container — GSAP pins this */}
+            <div className="video-preview-container relative w-full">
+              <div className="video-preview-card relative w-full origin-center will-change-transform">
+                <div className="glass-card rounded-[45px] shadow-2xl relative overflow-hidden group bg-background/80 backdrop-blur-xl border-primary/20">
+                  <div className="relative aspect-[16/9] w-full overflow-hidden bg-black/5">
+                    
+                    {/* Base Thumbnail (OneShare) — Flies forward and fades out */}
+                    <div className="oneshare-thumbnail absolute inset-0 origin-center will-change-[opacity,transform]">
+                      <Image
+                        src="/thumbnail_OneShare.jpg"
+                        alt="OneShare Video Thumbnail"
+                        fill
+                        className="object-cover transition-transform duration-700 group-hover:scale-105"
+                      />
+                    </div>
+                    
+                    {/* Incoming Thumbnail (LabShare) — Faded in by GSAP */}
+                    <div className="labshare-thumbnail absolute inset-0 opacity-0 will-change-[opacity,transform]">
+                      <Image
+                        src="/thumbnail_LabShare.jpg"
+                        alt="LabShare Video Thumbnail"
+                        fill
+                        className="object-cover transition-transform duration-700 group-hover:scale-105"
+                      />
+                    </div>
+                    
+                    {/* Overlay and Dynamic Play Button */}
+                    <div className="absolute inset-0 bg-black/20 group-hover:bg-black/30 transition-colors duration-500 flex items-center justify-center">
+                      <motion.button
+                        onClick={() => setActiveVideo(VIDEO_CONFIG[videoIndexRef.current])}
+                        className="relative w-16 h-16 md:w-20 md:h-20 rounded-full bg-black/10 backdrop-blur-md border border-white/30 flex items-center justify-center cursor-pointer z-10 transition-colors duration-300 hover:bg-white/20 shadow-2xl"
+                        whileHover={{ scale: 1.05 }}
+                        whileTap={{ scale: 0.95 }}
+                        aria-label="Play Video"
+                      >
+                        <Play className="w-6 h-6 md:w-8 md:h-8 text-white ml-1.5 cursor-pointer pointer-events-none" strokeWidth={1.5} />
+                        <motion.div
+                          className="absolute inset-0 rounded-full border border-white/40 pointer-events-none"
+                          animate={{ scale: [1, 1.3, 1], opacity: [0.5, 0, 0.5] }}
+                          transition={{ duration: 2.5, repeat: Infinity, ease: "easeInOut" }}
+                        />
+                      </motion.button>
+                    </div>
                   </div>
-
-                  {/* Icon */}
-                  <div className="w-20 h-20 mx-auto mb-6 rounded-2xl bg-gradient-to-br from-primary/20 to-accent/20 flex items-center justify-center group-hover:scale-110 transition-transform duration-300">
-                    <item.icon className="w-10 h-10 text-primary" />
-                  </div>
-
-                  <h3 className="text-xl font-semibold text-foreground mb-3">{item.title}</h3>
-                  <p className="text-muted-foreground leading-relaxed text-sm md:text-base">{item.description}</p>
                 </div>
+              </div>
+            </div>
+          </div>
+        </section>
+      ) : (
+        <section ref={howItWorksRef} id="how-it-works" className="py-16 md:py-24 px-4 relative scroll-mt-20">
+          <div className="max-w-6xl mx-auto">
+            <motion.div
+              initial="hidden"
+              whileInView="visible"
+              viewport={{ once: true, amount: isMenuScrolling ? 0.2 : 0.8, margin: isMenuScrolling ? undefined : "-15% 0px -35% 0px" }}
+              variants={fadeUp}
+              className="text-center mb-16"
+            >
+              <div className="inline-flex items-center gap-2 glass px-4 py-2 rounded-full mb-6">
+                <Layers className="w-4 h-4 text-primary" />
+                <span className="text-sm text-muted-foreground">Simple Process</span>
+              </div>
+              <h2 className="text-3xl md:text-5xl font-bold mb-4">
+                How It{' '}
+                <span className="gradient-text">Works</span>
+              </h2>
+              <p className="text-muted-foreground text-lg max-w-2xl mx-auto">
+                Share files in three simple steps - no account required
+              </p>
+            </motion.div>
 
-                {/* Connector Line */}
-                {index < howItWorksSteps.length - 1 && (
-                  <div className="hidden md:block absolute top-1/2 -right-4 w-8 h-0.5 bg-gradient-to-r from-primary/50 to-transparent" />
-                )}
-              </motion.div>
-            ))}
-          </motion.div>
-        </div>
-      </section>
+            {/* Steps Grid — staggered reveal */}
+            <motion.div
+              initial="hidden"
+              whileInView="visible"
+              viewport={{ once: true, amount: 0.2 }}
+              variants={staggerGrid}
+              className="grid md:grid-cols-3 gap-8"
+            >
+              {howItWorksSteps.map((item, index) => (
+                <motion.div
+                  key={item.step}
+                  variants={scaleUp}
+                  className="relative"
+                >
+                  <div className="glass-card rounded-[45px] p-6 md:p-9 text-center relative overflow-hidden group">
+                    {/* Step Number */}
+                    <div className="absolute -top-3 -right-3 w-16 h-16 gradient-primary rounded-[1.75rem] flex items-center justify-center text-2xl font-bold text-white rotate-12 group-hover:rotate-0 transition-transform duration-300">
+                      <span className="translate-x-[-3px] translate-y-[3px]">{item.step}</span>
+                    </div>
+
+                    {/* Icon */}
+                    <div className="w-20 h-20 mx-auto mb-6 rounded-2xl bg-gradient-to-br from-primary/20 to-accent/20 flex items-center justify-center group-hover:scale-110 transition-transform duration-300">
+                      <item.icon className="w-10 h-10 text-primary" />
+                    </div>
+
+                    <h3 className="text-xl font-semibold text-foreground mb-3">{item.title}</h3>
+                    <p className="text-muted-foreground leading-relaxed text-sm md:text-base">{item.description}</p>
+                  </div>
+
+                  {/* Connector Line */}
+                  {index < howItWorksSteps.length - 1 && (
+                    <div className="hidden md:block absolute top-1/2 -right-4 w-8 h-0.5 bg-gradient-to-r from-primary/50 to-transparent" />
+                  )}
+                </motion.div>
+              ))}
+            </motion.div>
+          </div>
+        </section>
+      )}
 
       {/* Features Section - Horizontal Scroll Carousel */}
       <section ref={featuresRef} id="features" className="relative py-20 scroll-mt-20">
@@ -1519,6 +1703,12 @@ export default function Home() {
           </div>
         </div >
       </footer >
+
+      <VideoModal
+        isOpen={!!activeVideo}
+        onClose={() => setActiveVideo(null)}
+        videoUrl={activeVideo}
+      />
     </div >
   )
 }

@@ -1,0 +1,23 @@
+{
+  "name": "cosmoshare-bot-hf",
+  "version": "3.0.0",
+  "description": "CosmoShare WhatsApp Bot — Hybrid architecture (Chrome connection + Node.js media) for Hugging Face Spaces",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js"
+  },
+  "dependencies": {
+    "whatsapp-web.js": "^1.26.0",
+    "puppeteer-core": "^23.0.0",
+    "express": "^4.21.0",
+    "mime-types": "^2.1.35",
+    "node-cron": "^3.0.3",
+    "pino": "^9.6.0",
+    "qrcode": "^1.5.3",
+    "socket.io": "^4.8.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}
