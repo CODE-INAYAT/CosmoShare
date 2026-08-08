@@ -52,7 +52,8 @@ import {
   ArrowRight,
   History
 } from 'lucide-react'
-import { useSearchParams } from 'next/navigation'
+import { useSearchParams, useRouter } from 'next/navigation'
+import { getSharedFiles, clearSharedFiles } from '@/lib/shareTargetIdb'
 import { io } from 'socket.io-client'
 import { connectSignaling } from '@/lib/wsClient'
 import { getLabSignalingUrls } from '@/lib/signalingRouter'
@@ -127,6 +128,7 @@ function StudentDashboardInner() {
   // Multi-recipient selection
   const [selectedRecipients, setSelectedRecipients] = useState<string[]>([])
   const [selectModalOpen, setSelectModalOpen] = useState(false)
+  const [dialogTab, setDialogTab] = useState('users')
   const [searchQuery, setSearchQuery] = useState('')
   const [isConnected, setIsConnected] = useState(false)
   const [receivedFiles, setReceivedFiles] = useState<FileShare[]>([])
@@ -138,11 +140,31 @@ function StudentDashboardInner() {
 
   // Show loading screen for minimum 1 second
   useEffect(() => {
+    installConsoleMask()
     const timer = setTimeout(() => {
       setIsPageLoading(false)
     }, 3000)
     return () => clearTimeout(timer)
   }, [])
+
+  // Web Share Target API Import
+  const router = useRouter()
+  useEffect(() => {
+    if (searchParams?.get('shared') === 'true') {
+      getSharedFiles().then(files => {
+        if (files && files.length > 0) {
+          setSelectedFiles(prev => [...prev, ...files])
+          toast({ title: 'Success', description: `Imported ${files.length} shared file${files.length === 1 ? '' : 's'}` })
+          setSelectModalOpen(true)
+          setDialogTab('labs')
+          setSelectedRecipients(prev => prev.includes('admin') ? prev : [...prev, 'admin'])
+        }
+      }).catch(console.error).finally(() => {
+        clearSharedFiles().catch(console.error)
+        router.replace('/student')
+      })
+    }
+  }, [searchParams, router])
 
   // Keep ref in sync with state (for callbacks that need current value)
   useEffect(() => {
@@ -2186,7 +2208,12 @@ function StudentDashboardInner() {
       blobUrlsRef.current.forEach((u) => { try { URL.revokeObjectURL(u) } catch { } })
       blobUrlsRef.current.clear()
     } catch { }
-    window.location.href = '/'
+    // If running as installed PWA, return to PWA chooser; otherwise go to homepage
+    const isStandalone =
+      window.matchMedia('(display-mode: standalone)').matches ||
+      window.matchMedia('(display-mode: fullscreen)').matches ||
+      (window.navigator as any).standalone === true
+    window.location.href = isStandalone ? '/pwa' : '/'
   }
 
   const pendingCount = selectedFiles.length + (linkUrl ? 1 : 0)
@@ -3025,7 +3052,7 @@ function StudentDashboardInner() {
 
             {/* Scrollable Content Area */}
             <div className="flex-1 overflow-y-auto px-6 min-h-0">
-              <Tabs defaultValue="users" className="w-full">
+              <Tabs value={dialogTab} onValueChange={setDialogTab} className="w-full">
                 <TabsList className={`grid ${codeShareMode ? 'grid-cols-1' : 'grid-cols-2'} w-full sticky top-0 bg-background z-10`}>
                   <TabsTrigger value="users">Online Users</TabsTrigger>
                   {!codeShareMode && <TabsTrigger value="labs">Lab Rooms</TabsTrigger>}
@@ -3121,31 +3148,27 @@ function StudentDashboardInner() {
                 {!codeShareMode && (
                   <TabsContent value="labs" className="space-y-3 mt-3">
                     <div className="space-y-1">
-                      {adminId ? (
-                        <div
-                          className={`flex items-center gap-3 py-2.5 px-3 rounded-lg cursor-pointer transition-colors ${selectedRecipients.includes('admin') ? 'bg-primary/8' : 'hover:bg-muted/50'}`}
-                          onClick={() => {
-                            setSelectedRecipients(prev => {
-                              const next = prev.includes('admin') ? prev.filter(id => id !== 'admin') : [...prev, 'admin']
-                              recipientInfoRef.current['admin'] = { name: `Lab Admin (Room ${adminRoom || userData?.roomNumber || ''})`, uniqueId: 'ADMIN' }
-                              return next
-                            })
-                          }}
-                        >
-                          <div className="w-8 h-8 rounded-full bg-gradient-to-br from-emerald-400 to-cyan-500 flex items-center justify-center text-white shrink-0">
-                            <Printer className="w-3.5 h-3.5" />
-                          </div>
-                          <div className="flex-1">
-                            <p className="text-sm font-medium">Lab Admin</p>
-                            <p className="text-xs text-muted-foreground">Room {adminRoom || userData.roomNumber}</p>
-                          </div>
-                          <div className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 transition-colors ${selectedRecipients.includes('admin') ? 'bg-primary' : 'border-2 border-muted-foreground/30'}`}>
-                            {selectedRecipients.includes('admin') && <Check className="w-3 h-3 text-primary-foreground" />}
-                          </div>
+                      <div
+                        className={`flex items-center gap-3 py-2.5 px-3 rounded-lg cursor-pointer transition-colors ${selectedRecipients.includes('admin') ? 'bg-primary/8' : 'hover:bg-muted/50'}`}
+                        onClick={() => {
+                          setSelectedRecipients(prev => {
+                            const next = prev.includes('admin') ? prev.filter(id => id !== 'admin') : [...prev, 'admin']
+                            recipientInfoRef.current['admin'] = { name: `Lab Admin (Room ${adminRoom || userData?.roomNumber || ''})`, uniqueId: 'ADMIN' }
+                            return next
+                          })
+                        }}
+                      >
+                        <div className="w-8 h-8 rounded-full bg-gradient-to-br from-emerald-400 to-cyan-500 flex items-center justify-center text-white shrink-0">
+                          <Printer className="w-3.5 h-3.5" />
                         </div>
-                      ) : (
-                        <p className="text-center text-muted-foreground py-4">No lab admin online</p>
-                      )}
+                        <div className="flex-1">
+                          <p className="text-sm font-medium">Lab Admin</p>
+                          <p className="text-xs text-muted-foreground">Room {adminRoom || userData?.roomNumber || ''}</p>
+                        </div>
+                        <div className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 transition-colors ${selectedRecipients.includes('admin') ? 'bg-primary' : 'border-2 border-muted-foreground/30'}`}>
+                          {selectedRecipients.includes('admin') && <Check className="w-3 h-3 text-primary-foreground" />}
+                        </div>
+                      </div>
                     </div>
                   </TabsContent>
                 )}
@@ -3298,7 +3321,7 @@ function StudentDashboardInner() {
               </div>
             )}
             {/* Auto-Share option when admin is offline for print */}
-            {preflightIsPrint && offlineUsersInfo.some(u => u.uniqueId === 'ADMIN') && pendingTargets.length === 0 && !autoShareActive && (
+            {offlineUsersInfo.some(u => u.uniqueId === 'ADMIN') && pendingTargets.length === 0 && !autoShareActive && (
               <div className="mt-3 rounded-xl border border-primary/20 bg-primary/[0.03] dark:bg-primary/[0.06]">
                 <div className="p-4">
                   <div className="flex items-start gap-3">

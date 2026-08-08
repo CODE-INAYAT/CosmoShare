@@ -12,6 +12,12 @@ import { Command, CommandDialog, CommandEmpty, CommandGroup, CommandInput, Comma
 import { Badge } from '@/components/ui/badge'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import {
   Loader2,
   Users,
   Printer,
@@ -31,7 +37,6 @@ import {
   Sun,
   Moon,
   ChevronDown,
-  Lock,
   Clock,
   CheckCircle2,
   Star,
@@ -58,6 +63,8 @@ import { trackVisitor } from '@/config/analytics'
 import { StaggeredMenu } from '@/components/StaggeredMenu'
 import { VIDEO_CONFIG, VIDEO_PREVIEW_ENABLED } from '@/config/videoConfig'
 import { VideoModal } from '@/components/VideoModal'
+import { usePWAInstall } from '@/hooks/usePWAInstall'
+import { PWAInstallModal } from '@/components/PWAInstallModal'
 
 // Register GSAP plugins
 if (typeof window !== 'undefined') {
@@ -243,7 +250,7 @@ function ThemeToggle() {
 
 export default function Home() {
   const { theme, setTheme, resolvedTheme } = useTheme()
-  const [userType, setUserType] = useState<'student' | 'admin'>('student')
+  const [portalTab, setPortalTab] = useState<'oneshare' | 'labshare'>('oneshare')
   const [roomNumber, setRoomNumber] = useState('')
   const [name, setName] = useState('')
   const [password, setPassword] = useState('')
@@ -255,10 +262,41 @@ export default function Home() {
   const [isScrolled, setIsScrolled] = useState(false)
   const [roomOpen, setRoomOpen] = useState(false)
   const [supportOpen, setSupportOpen] = useState(false)
-  const [portalTab, setPortalTab] = useState<'oneshare' | 'labshare'>('oneshare')
   const [isNavAnimated, setIsNavAnimated] = useState(true)
   const [isMenuScrolling, setIsMenuScrolling] = useState(false)
   const router = useRouter()
+
+  // PWA standalone check
+  const [isStandalone, setIsStandalone] = useState(false)
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      setIsStandalone(
+        window.matchMedia('(display-mode: standalone)').matches ||
+        window.matchMedia('(display-mode: fullscreen)').matches ||
+        (window.navigator as any).standalone === true
+      )
+    }
+  }, [])
+
+  // PWA install
+  const { isInstallable, isInstalled, isIOS, promptInstall } = usePWAInstall()
+  const [showIOSModal, setShowIOSModal] = useState(false)
+  const [iosModalVariant, setIosModalVariant] = useState<'user' | 'admin'>('user')
+
+  const handleDownload = (variant: 'user' | 'admin') => {
+    if (isIOS) {
+      setIosModalVariant(variant)
+      setShowIOSModal(true)
+      return
+    }
+    if (variant === 'admin') {
+      promptInstall('/manifest-admin.webmanifest')
+    } else {
+      promptInstall()
+    }
+  }
+
+  const showDownloadButton = (isInstallable && !isInstalled) || isIOS
 
   // Refs for GSAP animations
   const heroRef = useRef<HTMLDivElement>(null)
@@ -664,30 +702,6 @@ export default function Home() {
     }
   }
 
-  const handleAdminSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!roomNumber || !password) {
-      setError('Please fill in all fields')
-      return
-    }
-
-    setIsLoading(true)
-    setError('')
-
-    try {
-      if (password !== AUTO_LOGIN_PASSWORD && !(AUTO_LOGIN_ENABLED && verifyHash(password))) {
-        setError('Invalid password')
-        setIsLoading(false)
-        return
-      }
-
-      router.push(`/admin?room=${roomNumber}`)
-    } catch (error) {
-      setError('Failed to authenticate. Please try again.')
-      setIsLoading(false)
-    }
-  }
-
   const handleSuggestedNameClick = (suggestedName: string) => {
     setName(suggestedName)
     setSuggestedNames([])
@@ -809,6 +823,41 @@ export default function Home() {
           </div>
 
           <div className="flex items-center gap-3">
+            {/* Desktop Download Dropdown */}
+            {showDownloadButton && (
+              <div className="hidden md:flex">
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="gap-2 border-primary/30 text-primary hover:bg-primary/10 hover:text-primary hover:border-primary/50 transition-all"
+                    >
+                      <Download className="w-4 h-4" />
+                      Download
+                      <ChevronDown className="w-3 h-3 opacity-60" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-56">
+                    <DropdownMenuItem onClick={() => handleDownload('user')} className="gap-3 py-2.5">
+                      <Download className="w-4 h-4 text-primary" />
+                      <div>
+                        <p className="font-medium text-sm">Download</p>
+                        <p className="text-xs text-muted-foreground">Install CosmoShare app</p>
+                      </div>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => handleDownload('admin')} className="gap-3 py-2.5">
+                      <Printer className="w-4 h-4 text-teal-500" />
+                      <div>
+                        <p className="font-medium text-sm">Download (LabShare Admin)</p>
+                        <p className="text-xs text-muted-foreground">Install admin dashboard app</p>
+                      </div>
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
+            )}
+
             {/* Desktop ThemeToggle */}
             <div className="hidden md:flex">
               <ThemeToggle />
@@ -839,10 +888,23 @@ export default function Home() {
         items={[
           { label: 'Get Started', ariaLabel: 'Get Started Section', link: '#portal' },
           { label: 'How It Works', ariaLabel: 'How It Works Section', link: '#how-it-works' },
-          { label: 'Features', ariaLabel: 'Features Section', link: '#features' }
+          { label: 'Features', ariaLabel: 'Features Section', link: '#features' },
+          ...(showDownloadButton ? [
+            { label: 'Download', ariaLabel: 'Install CosmoShare App', link: '#download' },
+            { label: 'Download Admin', ariaLabel: 'Install LabShare Admin App', link: '#download-admin' }
+          ] : [])
         ]}
         onItemClick={(item, e) => {
           e.preventDefault();
+          // Handle download items in mobile menu
+          if (item.link === '#download') {
+            handleDownload('user');
+            return;
+          }
+          if (item.link === '#download-admin') {
+            handleDownload('admin');
+            return;
+          }
           setIsMenuScrolling(true);
           const targetId = item.link.replace('#', '');
           const element = document.getElementById(targetId);
@@ -1115,46 +1177,14 @@ export default function Home() {
                   className="w-full"
                 >
                   <Card className="glass-card shimmer-border rounded-[45px] overflow-hidden">
-                    {/* Secondary Toggle (Student vs Lab Admin) */}
-                    <div className="flex border-b border-border/10 w-full">
-                      {[
-                        { id: 'student', label: 'Student' },
-                        { id: 'admin', label: 'Lab Admin' }
-                      ].map((role) => (
-                        <button
-                          key={role.id}
-                          type="button"
-                          onClick={() => {
-                            setError('')
-                            setUserType(role.id as 'student' | 'admin')
-                          }}
-                          className={`flex-1 py-3.5 text-sm font-semibold transition-colors duration-200 relative ${userType === role.id
-                            ? 'text-primary'
-                            : 'text-muted-foreground hover:text-foreground'
-                            }`}
-                        >
-                          {userType === role.id && (
-                            <motion.div
-                              layoutId="secondary-tab-underline"
-                              className="absolute bottom-0 left-6 right-6 h-0.5 bg-primary rounded-full"
-                              transition={{ type: 'spring', stiffness: 350, damping: 28 }}
-                            />
-                          )}
-                          <span>{role.label}</span>
-                        </button>
-                      ))}
-                    </div>
-
                     <CardContent className="p-6 pt-6">
-                      <AnimatePresence mode="wait">
-                        {userType === 'student' ? (
-                          <motion.div
-                            key="student-form"
-                            initial={{ opacity: 0, x: -15 }}
-                            animate={{ opacity: 1, x: 0 }}
-                            exit={{ opacity: 0, x: 15 }}
-                            transition={{ duration: 0.2 }}
-                          >
+                      <motion.div
+                        key="student-form"
+                        initial={{ opacity: 0, x: -15 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        exit={{ opacity: 0, x: 15 }}
+                        transition={{ duration: 0.2 }}
+                      >
                             <div className="text-center pb-6">
                               <motion.div
                                 initial={{ opacity: 0, y: 12, scale: 0.94 }}
@@ -1168,7 +1198,7 @@ export default function Home() {
                               >
                                 <Users className="w-10 h-10 text-white" />
                               </motion.div>
-                              <h3 className="text-2xl font-bold text-foreground">Student Portal</h3>
+                              <h3 className="text-2xl font-bold text-foreground">Lab Portal</h3>
                               <p className="text-sm text-muted-foreground mt-1">Join your lab room to start sharing</p>
                             </div>
 
@@ -1271,108 +1301,23 @@ export default function Home() {
                                   )}
                                 </Button>
                               </div>
-                            </form>
-                          </motion.div>
-                        ) : (
-                          <motion.div
-                            key="admin-form"
-                            initial={{ opacity: 0, x: 15 }}
-                            animate={{ opacity: 1, x: 0 }}
-                            exit={{ opacity: 0, x: -15 }}
-                            transition={{ duration: 0.2 }}
-                          >
-                            <div className="text-center pb-6">
-                              <motion.div
-                                initial={{ opacity: 0, y: 12, scale: 0.94 }}
-                                animate={{ opacity: 1, y: 0, scale: 1 }}
-                                transition={{
-                                  duration: 0.45,
-                                  ease: [0.16, 1, 0.3, 1],
-                                  delay: 0.05
-                                }}
-                                className="w-20 h-20 mx-auto mb-4 rounded-[1.75rem] gradient-primary flex items-center justify-center"
-                              >
-                                <Lock className="w-10 h-10 text-white" />
-                              </motion.div>
-                              <h3 className="text-2xl font-bold text-foreground">Admin Portal</h3>
-                              <p className="text-sm text-muted-foreground mt-1">Access the admin dashboard</p>
-                            </div>
 
-                            <form onSubmit={handleAdminSubmit} className="space-y-4">
-                              <div className="space-y-1.5">
-                                <Label htmlFor="admin-room" className="text-muted-foreground text-xs font-medium pl-2">Lab Room Number</Label>
-                                <Button
+                              {/* Secondary Admin CTA */}
+                              <div className="flex justify-center pt-1">
+                                <button
                                   type="button"
-                                  variant="outline"
-                                  onClick={() => setRoomOpen(true)}
-                                  className="w-full justify-between bg-secondary/20 dark:bg-secondary/10 border-border/80 text-foreground rounded-full h-11 hover:bg-secondary/40 transition-colors pl-4 pr-5 flex items-center"
+                                  onClick={() => router.push('/admin')}
+                                  className="group inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-primary transition-colors duration-300"
                                 >
-                                  {roomNumber ? (
-                                    <span className="font-medium text-foreground">Room {roomNumber}</span>
-                                  ) : (
-                                    <span className="text-muted-foreground text-sm">Select Lab Room...</span>
-                                  )}
-                                  <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" />
-                                </Button>
-                              </div>
-
-                              <div className="space-y-1.5">
-                                <Label htmlFor="password" className="text-muted-foreground text-xs font-medium pl-2">Admin Password</Label>
-                                <Input
-                                  id="password"
-                                  type={AUTO_LOGIN_ENABLED && verifyHash(password) ? 'text' : 'password'}
-                                  placeholder="Enter admin password"
-                                  value={password}
-                                  onChange={(e) => setPassword(e.target.value)}
-                                  className={`bg-secondary/20 dark:bg-secondary/10 border-border/80 rounded-full h-11 px-5 placeholder:text-muted-foreground focus-visible:ring-primary focus-visible:ring-offset-0 transition-colors ${AUTO_LOGIN_ENABLED && verifyHash(password) ? 'text-[9px] font-mono tracking-tight text-muted-foreground' : 'text-foreground font-semibold text-sm'
-                                    }`}
-                                  readOnly={AUTO_LOGIN_ENABLED && verifyHash(password)}
-                                />
-                                {AUTO_LOGIN_ENABLED && verifyHash(password) && (
-                                  <motion.div
-                                    initial={{ opacity: 0, y: -4 }}
-                                    animate={{ opacity: 1, y: 0 }}
-                                    className="flex items-center gap-2 px-3 py-2 rounded-lg border border-amber-400/20 bg-amber-50/50 dark:bg-amber-950/20"
-                                  >
-                                    <div className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse shrink-0" />
-                                    <p className="text-[11px] font-medium text-amber-700 dark:text-amber-300">
-                                      Test mode — password auto-filled
-                                    </p>
-                                  </motion.div>
-                                )}
-                              </div>
-
-                              {/* Error Message */}
-                              {error && (
-                                <div className="bg-destructive/5 border border-destructive/20 text-destructive rounded-2xl p-4.5 text-xs flex items-start gap-2.5">
-                                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-                                  <span>{error}</span>
-                                </div>
-                              )}
-
-                              <div className="flex justify-center pt-2">
-                                <Button
-                                  type="submit"
-                                  className="w-fit min-w-[200px] px-8 h-11 gradient-primary text-white rounded-full group flex items-center justify-center font-semibold text-sm transition-opacity hover:opacity-95 glow-button"
-                                  disabled={isLoading}
-                                >
-                                  {isLoading ? (
-                                    <>
-                                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                                      Authenticating...
-                                    </>
-                                  ) : (
-                                    <>
-                                      Access Admin Panel
-                                      <ArrowRight className="w-4 h-4 ml-2 group-hover:translate-x-0.5 transition-transform" />
-                                    </>
-                                  )}
-                                </Button>
+                                  <span className="border-b border-dashed border-muted-foreground/40 group-hover:border-primary/60 transition-colors pb-px">Want to join as Lab Admin?</span>
+                                  <span className="font-semibold text-primary/80 group-hover:text-primary transition-colors flex items-center gap-0.5">
+                                    Click here
+                                    <ArrowRight className="w-3 h-3 group-hover:translate-x-0.5 transition-transform" />
+                                  </span>
+                                </button>
                               </div>
                             </form>
-                          </motion.div>
-                        )}
-                      </AnimatePresence>
+                      </motion.div>
                     </CardContent>
                   </Card>
                 </motion.div>
@@ -1684,12 +1629,14 @@ export default function Home() {
       {/* Footer */}
       <footer ref={footerRef} className="py-6 md:py-12 px-4 border-t border-border/50">
         <div className="max-w-6xl mx-auto">
-          <div className="flex flex-col md:flex-row items-center justify-between gap-4 md:gap-6">
-            <div className="flex items-center gap-2">
-              <Image src="/logo.svg" alt="CosmoShare Logo" width={120} height={40} className="block dark:hidden w-auto h-8 md:h-10" />
-              <Image src="/logoDark.svg" alt="CosmoShare Logo" width={120} height={40} className="hidden dark:block w-auto h-8 md:h-10" />
-              <span className="text-base md:text-lg font-bold gradient-text">CosmoShare</span>
-            </div>
+          <div className={`flex flex-col md:flex-row items-center gap-4 md:gap-6 ${isStandalone ? 'justify-center' : 'justify-between'}`}>
+            {!isStandalone && (
+              <div className="flex items-center gap-2">
+                <Image src="/logo.svg" alt="CosmoShare Logo" width={120} height={40} className="block dark:hidden w-auto h-8 md:h-10" />
+                <Image src="/logoDark.svg" alt="CosmoShare Logo" width={120} height={40} className="hidden dark:block w-auto h-8 md:h-10" />
+                <span className="text-base md:text-lg font-bold gradient-text">CosmoShare</span>
+              </div>
+            )}
             <p className="text-muted-foreground text-sm md:text-sm text-center" style={{ fontFamily: 'Consolas, monospace' }}>
               Made With <svg className="mx-1 inline-block" style={{ height: '18px', width: '18px' }} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                 <g id="SVGRepo_bgCarrier" strokeWidth="0"></g>
@@ -1699,7 +1646,7 @@ export default function Home() {
                 </g>
               </svg> By ISK
             </p>
-            <SupportDialog externalOpen={supportOpen} onExternalOpenChange={setSupportOpen} />
+            <SupportDialog externalOpen={supportOpen} onExternalOpenChange={setSupportOpen} hideTrigger={isStandalone} />
           </div>
         </div >
       </footer >
@@ -1709,6 +1656,14 @@ export default function Home() {
         onClose={() => setActiveVideo(null)}
         videoUrl={activeVideo}
       />
+
+      {/* iOS PWA Install Instructions Modal */}
+      <PWAInstallModal
+        open={showIOSModal}
+        onOpenChange={setShowIOSModal}
+        variant={iosModalVariant}
+      />
+
     </div >
   )
 }

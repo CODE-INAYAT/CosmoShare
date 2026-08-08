@@ -9,6 +9,8 @@ import { io } from 'socket.io-client'
 import { useDropzone } from 'react-dropzone'
 import { connectSignaling, SocketLike } from '@/lib/wsClient'
 import { getOneShareSignalingUrl, getOneShareSignalingUrls, getRandomOneShareShard, getRandomOneShareShardWithFallbacks, getOneShareShardIndex, getShardIndexForUrl, generateOneShareCodeForShardIndex, generateOneShareCodeForSameShard } from '@/lib/signalingRouter'
+import { getSharedFiles, clearSharedFiles } from '@/lib/shareTargetIdb'
+import { toast } from 'sonner'
 
 // UI Components
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -167,6 +169,21 @@ function OneShareInner() {
         }, 3000)
         return () => clearTimeout(timer)
     }, [])
+
+    // Web Share Target API Import
+    useEffect(() => {
+        if (searchParams?.get('shared') === 'true') {
+            getSharedFiles().then(files => {
+                if (files && files.length > 0) {
+                    setSelectedFiles(prev => [...prev, ...files])
+                    toast.success(`Imported ${files.length} shared file${files.length === 1 ? '' : 's'}`)
+                }
+            }).catch(console.error).finally(() => {
+                clearSharedFiles().catch(console.error)
+                router.replace('/oneshare')
+            })
+        }
+    }, [searchParams, router])
 
     // Mode selection
     const [mode, setMode] = useState<'select' | 'send' | 'receive'>('select')
@@ -1186,7 +1203,13 @@ function OneShareInner() {
                     <Button
                         variant="ghost"
                         size="sm"
-                        onClick={() => router.push('/')}
+                        onClick={() => {
+                          const isStandalone =
+                            window.matchMedia('(display-mode: standalone)').matches ||
+                            window.matchMedia('(display-mode: fullscreen)').matches ||
+                            (window.navigator as any).standalone === true
+                          router.push(isStandalone ? '/pwa' : '/')
+                        }}
                         className="glass px-3.5 sm:px-4 py-2 text-foreground text-xs sm:text-sm font-medium rounded-xl transition duration-300 gap-1.5 sm:gap-2 hover:bg-accent/50 shadow-sm"
                     >
                         <ArrowLeft className="w-4 h-4" />

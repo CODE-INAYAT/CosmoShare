@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#09090b" />
+  <title>Offline — CosmoShare</title>
+  <link rel="icon" href="/favicon-32x32.png" type="image/png" />
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+      background: #09090b;
+      color: #fafafa;
+      min-height: 100dvh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
+
+    /* Animated background — matches CosmoShare homepage aesthetic */
+    .bg-mesh {
+      position: fixed;
+      inset: 0;
+      background:
+        radial-gradient(ellipse 80% 50% at 50% -20%, rgba(16, 185, 129, 0.12), transparent),
+        radial-gradient(ellipse 60% 40% at 80% 60%, rgba(20, 184, 166, 0.08), transparent),
+        radial-gradient(ellipse 50% 50% at 20% 80%, rgba(6, 182, 212, 0.06), transparent);
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .orb {
+      position: fixed;
+      border-radius: 50%;
+      filter: blur(100px);
+      pointer-events: none;
+      z-index: 0;
+      animation: float 20s ease-in-out infinite;
+    }
+    .orb-1 {
+      width: 400px; height: 400px;
+      top: -15%; left: -8%;
+      background: radial-gradient(circle, rgba(16, 185, 129, 0.15), transparent 70%);
+    }
+    .orb-2 {
+      width: 350px; height: 350px;
+      bottom: -10%; right: -10%;
+      background: radial-gradient(circle, rgba(20, 184, 166, 0.12), transparent 70%);
+      animation-delay: -7s;
+      animation-duration: 25s;
+    }
+
+    @keyframes float {
+      0%, 100% { transform: translateY(0) scale(1); }
+      50% { transform: translateY(-30px) scale(1.05); }
+    }
+
+    .grid-bg {
+      position: fixed;
+      inset: 0;
+      background-image:
+        linear-gradient(rgba(255,255,255,0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,0.03) 1px, transparent 1px);
+      background-size: 60px 60px;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .container {
+      position: relative;
+      z-index: 10;
+      text-align: center;
+      padding: 2rem;
+      max-width: 440px;
+      width: 100%;
+    }
+
+    /* Animated wifi-off icon */
+    .icon-wrap {
+      width: 88px; height: 88px;
+      margin: 0 auto 1.75rem;
+      border-radius: 24px;
+      background: rgba(239, 68, 68, 0.08);
+      border: 1px solid rgba(239, 68, 68, 0.15);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      animation: pulse-icon 3s ease-in-out infinite;
+    }
+    @keyframes pulse-icon {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.15); }
+      50% { box-shadow: 0 0 0 16px rgba(239, 68, 68, 0); }
+    }
+
+    .icon-wrap svg {
+      width: 40px; height: 40px;
+      color: #ef4444;
+      opacity: 0.9;
+    }
+
+    h1 {
+      font-size: 1.75rem;
+      font-weight: 700;
+      margin-bottom: 0.5rem;
+      letter-spacing: -0.02em;
+    }
+    .subtitle {
+      font-size: 0.95rem;
+      color: #a1a1aa;
+      line-height: 1.6;
+      margin-bottom: 2rem;
+    }
+
+    /* Status indicator */
+    .status {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 18px;
+      border-radius: 100px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      margin-bottom: 1.5rem;
+      transition: all 0.5s ease;
+    }
+    .status.offline {
+      background: rgba(239, 68, 68, 0.1);
+      color: #fca5a5;
+      border: 1px solid rgba(239, 68, 68, 0.2);
+    }
+    .status.reconnecting {
+      background: rgba(245, 158, 11, 0.1);
+      color: #fcd34d;
+      border: 1px solid rgba(245, 158, 11, 0.2);
+    }
+    .status.online {
+      background: rgba(16, 185, 129, 0.1);
+      color: #6ee7b7;
+      border: 1px solid rgba(16, 185, 129, 0.2);
+    }
+    .status-dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .status.offline .status-dot {
+      background: #ef4444;
+      animation: blink 2s ease-in-out infinite;
+    }
+    .status.reconnecting .status-dot {
+      background: #f59e0b;
+      animation: blink 1s ease-in-out infinite;
+    }
+    .status.online .status-dot {
+      background: #10b981;
+    }
+    @keyframes blink {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.3; }
+    }
+
+    /* Spinner */
+    .spinner {
+      width: 16px; height: 16px;
+      border: 2px solid rgba(250, 204, 21, 0.3);
+      border-top-color: #fcd34d;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      flex-shrink: 0;
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    /* Refresh button */
+    .refresh-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 12px 28px;
+      border-radius: 12px;
+      font-size: 0.9rem;
+      font-weight: 600;
+      font-family: inherit;
+      cursor: pointer;
+      border: none;
+      transition: all 0.3s ease;
+      background: linear-gradient(135deg, #10b981, #14b8a6);
+      color: #fff;
+      box-shadow: 0 4px 16px rgba(16, 185, 129, 0.25);
+    }
+    .refresh-btn:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 6px 24px rgba(16, 185, 129, 0.35);
+    }
+    .refresh-btn:active {
+      transform: translateY(0);
+    }
+    .refresh-btn svg {
+      width: 18px; height: 18px;
+    }
+
+    /* Auto-redirect message */
+    .auto-msg {
+      margin-top: 1.25rem;
+      font-size: 0.75rem;
+      color: #71717a;
+    }
+
+    /* Logo at bottom */
+    .footer-logo {
+      position: fixed;
+      bottom: 2rem;
+      left: 50%;
+      transform: translateX(-50%);
+      opacity: 0.4;
+      z-index: 10;
+    }
+    .footer-logo img {
+      height: 28px;
+      width: auto;
+    }
+  </style>
+</head>
+<body>
+  <!-- Background effects -->
+  <div class="bg-mesh"></div>
+  <div class="orb orb-1"></div>
+  <div class="orb orb-2"></div>
+  <div class="grid-bg"></div>
+
+  <div class="container">
+    <div class="icon-wrap" id="iconWrap">
+      <!-- Wifi-off SVG -->
+      <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <line x1="2" x2="22" y1="2" y2="22"></line>
+        <path d="M8.5 16.5a5 5 0 0 1 7 0"></path>
+        <path d="M2 8.82a15 15 0 0 1 4.17-2.65"></path>
+        <path d="M10.66 5c4.01-.36 8.14.9 11.34 3.76"></path>
+        <path d="M16.85 11.25a10 10 0 0 1 2.22 1.68"></path>
+        <path d="M5 13a10 10 0 0 1 5.24-2.76"></path>
+        <line x1="12" x2="12.01" y1="20" y2="20"></line>
+      </svg>
+    </div>
+
+    <div id="statusBadge" class="status offline">
+      <span class="status-dot"></span>
+      <span id="statusText">You're offline</span>
+    </div>
+
+    <h1 id="heading">No Connection</h1>
+    <p class="subtitle" id="subtitle">
+      CosmoShare needs an internet connection to share files peer-to-peer.
+      We'll automatically reconnect when you're back online.
+    </p>
+
+    <button class="refresh-btn" id="refreshBtn" onclick="location.reload()">
+      <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"></path>
+        <path d="M21 3v5h-5"></path>
+      </svg>
+      Refresh
+    </button>
+
+    <p class="auto-msg" id="autoMsg">Waiting for connection…</p>
+  </div>
+
+  <div class="footer-logo">
+    <img src="/logoDark.svg" alt="CosmoShare" />
+  </div>
+
+  <script>
+    const statusBadge = document.getElementById('statusBadge');
+    const statusText = document.getElementById('statusText');
+    const heading = document.getElementById('heading');
+    const subtitle = document.getElementById('subtitle');
+    const autoMsg = document.getElementById('autoMsg');
+    const iconWrap = document.getElementById('iconWrap');
+    let reconnectTimer = null;
+
+    function setOnline() {
+      statusBadge.className = 'status online';
+      statusText.textContent = 'Back online';
+      heading.textContent = 'Connected!';
+      subtitle.textContent = 'Your connection has been restored. Redirecting you back…';
+      autoMsg.textContent = 'Reloading…';
+
+      // Change icon to a checkmark
+      iconWrap.style.background = 'rgba(16, 185, 129, 0.08)';
+      iconWrap.style.borderColor = 'rgba(16, 185, 129, 0.15)';
+      iconWrap.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>';
+      iconWrap.style.animation = 'none';
+
+      // Auto-reload after a brief moment
+      setTimeout(() => { location.reload(); }, 1200);
+    }
+
+    function setReconnecting() {
+      statusBadge.className = 'status reconnecting';
+      statusText.innerHTML = '<span class="spinner"></span> Reconnecting…';
+      autoMsg.textContent = 'Attempting to reconnect…';
+    }
+
+    // Listen for online/offline events
+    window.addEventListener('online', () => {
+      setOnline();
+    });
+
+    window.addEventListener('offline', () => {
+      statusBadge.className = 'status offline';
+      statusText.textContent = "You're offline";
+      heading.textContent = 'No Connection';
+      autoMsg.textContent = 'Waiting for connection…';
+    });
+
+    // Periodic connectivity check (as a fallback — some devices don't fire events reliably)
+    function checkConnection() {
+      if (navigator.onLine) {
+        // Verify with a tiny fetch
+        fetch('/favicon-32x32.png', { method: 'HEAD', cache: 'no-store' })
+          .then(() => setOnline())
+          .catch(() => { /* Still offline despite navigator.onLine */ });
+      }
+    }
+    reconnectTimer = setInterval(checkConnection, 5000);
+  </script>
+</body>
+</html>

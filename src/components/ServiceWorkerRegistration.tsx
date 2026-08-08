@@ -6,8 +6,7 @@ export function ServiceWorkerRegistration() {
   useEffect(() => {
     if (
       typeof window !== 'undefined' &&
-      'serviceWorker' in navigator &&
-      process.env.NODE_ENV === 'production'
+      'serviceWorker' in navigator
     ) {
       // Register after page load to avoid competing with critical resources
       window.addEventListener('load', () => {
@@ -16,16 +15,20 @@ export function ServiceWorkerRegistration() {
           .then((registration) => {
             console.log('[PWA] Service Worker registered with scope:', registration.scope)
 
-            // Auto-update: when a new SW is found, activate it immediately
+            // Auto-update: when a new SW is found, skip waiting and activate it
             registration.addEventListener('updatefound', () => {
               const newWorker = registration.installing
               if (newWorker) {
                 newWorker.addEventListener('statechange', () => {
-                  if (
-                    newWorker.state === 'activated' &&
-                    navigator.serviceWorker.controller
-                  ) {
-                    console.log('[PWA] New content available — refreshing')
+                  if (newWorker.state === 'installed') {
+                    if (navigator.serviceWorker.controller) {
+                      // New content available — tell the waiting SW to skip waiting
+                      console.log('[PWA] New content available — activating new service worker')
+                      newWorker.postMessage({ type: 'SKIP_WAITING' })
+                    } else {
+                      // First install — content cached for offline
+                      console.log('[PWA] Content cached for offline use')
+                    }
                   }
                 })
               }
@@ -34,6 +37,16 @@ export function ServiceWorkerRegistration() {
           .catch((error) => {
             console.error('[PWA] Service Worker registration failed:', error)
           })
+      })
+
+      // When a new SW takes over, reload the page for a clean state
+      let refreshing = false
+      navigator.serviceWorker.addEventListener('controllerchange', () => {
+        if (!refreshing) {
+          refreshing = true
+          console.log('[PWA] New service worker activated — refreshing page')
+          window.location.reload()
+        }
       })
     }
   }, [])
