@@ -3,7 +3,8 @@
 import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useTheme } from 'next-themes'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
+import { Suspense } from 'react'
 import Image from 'next/image'
 import {
   Loader2,
@@ -124,15 +125,20 @@ function generateUniqueId(name: string): string {
   return `${firstChar}${randomNum}`
 }
 
-export default function ShareTargetPage() {
+function ShareTargetInner() {
   const { resolvedTheme } = useTheme()
   const [mounted, setMounted] = useState(false)
   const router = useRouter()
+  const searchParams = useSearchParams()
   const [fileCount, setFileCount] = useState<number | null>(null)
 
   useEffect(() => {
+    if (searchParams?.get('error') === 'sw_bypassed') {
+      setError('Cannot share files right now. Please ensure the app is open or try again.')
+    }
+    
     getSharedFiles().then(files => setFileCount(files.length)).catch(() => setFileCount(0))
-  }, [])
+  }, [searchParams])
 
   // Portal state - reusing homepage logic
   const [portalTab, setPortalTab] = useState<'oneshare' | 'labshare'>('oneshare')
@@ -587,5 +593,13 @@ export default function ShareTargetPage() {
         </div>
       </footer>
     </div>
+  )
+}
+
+export default function ShareTargetPage() {
+  return (
+    <Suspense fallback={<div className="flex h-screen items-center justify-center"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>}>
+      <ShareTargetInner />
+    </Suspense>
   )
 }

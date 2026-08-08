@@ -72,7 +72,7 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(request.url)
 
   // --- Web Share Target API Interception ---
-  if (request.method === 'POST' && url.pathname === '/share-target') {
+  if (request.method === 'POST' && url.pathname.includes('/api/share-target')) {
     event.respondWith(
       (async () => {
         try {
