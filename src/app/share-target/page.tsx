@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, Suspense } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useTheme } from 'next-themes'
 import { useRouter, useSearchParams } from 'next/navigation'
@@ -124,7 +124,7 @@ function generateUniqueId(name: string): string {
   return `${name.substring(0, 3).toLowerCase()}_${timestamp}_${random}`
 }
 
-export default function ShareTargetPage() {
+function ShareTargetContent() {
   const { resolvedTheme } = useTheme()
   const [mounted, setMounted] = useState(false)
   const router = useRouter()
@@ -631,5 +631,13 @@ export default function ShareTargetPage() {
         </div>
       </footer>
     </div>
+  )
+}
+
+export default function ShareTargetPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-background flex items-center justify-center"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>}>
+      <ShareTargetContent />
+    </Suspense>
   )
 }
