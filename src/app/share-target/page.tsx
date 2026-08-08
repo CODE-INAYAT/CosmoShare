@@ -3,7 +3,7 @@
 import { useState, useEffect, Suspense } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useTheme } from 'next-themes'
-import { useRouter, useSearchParams } from 'next/navigation'
+import { useRouter } from 'next/navigation'
 import Image from 'next/image'
 import {
   Loader2,
@@ -128,55 +128,10 @@ function ShareTargetContent() {
   const { resolvedTheme } = useTheme()
   const [mounted, setMounted] = useState(false)
   const router = useRouter()
-  const searchParams = useSearchParams()
   const [fileCount, setFileCount] = useState<number | null>(null)
-  const [isProcessingFallback, setIsProcessingFallback] = useState(false)
-
   useEffect(() => {
-    const fallbackId = searchParams?.get('fallbackId')
-    if (fallbackId && !isProcessingFallback) {
-      setIsProcessingFallback(true)
-      // Execute the server-side fallback retrieval
-      const processFallback = async () => {
-        try {
-          // 1. Fetch metadata
-          const metaRes = await fetch(`/api/share-target/download?id=${fallbackId}`)
-          if (!metaRes.ok) throw new Error('Failed to fetch fallback metadata')
-          const metaData = await metaRes.json()
-          
-          // 2. Fetch all files
-          const files: File[] = []
-          for (const meta of metaData) {
-            const fileRes = await fetch(`/api/share-target/download?id=${fallbackId}&file=${encodeURIComponent(meta.name)}`)
-            if (!fileRes.ok) throw new Error(`Failed to fetch file ${meta.name}`)
-            const blob = await fileRes.blob()
-            files.push(new File([blob], meta.name, { type: meta.type }))
-          }
-          
-          // 3. Save to IndexedDB
-          if (files.length > 0) {
-            await saveSharedFiles(files)
-          }
-          
-          // 4. Delete temp files from server
-          await fetch(`/api/share-target/download?id=${fallbackId}&delete=true`)
-          
-          // 5. Update local state and remove fallbackId from URL
-          setFileCount(files.length)
-          router.replace('/share-target')
-        } catch (err) {
-          console.error('Fallback retrieval error:', err)
-          setError('Failed to process shared files. Please try again.')
-          getSharedFiles().then(f => setFileCount(f.length)).catch(() => setFileCount(0))
-        } finally {
-          setIsProcessingFallback(false)
-        }
-      }
-      processFallback()
-    } else if (!fallbackId) {
-      getSharedFiles().then(files => setFileCount(files.length)).catch(() => setFileCount(0))
-    }
-  }, [searchParams, router, isProcessingFallback])
+    getSharedFiles().then(files => setFileCount(files.length)).catch(() => setFileCount(0))
+  }, [])
 
   // Portal state - reusing homepage logic
   const [portalTab, setPortalTab] = useState<'oneshare' | 'labshare'>('oneshare')
