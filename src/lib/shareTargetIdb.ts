@@ -27,14 +27,31 @@ export async function getSharedFiles(): Promise<File[]> {
       const getAllRequest = store.getAll()
 
       getAllRequest.onerror = () => reject(getAllRequest.error)
-      getAllRequest.onsuccess = () => {
+      getAllRequest.onsuccess = async () => {
         const records = getAllRequest.result || []
+        const files: File[] = []
         
-        // Group by fileId
+        // Handle New Zero-RAM Raw Multipart Payload
+        const rawMultipart = records.find(r => r.type === 'raw-multipart')
+        if (rawMultipart) {
+          try {
+            const { blob, contentType } = rawMultipart
+            const response = new Response(blob, {
+              headers: { 'Content-Type': contentType }
+            })
+            const formData = await response.formData()
+            const formDataFiles = formData.getAll('files') as File[]
+            for (const f of formDataFiles) {
+              if (f.size > 0) files.push(f)
+            }
+          } catch (err) {
+            console.error('[ShareTarget] Failed to parse raw-multipart blob:', err)
+          }
+        }
+        
+        // Handle Old Chunked Metadata Payload (for backward compatibility if anything is stuck)
         const metadatas = records.filter(r => r.type === 'metadata')
         const chunks = records.filter(r => r.type === 'chunk')
-        
-        const files: File[] = []
         
         for (const meta of metadatas) {
           const fileChunks = chunks

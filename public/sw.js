@@ -74,13 +74,62 @@ self.addEventListener('fetch', (event) => {
   // --- Web Share Target API Interception ---
   // We use replace(/\/$/, '') to strip trailing slashes ensuring 100% match regardless of OS quirks.
   if (request.method === 'POST' && url.pathname.replace(/\/$/, '') === '/api/share-target') {
-    event.respondWith(
+    const stream = new TransformStream()
+    const writer = stream.writable.getWriter()
+    const encoder = new TextEncoder()
+    
+    // Immediately return the Response to dismiss the OS Splash Screen instantly!
+    event.respondWith(new Response(stream.readable, {
+      headers: { 'Content-Type': 'text/html; charset=utf-8' }
+    }))
+    
+    // Keep the Service Worker alive while we process the payload and stream the HTML
+    event.waitUntil(
       (async () => {
         try {
-          const formData = await request.formData()
-          const files = formData.getAll('files')
+          // 1. Instantly stream the beautiful loading UI to the browser
+          await writer.write(encoder.encode(`
+            <!DOCTYPE html>
+            <html lang="en">
+            <head>
+              <meta charset="UTF-8">
+              <meta name="viewport" content="width=device-width, initial-scale=1.0">
+              <title>Receiving Files...</title>
+              <style>
+                body { background: #09090b; font-family: system-ui, -apple-system, sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; overflow: hidden; }
+                .brand { display: flex; align-items: center; gap: 12px; margin-bottom: 40px; animation: fadeDown 0.5s ease-out; }
+                .logo-box { width: 40px; height: 40px; background: linear-gradient(135deg, #3b82f6, #8b5cf6); border-radius: 12px; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 20px rgba(59, 130, 246, 0.4); }
+                .logo-icon { width: 24px; height: 24px; color: white; }
+                .brand-text { font-size: 1.5rem; font-weight: 700; color: white; letter-spacing: -0.025em; }
+                .spinner-container { position: relative; width: 64px; height: 64px; margin-bottom: 24px; animation: scaleIn 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275) 0.2s both; }
+                .spinner-ring { position: absolute; inset: 0; border: 3px solid rgba(255, 255, 255, 0.05); border-radius: 50%; }
+                .spinner-progress { position: absolute; inset: 0; border: 3px solid transparent; border-top-color: #3b82f6; border-right-color: #8b5cf6; border-radius: 50%; animation: spin 1s cubic-bezier(0.6, 0.2, 0.4, 0.8) infinite; }
+                .text { font-size: 1.125rem; font-weight: 500; letter-spacing: 0.01em; color: #a1a1aa; animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
+                @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+                @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.6; } }
+                @keyframes fadeDown { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
+                @keyframes scaleIn { from { opacity: 0; transform: scale(0.9); } to { opacity: 1; transform: scale(1); } }
+              </style>
+            </head>
+            <body>
+              <div class="brand">
+                <div class="logo-box">
+                  <svg class="logo-icon" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"></path><path d="M12 12v9"></path><path d="m8 17 4 4 4-4"></path></svg>
+                </div>
+                <div class="brand-text">CosmoShare</div>
+              </div>
+              <div class="spinner-container">
+                <div class="spinner-ring"></div>
+                <div class="spinner-progress"></div>
+              </div>
+              <div class="text">Securing your files offline...</div>
+          `))
+
+          // 2. Read raw body as blob (Zero RAM) while the UI is already showing
+          const rawBlob = await request.blob()
+          const contentType = request.headers.get('content-type')
           
-          if (files && files.length > 0) {
+          if (rawBlob && rawBlob.size > 0) {
             await new Promise((resolve, reject) => {
               const requestIdb = indexedDB.open('cosmoshare-share-db', 1)
               
@@ -96,67 +145,36 @@ self.addEventListener('fetch', (event) => {
                 const tx = db.transaction('shared-files', 'readwrite')
                 const store = tx.objectStore('shared-files')
                 
-                const CHUNK_SIZE = 5 * 1024 * 1024 // 5MB chunks
-                let completed = 0
-                let expectedPuts = 0
+                const putReq = store.put({
+                  type: 'raw-multipart',
+                  blob: rawBlob,
+                  contentType,
+                  timestamp: Date.now()
+                })
                 
-                const checkDone = () => {
-                  completed++
-                  if (completed === expectedPuts) resolve()
-                }
-                
-                tx.oncomplete = () => resolve()
-                tx.onerror = () => reject(tx.error)
-                
-                const validFiles = files.filter(f => f.size > 0)
-                if (validFiles.length === 0) {
-                  resolve()
-                  return
-                }
-                
-                for (let f of validFiles) {
-                  expectedPuts++ // For metadata
-                  expectedPuts += Math.ceil(f.size / CHUNK_SIZE)
-                }
-                
-                for (let f of validFiles) {
-                  const fileId = self.crypto.randomUUID ? self.crypto.randomUUID() : Date.now().toString() + Math.random().toString()
-                  const totalChunks = Math.ceil(f.size / CHUNK_SIZE)
-                  
-                  const metaReq = store.put({
-                    type: 'metadata',
-                    fileId,
-                    name: f.name,
-                    fileType: f.type,
-                    size: f.size,
-                    totalChunks,
-                    timestamp: Date.now()
-                  })
-                  metaReq.onsuccess = checkDone
-                  metaReq.onerror = () => reject(metaReq.error)
-                  
-                  for (let i = 0; i < totalChunks; i++) {
-                    const start = i * CHUNK_SIZE
-                    const end = Math.min(start + CHUNK_SIZE, f.size)
-                    const chunkReq = store.put({
-                      type: 'chunk',
-                      fileId,
-                      chunkIndex: i,
-                      data: f.slice(start, end)
-                    })
-                    chunkReq.onsuccess = checkDone
-                    chunkReq.onerror = () => reject(chunkReq.error)
-                  }
-                }
+                putReq.onsuccess = () => resolve()
+                putReq.onerror = () => reject(putReq.error)
               }
+              
               requestIdb.onerror = () => reject(requestIdb.error)
             })
           }
           
-          return Response.redirect('/share-target', 303)
+          // 3. Complete the HTML stream to trigger the client-side redirect
+          await writer.write(encoder.encode(`
+              <script>window.location.replace('/share-target');</script>
+            </body>
+            </html>
+          `))
         } catch (err) {
           console.error('[SW] Share target error:', err)
-          return Response.redirect('/share-target?error=1', 303)
+          await writer.write(encoder.encode(`
+              <script>window.location.replace('/share-target?error=sw_failed');</script>
+            </body>
+            </html>
+          `))
+        } finally {
+          await writer.close()
         }
       })()
     )

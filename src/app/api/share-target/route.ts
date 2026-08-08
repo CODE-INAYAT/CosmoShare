@@ -14,6 +14,15 @@ function arrayBufferToBase64(buffer: ArrayBuffer) {
 
 export async function POST(request: NextRequest) {
   try {
+    // Edge Safety Guard: If the OS bypassed the Service Worker and the payload is >10MB, 
+    // instantly reject it without parsing to prevent Cloudflare Worker OOM crash (Error 1102).
+    const contentLength = Number(request.headers.get('content-length') || '0')
+    const MAX_EDGE_PAYLOAD_MB = 10
+    if (contentLength > MAX_EDGE_PAYLOAD_MB * 1024 * 1024) {
+      console.warn(`[API Fallback] Rejecting oversized payload (${contentLength} bytes) to prevent Edge OOM.`)
+      return NextResponse.redirect(new URL('/share-target?error=sw_bypassed_large_file', request.url), 303)
+    }
+
     const formData = await request.formData()
     const files = formData.getAll('files') as File[]
 

@@ -3,7 +3,7 @@
 import { useState, useEffect, Suspense } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useTheme } from 'next-themes'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import Image from 'next/image'
 import {
   Loader2,
@@ -23,6 +23,7 @@ import {
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { toast } from 'sonner'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { Command, CommandDialog, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command'
@@ -128,10 +129,20 @@ function ShareTargetContent() {
   const { resolvedTheme } = useTheme()
   const [mounted, setMounted] = useState(false)
   const router = useRouter()
+  const searchParams = useSearchParams()
   const [fileCount, setFileCount] = useState<number | null>(null)
+  
   useEffect(() => {
     getSharedFiles().then(files => setFileCount(files.length)).catch(() => setFileCount(0))
-  }, [])
+    
+    const errorParam = searchParams?.get('error')
+    if (errorParam === 'sw_bypassed_large_file') {
+      toast.error('File Too Large for Offline Fallback', {
+        description: 'Your OS bypassed the offline engine. Please open CosmoShare first, then try sharing the large file again.',
+        duration: 8000,
+      })
+    }
+  }, [searchParams])
 
   // Portal state - reusing homepage logic
   const [portalTab, setPortalTab] = useState<'oneshare' | 'labshare'>('oneshare')
