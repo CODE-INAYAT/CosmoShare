@@ -73,7 +73,7 @@ self.addEventListener('fetch', (event) => {
 
   // --- Web Share Target API Interception ---
   // We use replace(/\/$/, '') to strip trailing slashes ensuring 100% match regardless of OS quirks.
-  if (request.method === 'POST' && url.pathname.replace(/\/$/, '') === '/share-target') {
+  if (request.method === 'POST' && url.pathname.replace(/\/$/, '') === '/api/share-target') {
     event.respondWith(
       (async () => {
         try {

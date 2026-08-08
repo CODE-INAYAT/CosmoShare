@@ -77,3 +77,71 @@ export async function clearSharedFiles(): Promise<void> {
     }
   })
 }
+
+export async function saveSharedFiles(files: File[]): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open('cosmoshare-share-db', 1)
+
+    request.onerror = () => reject(request.error)
+    
+    request.onupgradeneeded = (e) => {
+      const db = (e.target as IDBOpenDBRequest).result
+      if (!db.objectStoreNames.contains('shared-files')) {
+        db.createObjectStore('shared-files', { autoIncrement: true })
+      }
+    }
+
+    request.onsuccess = (e) => {
+      const db = (e.target as IDBOpenDBRequest).result
+      const tx = db.transaction('shared-files', 'readwrite')
+      const store = tx.objectStore('shared-files')
+      
+      const CHUNK_SIZE = 5 * 1024 * 1024
+      let expectedPuts = 0
+      let completed = 0
+
+      const checkDone = () => {
+        completed++
+        if (completed === expectedPuts) resolve()
+      }
+
+      tx.oncomplete = () => resolve()
+      tx.onerror = () => reject(tx.error)
+
+      for (let f of files) {
+        expectedPuts++
+        expectedPuts += Math.ceil(f.size / CHUNK_SIZE)
+      }
+
+      for (let f of files) {
+        const fileId = Date.now().toString() + Math.random().toString()
+        const totalChunks = Math.ceil(f.size / CHUNK_SIZE)
+        
+        const metaReq = store.put({
+          type: 'metadata',
+          fileId,
+          name: f.name,
+          fileType: f.type,
+          size: f.size,
+          totalChunks,
+          timestamp: Date.now()
+        })
+        metaReq.onsuccess = checkDone
+        metaReq.onerror = () => reject(metaReq.error)
+        
+        for (let i = 0; i < totalChunks; i++) {
+          const start = i * CHUNK_SIZE
+          const end = Math.min(start + CHUNK_SIZE, f.size)
+          const chunkReq = store.put({
+            type: 'chunk',
+            fileId,
+            chunkIndex: i,
+            data: f.slice(start, end)
+          })
+          chunkReq.onsuccess = checkDone
+          chunkReq.onerror = () => reject(chunkReq.error)
+        }
+      }
+    }
+  })
+}
