@@ -937,13 +937,27 @@ function StudentDashboardInner() {
   }, [searchParams])
 
   // No local/session storage: keep history/UI only in memory for this session
-  // Cleanup blob URLs on unmount
+  // Deep Resource Optimization: System-level exit handlers
   useEffect(() => {
-    return () => {
+    const systemCleanup = () => {
+      // 1. Instantly sever network connections to prevent ghost sockets
+      try { socketRef.current?.disconnect() } catch { }
+      // 2. Forcefully purge gigabytes of RAM by revoking blob chunks
       try {
         blobUrlsRef.current.forEach((u) => { try { URL.revokeObjectURL(u) } catch { } })
         blobUrlsRef.current.clear()
       } catch { }
+      // 3. Wipe unimported files from IndexedDB to prevent stale storage bloat
+      try { clearSharedFiles().catch(() => {}) } catch { }
+    }
+
+    window.addEventListener('pagehide', systemCleanup)
+    window.addEventListener('beforeunload', systemCleanup)
+
+    return () => {
+      window.removeEventListener('pagehide', systemCleanup)
+      window.removeEventListener('beforeunload', systemCleanup)
+      systemCleanup()
     }
   }, [])
 

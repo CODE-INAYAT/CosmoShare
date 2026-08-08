@@ -45,10 +45,10 @@ self.addEventListener('activate', (event) => {
           .map((key) => caches.delete(key))
       )
 
-      // Enable navigation preload if supported
+      // Disable navigation preload to guarantee POST payload interception
       if (self.registration.navigationPreload) {
         try {
-          await self.registration.navigationPreload.enable()
+          await self.registration.navigationPreload.disable()
         } catch (e) {
           // Not all browsers support this; silently ignore
         }
@@ -72,7 +72,8 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(request.url)
 
   // --- Web Share Target API Interception ---
-  if (request.method === 'POST' && url.pathname === '/share-target') {
+  // We use replace(/\/$/, '') to strip trailing slashes ensuring 100% match regardless of OS quirks.
+  if (request.method === 'POST' && url.pathname.replace(/\/$/, '') === '/share-target') {
     event.respondWith(
       (async () => {
         try {
