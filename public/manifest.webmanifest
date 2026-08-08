@@ -117,7 +117,7 @@
     }
   ],
   "share_target": {
-    "action": "/api/share-target",
+    "action": "/share-target",
     "method": "POST",
     "enctype": "multipart/form-data",
     "params": {

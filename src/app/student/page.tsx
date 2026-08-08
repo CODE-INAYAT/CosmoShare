@@ -3350,7 +3350,7 @@ function StudentDashboardInner() {
             )}
             <div className="flex flex-col sm:flex-row sm:justify-end gap-2 mt-4">
               <Button variant="outline" onClick={() => setOfflineModalOpen(false)}>Cancel</Button>
-              {offlineUsersInfo.some(u => u.uniqueId === 'ADMIN') && pendingTargets.length === 0 && !autoShareActive && (
+              {preflightIsPrint && offlineUsersInfo.some(u => u.uniqueId === 'ADMIN') && pendingTargets.length === 0 && !autoShareActive && (
                 <Button
                   onClick={activateAutoShare}
                 >
