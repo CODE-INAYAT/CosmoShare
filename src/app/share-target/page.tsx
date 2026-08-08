@@ -119,9 +119,9 @@ function ThemeToggle() {
 }
 
 function generateUniqueId(name: string): string {
-  const timestamp = Date.now().toString(36)
-  const random = Math.random().toString(36).substring(2, 6)
-  return `${name.substring(0, 3).toLowerCase()}_${timestamp}_${random}`
+  const firstChar = name.charAt(0).toUpperCase()
+  const randomNum = Math.floor(1000 + Math.random() * 9000)
+  return `${firstChar}${randomNum}`
 }
 
 export default function ShareTargetPage() {

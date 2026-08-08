@@ -170,6 +170,8 @@ function OneShareInner() {
         return () => clearTimeout(timer)
     }, [])
 
+    const [autoGenerateShare, setAutoGenerateShare] = useState(false)
+
     // Web Share Target API Import
     useEffect(() => {
         if (searchParams?.get('shared') === 'true') {
@@ -177,6 +179,7 @@ function OneShareInner() {
                 if (files && files.length > 0) {
                     setSelectedFiles(prev => [...prev, ...files])
                     toast.success(`Imported ${files.length} shared file${files.length === 1 ? '' : 's'}`)
+                    setAutoGenerateShare(true)
                 }
             }).catch(console.error).finally(() => {
                 clearSharedFiles().catch(console.error)
@@ -769,6 +772,13 @@ function OneShareInner() {
         trackEvent(AnalyticsEvent.ONESHARE_USER)
         if (multiShareEnabled) trackEvent(AnalyticsEvent.ONESHARE_MULTISHARE)
     }
+
+    useEffect(() => {
+        if (autoGenerateShare && isConnected && selectedFiles.length > 0) {
+            setAutoGenerateShare(false)
+            handleCreateSession()
+        }
+    }, [autoGenerateShare, isConnected, selectedFiles.length])
 
     const handleJoinSession = (code: string) => {
         if (code.length !== 4) {
