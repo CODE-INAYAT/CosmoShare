@@ -70,6 +70,7 @@ import { io } from 'socket.io-client'
 import { connectSignaling } from '@/lib/wsClient'
 import { getLabSignalingUrls } from '@/lib/signalingRouter'
 import { useWebRTC } from '@/hooks/useWebRTC'
+import { useSmartPrefill } from '@/hooks/useSmartPrefill'
 import FilePreview from '@/components/FilePreview'
 import { ConnectionStatusBadge } from '@/components/ConnectionStatusBadge'
 import { OfflineDialog } from '@/components/OfflineDialog'
@@ -174,7 +175,15 @@ function ThemeToggle() {
 function AdminDashboardInner() {
   const searchParams = useSearchParams()
   const router = useRouter()
+  const { isLoaded, getPrefilledRoom, recordJoin } = useSmartPrefill()
   const [roomNumber, setRoomNumber] = useState('')
+
+  useEffect(() => {
+    if (isLoaded) {
+      const pRoom = getPrefilledRoom(false, 'admin')
+      if (pRoom && !roomNumber) setRoomNumber(pRoom)
+    }
+  }, [isLoaded, getPrefilledRoom])
   const [isAuthenticated, setIsAuthenticated] = useState(false)
   const [password, setPassword] = useState('')
 
@@ -712,6 +721,7 @@ function AdminDashboardInner() {
         userType: 'admin'
       }
       setAdminUser(userData)
+      recordJoin(roomNumber, false, 'admin')
       setIsAuthenticated(true)
       initializeSocket(userData, roomNumber)
     } else {

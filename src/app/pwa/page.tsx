@@ -29,6 +29,8 @@ import { Command, CommandDialog, CommandEmpty, CommandGroup, CommandInput, Comma
 import { roomNumbers } from '@/config/rooms'
 import { URL_OBFUSCATION_ENABLED, encodeUrlData } from '@/config/urlObfuscation'
 import { SupportDialog } from '@/components/SupportDialog'
+import { useSmartPrefill } from '@/hooks/useSmartPrefill'
+import { useIsMobile } from '@/hooks/use-mobile'
 
 // Animation variants — matching homepage
 const fadeUp = {
@@ -139,6 +141,18 @@ export default function PWAChooser() {
   const [roomOpen, setRoomOpen] = useState(false)
   const [supportOpen, setSupportOpen] = useState(false)
 
+  const isMobile = useIsMobile()
+  const { isLoaded, getPrefilledRoom, getPrefilledName, recordJoin, recordName } = useSmartPrefill()
+
+  useEffect(() => {
+    if (isLoaded) {
+      const pRoom = getPrefilledRoom(isMobile, 'student')
+      const pName = getPrefilledName()
+      if (pRoom && !roomNumber) setRoomNumber(pRoom)
+      if (isMobile && pName && !name) setName(pName)
+    }
+  }, [isLoaded, isMobile, getPrefilledRoom, getPrefilledName])
+
   useEffect(() => {
     setMounted(true)
   }, [])
@@ -196,6 +210,11 @@ export default function PWAChooser() {
         uniqueId,
         roomNumber,
         userType: 'student'
+      }
+
+      recordJoin(roomNumber, isMobile, 'student')
+      if (isMobile) {
+        recordName(name)
       }
 
       if (URL_OBFUSCATION_ENABLED) {

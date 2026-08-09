@@ -65,6 +65,8 @@ import { VIDEO_CONFIG, VIDEO_PREVIEW_ENABLED } from '@/config/videoConfig'
 import { VideoModal } from '@/components/VideoModal'
 import { usePWAInstall } from '@/hooks/usePWAInstall'
 import { PWAInstallModal } from '@/components/PWAInstallModal'
+import { useIsMobile } from '@/hooks/use-mobile'
+import { useSmartPrefill } from '@/hooks/useSmartPrefill'
 
 // Register GSAP plugins
 if (typeof window !== 'undefined') {
@@ -250,6 +252,8 @@ function ThemeToggle() {
 
 export default function Home() {
   const { theme, setTheme, resolvedTheme } = useTheme()
+  const isMobile = useIsMobile()
+  const { isLoaded, getPrefilledRoom, getPrefilledName, recordJoin, recordName } = useSmartPrefill()
   const [portalTab, setPortalTab] = useState<'oneshare' | 'labshare'>('oneshare')
   const [roomNumber, setRoomNumber] = useState('')
   const [name, setName] = useState('')
@@ -277,6 +281,15 @@ export default function Home() {
       )
     }
   }, [])
+
+  useEffect(() => {
+    if (isLoaded) {
+      const pRoom = getPrefilledRoom(isMobile, 'student')
+      const pName = getPrefilledName()
+      if (pRoom && !roomNumber) setRoomNumber(pRoom)
+      if (isMobile && pName && !name) setName(pName)
+    }
+  }, [isLoaded, isMobile, getPrefilledRoom, getPrefilledName])
 
   // PWA install
   const { isInstallable, isInstalled, isIOS, promptInstall } = usePWAInstall()
@@ -688,6 +701,11 @@ export default function Home() {
         uniqueId,
         roomNumber,
         userType: 'student'
+      }
+
+      recordJoin(roomNumber, isMobile, 'student')
+      if (isMobile) {
+        recordName(name)
       }
 
       if (URL_OBFUSCATION_ENABLED) {
