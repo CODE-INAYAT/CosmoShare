@@ -8,6 +8,7 @@ export interface StaggeredMenuItem {
   label: string;
   ariaLabel: string;
   link: string;
+  isButton?: boolean;
 }
 
 export interface StaggeredMenuSocialItem {
@@ -558,28 +559,46 @@ export const StaggeredMenu: React.FC<StaggeredMenuProps> = ({
             >
               {items && items.length ? (
                 items.map((it, idx) => (
-                  <li className="sm-panel-itemWrap relative overflow-hidden leading-none" key={it.label + idx}>
-                    <a
-                      className="sm-panel-item relative cursor-pointer leading-none uppercase transition-[background,color] duration-150 ease-linear flex items-center justify-center gap-4 no-underline text-black dark:text-white text-center w-full"
-                      href={it.link}
-                      aria-label={it.ariaLabel}
-                      data-index={idx + 1}
-                      onClick={(e) => {
-                        if (onItemClick) {
-                          onItemClick(it, e);
-                        }
-                        closeMenu();
-                      }}
-                    >
-                      {displayItemNumbering && (
-                        <span className="sm-panel-itemNum text-sm sm:text-base font-normal text-[color:var(--sm-accent,#14b8a6)] select-none">
-                          {String(idx + 1).padStart(2, '0')}
+                  <li className={`sm-panel-itemWrap relative leading-none ${it.isButton ? '!overflow-visible' : 'overflow-hidden'}`} key={it.label + idx}>
+                    {it.isButton ? (
+                      <div className="flex justify-center my-4 sm-panel-itemLabel w-full">
+                        <button
+                          className="group relative flex items-center justify-center gap-2 rounded-full gradient-primary text-white glow-button hover:opacity-90 px-8 py-3.5 text-base font-semibold shadow-md transition-all duration-300 ease-out hover:scale-[1.02] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring w-full sm:w-auto border-0"
+                          aria-label={it.ariaLabel}
+                          onClick={(e) => {
+                            if (onItemClick) {
+                              onItemClick(it, e as any);
+                            }
+                            closeMenu();
+                          }}
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="transition-transform duration-300 group-hover:-translate-y-0.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
+                          {it.label}
+                        </button>
+                      </div>
+                    ) : (
+                      <a
+                        className="sm-panel-item relative cursor-pointer leading-none uppercase transition-[background,color] duration-150 ease-linear flex items-center justify-center gap-4 no-underline text-black dark:text-white text-center w-full"
+                        href={it.link}
+                        aria-label={it.ariaLabel}
+                        data-index={idx + 1}
+                        onClick={(e) => {
+                          if (onItemClick) {
+                            onItemClick(it, e);
+                          }
+                          closeMenu();
+                        }}
+                      >
+                        {displayItemNumbering && (
+                          <span className="sm-panel-itemNum text-sm sm:text-base font-normal text-[color:var(--sm-accent,#14b8a6)] select-none">
+                            {String(idx + 1).padStart(2, '0')}
+                          </span>
+                        )}
+                        <span className="sm-panel-itemLabel font-bold text-[8vw] sm:text-[3rem] md:text-[3.5rem] tracking-tight transition-transform duration-300 ease-out will-change-transform">
+                          {it.label}
                         </span>
-                      )}
-                      <span className="sm-panel-itemLabel font-bold text-[8vw] sm:text-[3rem] md:text-[3.5rem] tracking-tight transition-transform duration-300 ease-out will-change-transform">
-                        {it.label}
-                      </span>
-                    </a>
+                      </a>
+                    )}
                   </li>
                 ))
               ) : (

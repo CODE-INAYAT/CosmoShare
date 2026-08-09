@@ -1125,19 +1125,6 @@ function AdminDashboardInner() {
                 </span>
               </Badge>
             </div>
-            {/* Download (LabShare Admin) button */}
-            {showAdminDownload && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleAdminDownload}
-                className="h-8 px-2 sm:px-3 gap-1.5 border-primary/30 text-primary hover:bg-primary/10 hover:border-primary/50 transition-all duration-200"
-              >
-                <Download className="w-4 h-4" />
-                <span className="hidden md:inline">Download (LabShare Admin)</span>
-                <span className="md:hidden">Install</span>
-              </Button>
-            )}
             <AlertDialog open={leaveRoomDialogOpen} onOpenChange={setLeaveRoomDialogOpen}>
               <AlertDialogTrigger asChild>
                 <Button
@@ -1173,6 +1160,17 @@ function AdminDashboardInner() {
                 </AlertDialogFooter>
               </AlertDialogContent>
             </AlertDialog>
+            {/* Download (LabShare Admin) button */}
+            {showAdminDownload && (
+              <Button
+                size="sm"
+                onClick={handleAdminDownload}
+                className="gradient-primary text-white glow-button hover:opacity-90 transition-all duration-300 rounded-full px-5 font-medium h-8 hidden md:flex items-center gap-2 border-0"
+              >
+                <Download className="w-4 h-4 group-hover:-translate-y-0.5 transition-transform duration-300" />
+                <span>Install</span>
+              </Button>
+            )}
           </div>
         </div>
 
