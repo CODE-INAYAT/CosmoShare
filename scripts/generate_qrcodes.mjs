@@ -20,8 +20,8 @@ import puppeteer from 'puppeteer';
 
 // ─── CONFIGURATION ──────────────────────────────────────────────────
 // Edit this URL to match your production domain.
-const BASE_URL = "http://192.168.31.163:3000";
-// We use a short URL approach: cosmoshare.com/r/312
+const BASE_URL = "https://cosmoshare.pages.dev";
+// I use a short URL approach: cosmoshare.com/r/312
 // ────────────────────────────────────────────────────────────────────
 
 const __dirname = path.resolve();
@@ -60,7 +60,7 @@ if (!fs.existsSync(OUTPUT_DIR)) {
 // 3. SVG Template Generator
 async function generateQRCodeSVG(room) {
     const url = `${BASE_URL}/r/${room}`;
-    const qrSize = 1400;
+    const qrSize = 1200; // Reduced from 1400 to provide a massive mathematically compliant Quiet Zone
 
     const qrCode = new QRCodeStyling({
         width: qrSize,
@@ -69,7 +69,7 @@ async function generateQRCodeSVG(room) {
         data: url,
         margin: 0,
         qrOptions: {
-            errorCorrectionLevel: 'M' // Optimized for speed of light scanning
+            errorCorrectionLevel: 'Q' // Bumped from M (15%) to Q (25%) for maximum physical scanning robustness
         },
         dotsOptions: {
             type: 'dots',
@@ -81,7 +81,7 @@ async function generateQRCodeSVG(room) {
             color: '#000000'
         },
         cornersDotOptions: {
-            type: 'dot',
+            type: 'square', // Using 'square' instead of 'dot' guarantees absolute structural anchor detection by Google Lens
             color: '#000000'
         },
         backgroundOptions: {
@@ -100,15 +100,7 @@ async function generateQRCodeSVG(room) {
         throw new Error("SVG generation failed");
     }
 
-    // Apply dot scaling logic (same as OneShare)
-    const circles = svgElement.querySelectorAll('circle');
-    circles.forEach((circle) => {
-        const r = circle.getAttribute('r');
-        if (r) {
-            const newRadius = parseFloat(r) * 0.7;
-            circle.setAttribute('r', newRadius.toString());
-        }
-    });
+
 
     // Extract the raw SVG string without the outermost svg tag, or just grab innerHTML
     const qrSvgContent = svgElement.innerHTML;
@@ -149,18 +141,19 @@ async function generateQRCodeSVG(room) {
     <!-- QR Code White Card (Shadow matching shadow-lg shadow-primary/25) -->
     <rect x="440" y="500" width="1600" height="1600" rx="120" fill="#ffffff" filter="drop-shadow(0 60px 120px rgba(0,134,124,0.25))" />
     
-    <!-- Embed the actual QR Code -->
-    <g transform="translate(540, 600)">
-        <svg width="1400" height="1400" viewBox="${viewBox}">
+    <!-- Embed the actual QR Code (Centered with mathematically compliant 4+ module Quiet Zone) -->
+    <g transform="translate(640, 700)">
+        <svg width="1200" height="1200" viewBox="${viewBox}">
             ${qrSvgContent}
         </svg>
     </g>
 
     <!-- Text Below QR Code (matching FullPageLoader titles) -->
-    <g transform="translate(1240, 2400)" text-anchor="middle">
+    <g transform="translate(1240, 2250)" text-anchor="middle">
         <text font-size="80" font-weight="500" fill="#6B7280">Scan to join</text>
+        
         <!-- Offset by +110 to perfectly center the Text + Icon block -->
-        <g transform="translate(110, 220)">
+        <g transform="translate(110, 200)">
             <text x="0" y="0" font-size="220" font-weight="700" fill="#111827" letter-spacing="-4">Lab ${room}</text>
             <!-- Printer icon perfectly sized and aligned to the left -->
             <g transform="translate(-620, -165) scale(7)">
@@ -171,6 +164,44 @@ async function generateQRCodeSVG(room) {
                 </svg>
             </g>
         </g>
+
+        <!-- "OR" Separator -->
+        <text y="370" font-size="65" font-weight="700" fill="#111827">OR</text>
+
+        <!-- Google Search Pill -->
+        <g transform="translate(-650, 450)">
+            <!-- Pill Shadow and Background -->
+            <rect x="0" y="0" width="1300" height="180" rx="90" fill="#ffffff" filter="drop-shadow(0 15px 35px rgba(0,0,0,0.1))" stroke="#E5E7EB" stroke-width="2" />
+            
+            <!-- Google G Logo -->
+            <g transform="translate(60, 47) scale(1.8)">
+                <svg width="48" height="48" viewBox="0 0 48 48">
+                  <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.7 17.74 9.5 24 9.5z"/>
+                  <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>
+                  <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>
+                  <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>
+                </svg>
+            </g>
+            
+            <!-- Vertical Divider -->
+            <line x1="180" y1="45" x2="180" y2="135" stroke="#E5E7EB" stroke-width="3" />
+            
+            <!-- Search Query Text -->
+            <text x="240" y="125" font-size="95" font-weight="600" fill="#374151" text-anchor="start" letter-spacing="-2">CosmoShare</text>
+            
+            <!-- Google Mic Logo -->
+            <g transform="translate(1140, 42) scale(4)">
+                <svg width="24" height="24" viewBox="0 0 24 24">
+                  <path fill="#4285F4" d="M12 15c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v7c0 1.66 1.34 3 3 3z"/>
+                  <path fill="#34A853" d="M11 18.92h2V22h-2z"/>
+                  <path fill="#F4B400" d="M7 12H5c0 1.93.78 3.68 2.05 4.95l1.41-1.41C7.56 14.63 7 13.38 7 12z"/>
+                  <path fill="#EA4335" d="M12 17c-1.38 0-2.63-.56-3.54-1.47l-1.41 1.41C8.32 18.22 10.07 19 12 19c3.87 0 7-3.13 7-7h-2c0 2.76-2.24 5-5 5z"/>
+                </svg>
+            </g>
+        </g>
+        
+        <!-- Text below the pill -->
+        <text y="740" font-size="80" font-weight="500" fill="#6B7280">Search</text>
     </g>
 
     <!-- Bottom Branding (Absolute bottom-8 equivalent) -->
