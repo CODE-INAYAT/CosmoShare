@@ -3,6 +3,9 @@ export const runtime = 'edge'
 
 import { generateGradient } from '@/lib/avatarUtils'
 import { useState, useEffect, useRef, Suspense, useMemo } from 'react'
+import { motion, AnimatePresence } from 'framer-motion'
+import { useTheme } from 'next-themes'
+import Image from 'next/image'
 import NumberFlow from '@number-flow/react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -15,6 +18,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Command, CommandDialog, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command'
+import { roomNumbers } from '@/config/rooms'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -45,14 +51,26 @@ import {
   Search,
   Plus,
   ArrowDown,
+  ArrowRight,
   LogOut,
-  AlertTriangle
+  AlertTriangle,
+  Lock,
+  Monitor,
+  ChevronDown,
+  CheckCircle2,
+  AlertCircle,
+  Loader2,
+  ArrowLeft,
+  HelpCircle,
+  Sun,
+  Moon
 } from 'lucide-react'
-import { useSearchParams } from 'next/navigation'
+import { useSearchParams, useRouter } from 'next/navigation'
 import { io } from 'socket.io-client'
 import { connectSignaling } from '@/lib/wsClient'
 import { getLabSignalingUrls } from '@/lib/signalingRouter'
 import { useWebRTC } from '@/hooks/useWebRTC'
+import { useSmartPrefill } from '@/hooks/useSmartPrefill'
 import FilePreview from '@/components/FilePreview'
 import { ConnectionStatusBadge } from '@/components/ConnectionStatusBadge'
 import { OfflineDialog } from '@/components/OfflineDialog'
@@ -66,6 +84,9 @@ import { trackEvent, AnalyticsEvent, trackFileSize, setAnalyticsContext } from '
 import { installConsoleMask } from '@/config/urlObfuscation'
 import AnalyticsChart from '@/components/AnalyticsChart'
 import { ENABLE_DUMMY_ANALYTICS, DUMMY_ANALYTICS_DATA } from '@/config/dummyAnalytics'
+import { usePWAInstall } from '@/hooks/usePWAInstall'
+import { PWAInstallModal } from '@/components/PWAInstallModal'
+import { SupportDialog } from '@/components/SupportDialog'
 import {
   saveRequestToDB,
   loadRequestsFromDB,
@@ -105,9 +126,64 @@ interface OnlineUser {
   isOnline: boolean
 }
 
+// Theme Toggle — matching homepage
+function ThemeToggle() {
+  const { resolvedTheme, setTheme } = useTheme()
+  const [mounted, setMounted] = useState(false)
+
+  useEffect(() => setMounted(true), [])
+
+  if (!mounted) return (
+    <div className="w-10 h-10 rounded-xl bg-secondary/50 animate-pulse" />
+  )
+
+  return (
+    <motion.button
+      whileHover={{ scale: 1.05 }}
+      whileTap={{ scale: 0.95 }}
+      onClick={() => setTheme(resolvedTheme === 'dark' ? 'light' : 'dark')}
+      className="relative w-10 h-10 rounded-xl bg-secondary/80 hover:bg-secondary flex items-center justify-center transition-all duration-300 hover:shadow-lg hover:shadow-primary/20"
+      aria-label="Toggle theme"
+    >
+      <AnimatePresence mode="wait">
+        {resolvedTheme === 'dark' ? (
+          <motion.div
+            key="sun"
+            initial={{ rotate: -90, opacity: 0 }}
+            animate={{ rotate: 0, opacity: 1 }}
+            exit={{ rotate: 90, opacity: 0 }}
+            transition={{ duration: 0.3 }}
+          >
+            <Sun className="w-5 h-5 text-amber-400" />
+          </motion.div>
+        ) : (
+          <motion.div
+            key="moon"
+            initial={{ rotate: 90, opacity: 0 }}
+            animate={{ rotate: 0, opacity: 1 }}
+            exit={{ rotate: -90, opacity: 0 }}
+            transition={{ duration: 0.3 }}
+          >
+            <Moon className="w-5 h-5 text-primary" />
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </motion.button>
+  )
+}
+
 function AdminDashboardInner() {
   const searchParams = useSearchParams()
+  const router = useRouter()
+  const { isLoaded, getPrefilledRoom, recordJoin } = useSmartPrefill()
   const [roomNumber, setRoomNumber] = useState('')
+
+  useEffect(() => {
+    if (isLoaded) {
+      const pRoom = getPrefilledRoom(false, 'admin')
+      if (pRoom && !roomNumber) setRoomNumber(pRoom)
+    }
+  }, [isLoaded, getPrefilledRoom])
   const [isAuthenticated, setIsAuthenticated] = useState(false)
   const [password, setPassword] = useState('')
 
@@ -131,7 +207,40 @@ function AdminDashboardInner() {
   const [confirmClearAllOpen, setConfirmClearAllOpen] = useState(false)
   const [speedDialOpen, setSpeedDialOpen] = useState(false)
   const [leaveRoomDialogOpen, setLeaveRoomDialogOpen] = useState(false)
+  const [isSidebarOpen, setIsSidebarOpen] = useState(true)
+  const [supportOpen, setSupportOpen] = useState(false)
+
+  // PWA standalone check
+  const [isStandalone, setIsStandalone] = useState(false)
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      setIsStandalone(
+        window.matchMedia('(display-mode: standalone)').matches ||
+        window.matchMedia('(display-mode: fullscreen)').matches ||
+        (window.navigator as any).standalone === true
+      )
+    }
+  }, [])
   const { toast } = useToast()
+
+  // Admin room selection dialog (matching student portal UI)
+  const [adminRoomOpen, setAdminRoomOpen] = useState(false)
+  const [adminLoginError, setAdminLoginError] = useState('')
+  const [isAdminLoginLoading, setIsAdminLoginLoading] = useState(false)
+
+  // PWA install for admin
+  const { isInstallable, isInstalled, isIOS, promptInstall } = usePWAInstall()
+  const [showIOSModal, setShowIOSModal] = useState(false)
+
+  const handleAdminDownload = () => {
+    if (isIOS) {
+      setShowIOSModal(true)
+      return
+    }
+    promptInstall('/manifest-admin.webmanifest')
+  }
+
+  const showAdminDownload = (isInstallable && !isInstalled) || isIOS
 
   // Network status
   const { isOnline } = useNetworkStatus()
@@ -595,6 +704,14 @@ function AdminDashboardInner() {
 
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault()
+    if (!roomNumber) {
+      toast({
+        title: 'Error',
+        description: 'Please select a Lab Room.',
+        variant: 'destructive'
+      })
+      return
+    }
     if (password === AUTO_LOGIN_PASSWORD || (AUTO_LOGIN_ENABLED && verifyHash(password))) {
       const userData = {
         id: 'admin_' + Date.now(),
@@ -604,6 +721,7 @@ function AdminDashboardInner() {
         userType: 'admin'
       }
       setAdminUser(userData)
+      recordJoin(roomNumber, false, 'admin')
       setIsAuthenticated(true)
       initializeSocket(userData, roomNumber)
     } else {
@@ -788,7 +906,7 @@ function AdminDashboardInner() {
       blobUrlsRef.current.forEach((u) => { try { URL.revokeObjectURL(u as any) } catch { } })
       blobUrlsRef.current.clear()
     } catch { }
-    window.location.href = '/'
+    window.location.href = '/admin'
   }
 
   // No persistence: admin print requests are session-only
@@ -799,8 +917,37 @@ function AdminDashboardInner() {
 
   if (!isAuthenticated) {
     return (
-      <div className="min-h-screen bg-background text-foreground flex flex-col">
-        <div className="flex-1 flex items-center justify-center p-4">
+      <div className="min-h-screen bg-background text-foreground overflow-y-auto flex flex-col">
+        {/* Header with Home Button (Non-PWA only) */}
+        {!isStandalone && (
+          <div className="relative z-50 px-4 py-3 sm:py-4 shrink-0">
+            <div className="max-w-7xl mx-auto flex items-center justify-between">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => router.push('/')}
+                className="glass px-3.5 sm:px-4 py-2 text-foreground text-xs sm:text-sm font-medium rounded-xl transition duration-300 gap-1.5 sm:gap-2 hover:bg-accent/50 shadow-sm"
+              >
+                <ArrowLeft className="w-4 h-4" />
+                <span>Home</span>
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {/* Minimal top bar with logo + theme toggle (PWA only) */}
+        {isStandalone && (
+          <div className="relative z-10 flex items-center justify-between px-6 py-4 shrink-0">
+            <div className="flex items-center gap-3">
+              <Image src="/logo.svg" alt="CosmoShare Logo" width={120} height={40} className="block dark:hidden h-8 sm:h-10 w-auto" priority />
+              <Image src="/logoDark.svg" alt="CosmoShare Logo" width={120} height={40} className="hidden dark:block h-8 sm:h-10 w-auto" priority />
+              <span className="text-xl font-bold gradient-text">CosmoShare</span>
+            </div>
+            <ThemeToggle />
+          </div>
+        )}
+
+        <div className="flex-1 flex items-center justify-center p-4 sm:p-6">
           <div className="w-full max-w-md p-8 rounded-xl border border-border bg-card shadow-lg">
             <div className="text-center mb-8">
               <div className="flex justify-center mb-4">
@@ -810,7 +957,7 @@ function AdminDashboardInner() {
               </div>
               <h2 className="text-2xl font-semibold mb-2">Admin Portal</h2>
               <p className="text-sm text-muted-foreground">
-                Authenticate to access Lab {roomNumber} admin dashboard
+                {roomNumber ? `Authenticate to access Room ${roomNumber}` : 'Select a room and authenticate'}
               </p>
             </div>
 
@@ -824,6 +971,24 @@ function AdminDashboardInner() {
             )}
 
             <form onSubmit={handleLogin} className="space-y-5" suppressHydrationWarning>
+              {/* Room Selection — CommandDialog matching Student Portal */}
+              <div className="space-y-2">
+                <Label htmlFor="admin-room" className="text-sm font-medium">Lab Room Number</Label>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setAdminRoomOpen(true)}
+                  className="w-full justify-between bg-secondary/20 dark:bg-secondary/10 border-border/80 hover:border-primary/50 text-foreground rounded-full h-11 hover:bg-secondary/40 transition-colors pl-4 pr-5 flex items-center"
+                >
+                  {roomNumber ? (
+                    <span className="font-medium text-foreground">Room {roomNumber}</span>
+                  ) : (
+                    <span className="text-muted-foreground text-sm">Select Lab Room...</span>
+                  )}
+                  <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" />
+                </Button>
+              </div>
+
               <div className="space-y-2">
                 <Label htmlFor="password" className="text-sm font-medium">Admin Password</Label>
                 <Input
@@ -848,6 +1013,86 @@ function AdminDashboardInner() {
             </form>
           </div>
         </div>
+
+        {/* Room Selection CommandDialog */}
+        <CommandDialog
+          open={adminRoomOpen}
+          onOpenChange={setAdminRoomOpen}
+          title="Select Room"
+          description="Choose your lab room"
+        >
+          <CommandInput placeholder="Search room..." />
+          <CommandList className="max-h-[50vh] py-2">
+            <CommandEmpty>
+              <p className="py-4 text-sm text-muted-foreground text-center">No room found</p>
+            </CommandEmpty>
+            <CommandGroup>
+              {roomNumbers.map((room) => (
+                <CommandItem
+                  key={room}
+                  value={room}
+                  onSelect={(currentValue) => {
+                    setRoomNumber(currentValue)
+                    setAdminRoomOpen(false)
+                  }}
+                  className={`flex items-center justify-between mx-2 px-3 py-2.5 rounded-lg cursor-pointer ${roomNumber === room ? 'bg-primary/10' : ''}`}
+                >
+                  <span className="flex items-center gap-3">
+                    <Monitor className="w-4 h-4" />
+                    <span className={roomNumber === room ? 'font-medium' : ''}>
+                      Room {room}
+                    </span>
+                  </span>
+                  {roomNumber === room && (
+                    <CheckCircle2 className="w-4 h-4 text-primary" />
+                  )}
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          </CommandList>
+        </CommandDialog>
+
+        {/* Floating Help Button */}
+        <AnimatePresence>
+          <motion.button
+            id="support-fab"
+            initial={{ scale: 0, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            exit={{ scale: 0, opacity: 0 }}
+            transition={{ type: 'spring', stiffness: 260, damping: 20 }}
+            whileHover={{ scale: 1.1 }}
+            whileTap={{ scale: 0.9 }}
+            onClick={() => setSupportOpen(true)}
+            className="fixed bottom-4 right-4 sm:bottom-6 sm:right-6 z-50 w-11 h-11 sm:w-14 sm:h-14 rounded-full gradient-primary text-white shadow-lg glow-button flex items-center justify-center cursor-pointer"
+            aria-label="Open support"
+          >
+            <HelpCircle className="w-5 h-5 sm:w-6 sm:h-6" />
+          </motion.button>
+        </AnimatePresence>
+        
+        {/* Footer (PWA only) */}
+        {isStandalone && (
+          <footer className="py-6 md:py-12 px-4 border-t border-border/50 shrink-0">
+            <div className="max-w-6xl mx-auto">
+              <div className="flex flex-col items-center justify-center gap-4">
+                <p className="text-muted-foreground text-sm md:text-sm text-center" style={{ fontFamily: 'Consolas, monospace' }}>
+                  Made With <svg className="mx-1 inline-block" style={{ height: '18px', width: '18px' }} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <g id="SVGRepo_bgCarrier" strokeWidth="0"></g>
+                    <g id="SVGRepo_tracerCarrier" strokeLinecap="round" strokeLinejoin="round"></g>
+                    <g id="SVGRepo_iconCarrier">
+                      <path d="M2 9.1371C2 14 6.01943 16.5914 8.96173 18.9109C10 19.7294 11 20.5 12 20.5C13 20.5 14 19.7294 15.0383 18.9109C17.9806 16.5914 22 14 22 9.1371C22 4.27416 16.4998 0.825464 12 5.50063C7.50016 0.825464 2 4.27416 2 9.1371Z" fill="#e24040"></path>
+                    </g>
+                  </svg> By ISK
+                </p>
+                <SupportDialog externalOpen={supportOpen} onExternalOpenChange={setSupportOpen} hideTrigger={true} />
+              </div>
+            </div>
+          </footer>
+        )}
+        
+        {!isStandalone && (
+          <SupportDialog externalOpen={supportOpen} onExternalOpenChange={setSupportOpen} hideTrigger={true} />
+        )}
       </div>
     )
   }
@@ -915,6 +1160,17 @@ function AdminDashboardInner() {
                 </AlertDialogFooter>
               </AlertDialogContent>
             </AlertDialog>
+            {/* Download (LabShare Admin) button */}
+            {showAdminDownload && (
+              <Button
+                size="sm"
+                onClick={handleAdminDownload}
+                className="gradient-primary text-white glow-button hover:opacity-90 transition-all duration-300 rounded-full px-5 font-medium h-8 hidden md:flex items-center gap-2 border-0"
+              >
+                <Download className="w-4 h-4 group-hover:-translate-y-0.5 transition-transform duration-300" />
+                <span>Install</span>
+              </Button>
+            )}
           </div>
         </div>
 
@@ -1565,6 +1821,13 @@ function AdminDashboardInner() {
           </DialogContent>
         </Dialog>
       </div>
+
+      {/* iOS PWA Install Instructions Modal */}
+      <PWAInstallModal
+        open={showIOSModal}
+        onOpenChange={setShowIOSModal}
+        variant="admin"
+      />
 
       {/* Offline Dialog */}
       <OfflineDialog isOnline={isOnline} />

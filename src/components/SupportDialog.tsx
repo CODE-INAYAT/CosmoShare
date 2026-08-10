@@ -33,9 +33,10 @@ const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxs_YL5yNA4FV
 interface SupportDialogProps {
     externalOpen?: boolean
     onExternalOpenChange?: (open: boolean) => void
+    hideTrigger?: boolean
 }
 
-export function SupportDialog({ externalOpen, onExternalOpenChange }: SupportDialogProps) {
+export function SupportDialog({ externalOpen, onExternalOpenChange, hideTrigger }: SupportDialogProps) {
     const [open, setOpen] = useState(false)
 
     // Sync external open signal to internal state
@@ -403,14 +404,16 @@ export function SupportDialog({ externalOpen, onExternalOpenChange }: SupportDia
                     handleOpenChange(val);
                 }}
             >
-                <div className="flex items-center justify-center gap-2 text-xs md:text-sm text-muted-foreground">
-                    <span>Looking For Anything Else ?</span>
-                    <DrawerTrigger asChild>
-                        <button className="text-primary underline hover:underline font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-primary/20 rounded-sm">
-                            Click Here
-                        </button>
-                    </DrawerTrigger>
-                </div>
+                {!hideTrigger && (
+                    <div className="flex items-center justify-center gap-2 text-xs md:text-sm text-muted-foreground">
+                        <span>Looking For Anything Else ?</span>
+                        <DrawerTrigger asChild>
+                            <button className="text-primary underline hover:underline font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-primary/20 rounded-sm">
+                                Click Here
+                            </button>
+                        </DrawerTrigger>
+                    </div>
+                )}
                 <DrawerContent
                     className="p-4 !mt-0 !max-h-[100dvh] h-[100dvh] !rounded-none"
                     onCloseAutoFocus={(e) => e.preventDefault()}
@@ -428,14 +431,16 @@ export function SupportDialog({ externalOpen, onExternalOpenChange }: SupportDia
             if (!val) resetForm();
             handleOpenChange(val);
         }}>
-            <div className="flex items-center justify-center gap-2 text-xs md:text-sm text-muted-foreground">
-                <span>Looking For Anything Else ?</span>
-                <DialogTrigger asChild>
-                    <button className="text-primary underline hover:underline font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-primary/20 rounded-sm">
-                        Click Here
-                    </button>
-                </DialogTrigger>
-            </div>
+            {!hideTrigger && (
+                <div className="flex items-center justify-center gap-2 text-xs md:text-sm text-muted-foreground">
+                    <span>Looking For Anything Else ?</span>
+                    <DialogTrigger asChild>
+                        <button className="text-primary underline hover:underline font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-primary/20 rounded-sm">
+                            Click Here
+                        </button>
+                    </DialogTrigger>
+                </div>
+            )}
             <DialogContent
                 className="sm:max-w-md border-0 bg-background/95 backdrop-blur-xl max-h-[85vh] overflow-y-auto p-6 rounded-2xl scrollbar-hide"
                 onCloseAutoFocus={(e) => e.preventDefault()}

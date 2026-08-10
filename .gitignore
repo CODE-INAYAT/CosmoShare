@@ -52,3 +52,5 @@ server.log
 workers/signaling/accounts.json
 
 /SafeState_Repo
+
+/QRcode

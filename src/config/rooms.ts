@@ -19,6 +19,10 @@ export const roomNumbers: string[] = [
     "317",
 ]
 
+// Pre-compute a Set for O(1) time complexity lookups
+export const validRoomsSet = new Set<string>(roomNumbers)
+
+
 /**
  * Room display names (optional)
  * Uncomment and use if want custom labels for rooms

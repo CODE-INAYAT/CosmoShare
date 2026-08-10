@@ -12,6 +12,12 @@ import { Command, CommandDialog, CommandEmpty, CommandGroup, CommandInput, Comma
 import { Badge } from '@/components/ui/badge'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import {
   Loader2,
   Users,
   Printer,
@@ -31,7 +37,6 @@ import {
   Sun,
   Moon,
   ChevronDown,
-  Lock,
   Clock,
   CheckCircle2,
   Star,
@@ -50,7 +55,8 @@ import Image from 'next/image'
 import { useRouter } from 'next/navigation'
 import gsap from 'gsap'
 import { ScrollTrigger } from 'gsap/ScrollTrigger'
-import { roomNumbers } from '@/config/rooms'
+import { ScrollToPlugin } from 'gsap/ScrollToPlugin'
+import { roomNumbers, validRoomsSet } from '@/config/rooms'
 import { AUTO_LOGIN_ENABLED, AUTO_LOGIN_PASSWORD, hashPassword, verifyHash } from '@/config/autoLogin'
 import { URL_OBFUSCATION_ENABLED, encodeUrlData } from '@/config/urlObfuscation'
 import { SupportDialog } from '@/components/SupportDialog'
@@ -58,10 +64,14 @@ import { trackVisitor } from '@/config/analytics'
 import { StaggeredMenu } from '@/components/StaggeredMenu'
 import { VIDEO_CONFIG, VIDEO_PREVIEW_ENABLED } from '@/config/videoConfig'
 import { VideoModal } from '@/components/VideoModal'
+import { usePWAInstall } from '@/hooks/usePWAInstall'
+import { PWAInstallModal } from '@/components/PWAInstallModal'
+import { useIsMobile } from '@/hooks/use-mobile'
+import { useSmartPrefill } from '@/hooks/useSmartPrefill'
 
 // Register GSAP plugins
 if (typeof window !== 'undefined') {
-  gsap.registerPlugin(ScrollTrigger)
+  gsap.registerPlugin(ScrollTrigger, ScrollToPlugin)
 }
 
 // Animation variants — GPU-composited transforms only (opacity + translate)
@@ -243,7 +253,9 @@ function ThemeToggle() {
 
 export default function Home() {
   const { theme, setTheme, resolvedTheme } = useTheme()
-  const [userType, setUserType] = useState<'student' | 'admin'>('student')
+  const isMobile = useIsMobile()
+  const { isLoaded, getPrefilledRoom, getPrefilledName, recordJoin, recordName } = useSmartPrefill()
+  const [portalTab, setPortalTab] = useState<'oneshare' | 'labshare'>('oneshare')
   const [roomNumber, setRoomNumber] = useState('')
   const [name, setName] = useState('')
   const [password, setPassword] = useState('')
@@ -255,10 +267,90 @@ export default function Home() {
   const [isScrolled, setIsScrolled] = useState(false)
   const [roomOpen, setRoomOpen] = useState(false)
   const [supportOpen, setSupportOpen] = useState(false)
-  const [portalTab, setPortalTab] = useState<'oneshare' | 'labshare'>('oneshare')
   const [isNavAnimated, setIsNavAnimated] = useState(true)
   const [isMenuScrolling, setIsMenuScrolling] = useState(false)
   const router = useRouter()
+
+  // PWA standalone check
+  const [isStandalone, setIsStandalone] = useState(false)
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      setIsStandalone(
+        window.matchMedia('(display-mode: standalone)').matches ||
+        window.matchMedia('(display-mode: fullscreen)').matches ||
+        (window.navigator as any).standalone === true
+      )
+
+      // Handle QR code routing (?r=XXX)
+      const params = new URLSearchParams(window.location.search)
+      const rParam = params.get('r')
+      // Validate that the provided room actually exists using O(1) lookup
+      if (rParam && validRoomsSet.has(rParam)) {
+        setPortalTab('labshare')
+        setRoomNumber(rParam)
+
+        // Ensure scroll to the LabShare card perfectly in the center of viewport
+        setTimeout(() => {
+          const card = document.getElementById('labshare-card') || document.getElementById('portal')
+          if (card) {
+            // Hardware-accelerated, buttery smooth GSAP scroll
+            gsap.to(window, {
+              duration: 1,
+              scrollTo: {
+                y: card,
+                // Dynamically calculate offset to perfectly center the card in the viewport
+                offsetY: window.innerHeight / 2 - card.offsetHeight / 2
+              },
+              ease: 'power3.inOut'
+            })
+
+            // Focus the name input with blinking cursor, but prevent mobile keyboard popup
+            setTimeout(() => {
+              const nameInput = document.getElementById('name') as HTMLInputElement
+              if (nameInput) {
+                // The readonly hack allows programmatic focus (blinking cursor) 
+                // without triggering the soft keyboard on mobile devices
+                nameInput.readOnly = true
+                nameInput.focus({ preventScroll: true })
+                setTimeout(() => {
+                  nameInput.readOnly = false
+                }, 150)
+              }
+            }, 800) // Wait for GSAP smooth scroll to nearly finish
+          }
+        }, 300) // Give AnimatePresence enough time to swap cards
+      }
+    }
+  }, [])
+
+  useEffect(() => {
+    if (isLoaded) {
+      const pRoom = getPrefilledRoom(isMobile, 'student')
+      const pName = getPrefilledName()
+      if (pRoom && !roomNumber && validRoomsSet.has(pRoom)) setRoomNumber(pRoom)
+      if (isMobile && pName && !name) setName(pName)
+    }
+  }, [isLoaded, isMobile, getPrefilledRoom, getPrefilledName])
+
+  // PWA install
+  const { isInstallable, isInstalled, isIOS, promptInstall } = usePWAInstall()
+  const [showIOSModal, setShowIOSModal] = useState(false)
+  const [iosModalVariant, setIosModalVariant] = useState<'user' | 'admin'>('user')
+
+  const handleDownload = (variant: 'user' | 'admin') => {
+    if (isIOS) {
+      setIosModalVariant(variant)
+      setShowIOSModal(true)
+      return
+    }
+    if (variant === 'admin') {
+      promptInstall('/manifest-admin.webmanifest')
+    } else {
+      promptInstall()
+    }
+  }
+
+  const showDownloadButton = (isInstallable && !isInstalled) || isIOS
 
   // Refs for GSAP animations
   const heroRef = useRef<HTMLDivElement>(null)
@@ -427,7 +519,7 @@ export default function Home() {
 
           // Calculate available space in viewport (accounting for 80px sticky navbar)
           const navbarHeight = 80;
-          
+
           // The true visual center of the viewport (below the navbar)
           const startTrigger = () => {
             const availableHeight = window.innerHeight - navbarHeight;
@@ -450,7 +542,7 @@ export default function Home() {
           const applyPermanentScale = () => {
             gsap.set(previewCard, { scale: getTargetScale() });
           };
-          
+
           applyPermanentScale();
           ScrollTrigger.addEventListener('refreshInit', applyPermanentScale);
 
@@ -488,7 +580,7 @@ export default function Home() {
             { scale: 3, opacity: 0, ease: 'power1.inOut' },
             0
           )
-          
+
           tl.fromTo(labshareThumbnail,
             { scale: 0.7, opacity: 0 },
             { scale: 1, opacity: 1, ease: 'power1.inOut' },
@@ -652,6 +744,11 @@ export default function Home() {
         userType: 'student'
       }
 
+      recordJoin(roomNumber, isMobile, 'student')
+      if (isMobile) {
+        recordName(name)
+      }
+
       if (URL_OBFUSCATION_ENABLED) {
         const token = encodeUrlData({ room: roomNumber, user: userData })
         router.push(`/student?s=${token}`)
@@ -660,30 +757,6 @@ export default function Home() {
       }
     } catch (error) {
       setError('Failed to join room. Please try again.')
-      setIsLoading(false)
-    }
-  }
-
-  const handleAdminSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!roomNumber || !password) {
-      setError('Please fill in all fields')
-      return
-    }
-
-    setIsLoading(true)
-    setError('')
-
-    try {
-      if (password !== AUTO_LOGIN_PASSWORD && !(AUTO_LOGIN_ENABLED && verifyHash(password))) {
-        setError('Invalid password')
-        setIsLoading(false)
-        return
-      }
-
-      router.push(`/admin?room=${roomNumber}`)
-    } catch (error) {
-      setError('Failed to authenticate. Please try again.')
       setIsLoading(false)
     }
   }
@@ -806,9 +879,45 @@ export default function Home() {
             <a href="#portal" onClick={(e) => scrollToSection(e, 'portal')} className="text-muted-foreground hover:text-foreground transition-colors text-sm font-medium">Get Started</a>
             <a href="#how-it-works" onClick={(e) => scrollToSection(e, 'how-it-works')} className="text-muted-foreground hover:text-foreground transition-colors text-sm font-medium">How It Works</a>
             <a href="#features" onClick={(e) => scrollToSection(e, 'features')} className="text-muted-foreground hover:text-foreground transition-colors text-sm font-medium">Features</a>
+            
+            {/* Desktop Download Dropdown */}
+            {showDownloadButton && (
+              <div className="hidden md:flex ml-2">
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      size="sm"
+                      className="gradient-primary text-white glow-button hover:opacity-90 transition-all duration-300 rounded-full px-5 font-medium border-0 gap-2"
+                    >
+                      <Download className="w-4 h-4" />
+                      Install
+                      <ChevronDown className="w-3 h-3 opacity-80 ml-1" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-56">
+                    <DropdownMenuItem onClick={() => handleDownload('user')} className="gap-3 py-2.5 cursor-pointer group">
+                      <Download className="w-4 h-4 text-primary group-focus:text-accent-foreground" />
+                      <div>
+                        <p className="font-medium text-sm">Install</p>
+                        <p className="text-xs text-muted-foreground group-focus:text-accent-foreground/80">Install CosmoShare app</p>
+                      </div>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => handleDownload('admin')} className="gap-3 py-2.5 cursor-pointer group">
+                      <Printer className="w-4 h-4 text-teal-500 group-focus:text-accent-foreground" />
+                      <div>
+                        <p className="font-medium text-sm">Install (LabShare Admin)</p>
+                        <p className="text-xs text-muted-foreground group-focus:text-accent-foreground/80">Install admin dashboard app</p>
+                      </div>
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
+            )}
           </div>
 
           <div className="flex items-center gap-3">
+
+
             {/* Desktop ThemeToggle */}
             <div className="hidden md:flex">
               <ThemeToggle />
@@ -839,10 +948,22 @@ export default function Home() {
         items={[
           { label: 'Get Started', ariaLabel: 'Get Started Section', link: '#portal' },
           { label: 'How It Works', ariaLabel: 'How It Works Section', link: '#how-it-works' },
-          { label: 'Features', ariaLabel: 'Features Section', link: '#features' }
+          { label: 'Features', ariaLabel: 'Features Section', link: '#features' },
+          ...(showDownloadButton ? [
+            { label: 'Install', ariaLabel: 'Install CosmoShare App', link: '#download', isButton: true }
+          ] : [])
         ]}
         onItemClick={(item, e) => {
           e.preventDefault();
+          // Handle download items in mobile menu
+          if (item.link === '#download') {
+            handleDownload('user');
+            return;
+          }
+          if (item.link === '#download-admin') {
+            handleDownload('admin');
+            return;
+          }
           setIsMenuScrolling(true);
           const targetId = item.link.replace('#', '');
           const element = document.getElementById(targetId);
@@ -1108,6 +1229,7 @@ export default function Home() {
               ) : (
                 <motion.div
                   key="labshare-card"
+                  id="labshare-card"
                   initial={{ opacity: 0, y: 15 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -15 }}
@@ -1115,264 +1237,147 @@ export default function Home() {
                   className="w-full"
                 >
                   <Card className="glass-card shimmer-border rounded-[45px] overflow-hidden">
-                    {/* Secondary Toggle (Student vs Lab Admin) */}
-                    <div className="flex border-b border-border/10 w-full">
-                      {[
-                        { id: 'student', label: 'Student' },
-                        { id: 'admin', label: 'Lab Admin' }
-                      ].map((role) => (
-                        <button
-                          key={role.id}
-                          type="button"
-                          onClick={() => {
-                            setError('')
-                            setUserType(role.id as 'student' | 'admin')
-                          }}
-                          className={`flex-1 py-3.5 text-sm font-semibold transition-colors duration-200 relative ${userType === role.id
-                            ? 'text-primary'
-                            : 'text-muted-foreground hover:text-foreground'
-                            }`}
-                        >
-                          {userType === role.id && (
-                            <motion.div
-                              layoutId="secondary-tab-underline"
-                              className="absolute bottom-0 left-6 right-6 h-0.5 bg-primary rounded-full"
-                              transition={{ type: 'spring', stiffness: 350, damping: 28 }}
-                            />
-                          )}
-                          <span>{role.label}</span>
-                        </button>
-                      ))}
-                    </div>
-
                     <CardContent className="p-6 pt-6">
-                      <AnimatePresence mode="wait">
-                        {userType === 'student' ? (
+                      <motion.div
+                        key="student-form"
+                        initial={{ opacity: 0, x: -15 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        exit={{ opacity: 0, x: 15 }}
+                        transition={{ duration: 0.2 }}
+                      >
+                        <div className="text-center pb-6">
                           <motion.div
-                            key="student-form"
-                            initial={{ opacity: 0, x: -15 }}
-                            animate={{ opacity: 1, x: 0 }}
-                            exit={{ opacity: 0, x: 15 }}
-                            transition={{ duration: 0.2 }}
+                            initial={{ opacity: 0, y: 12, scale: 0.94 }}
+                            animate={{ opacity: 1, y: 0, scale: 1 }}
+                            transition={{
+                              duration: 0.45,
+                              ease: [0.16, 1, 0.3, 1],
+                              delay: 0.05
+                            }}
+                            className="w-20 h-20 mx-auto mb-4 rounded-[1.75rem] gradient-primary flex items-center justify-center"
                           >
-                            <div className="text-center pb-6">
-                              <motion.div
-                                initial={{ opacity: 0, y: 12, scale: 0.94 }}
-                                animate={{ opacity: 1, y: 0, scale: 1 }}
-                                transition={{
-                                  duration: 0.45,
-                                  ease: [0.16, 1, 0.3, 1],
-                                  delay: 0.05
-                                }}
-                                className="w-20 h-20 mx-auto mb-4 rounded-[1.75rem] gradient-primary flex items-center justify-center"
-                              >
-                                <Users className="w-10 h-10 text-white" />
-                              </motion.div>
-                              <h3 className="text-2xl font-bold text-foreground">Student Portal</h3>
-                              <p className="text-sm text-muted-foreground mt-1">Join your lab room to start sharing</p>
-                            </div>
-
-                            <form onSubmit={handleStudentSubmit} className="space-y-4">
-                              <div className="space-y-1.5">
-                                <Label htmlFor="student-room" className="text-muted-foreground text-xs font-medium pl-2">Lab Room Number</Label>
-                                <Button
-                                  type="button"
-                                  variant="outline"
-                                  onClick={() => setRoomOpen(true)}
-                                  className="w-full justify-between bg-secondary/20 dark:bg-secondary/10 border-border/80 hover:border-primary/50 text-foreground rounded-full h-11 hover:bg-secondary/40 transition-colors pl-4 pr-5 flex items-center"
-                                >
-                                  {roomNumber ? (
-                                    <span className="font-medium text-foreground">Room {roomNumber}</span>
-                                  ) : (
-                                    <span className="text-muted-foreground text-sm">Select Lab Room...</span>
-                                  )}
-                                  <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" />
-                                </Button>
-                              </div>
-
-                              <div className="space-y-1.5">
-                                <Label htmlFor="name" className="text-muted-foreground text-xs font-medium pl-2">Your Name</Label>
-                                <Input
-                                  id="name"
-                                  type="text"
-                                  placeholder="Enter your name"
-                                  value={name}
-                                  onChange={(e) => setName(e.target.value.toUpperCase())}
-                                  minLength={3}
-                                  maxLength={30}
-                                  autoComplete="name"
-                                  autoCapitalize="characters"
-                                  className="bg-secondary/20 dark:bg-secondary/10 border-border/80 text-foreground rounded-full h-11 px-5 placeholder:text-muted-foreground focus-visible:ring-primary focus-visible:ring-offset-0 uppercase font-semibold text-sm transition-colors"
-                                />
-                                <div className="flex items-center justify-between mt-1 px-2">
-                                  <span className={`text-[11px] transition-colors duration-200 ${name.length === 0
-                                    ? 'text-muted-foreground'
-                                    : name.length < 3
-                                      ? 'text-red-500 font-medium'
-                                      : name.length >= 25
-                                        ? 'text-amber-500'
-                                        : 'text-muted-foreground'
-                                    }`}>
-                                    {name.length === 0
-                                      ? 'Min 3 characters'
-                                      : name.length < 3
-                                        ? `${3 - name.length} more needed`
-                                        : `${name.length}/30 characters`}
-                                  </span>
-                                  {name.length >= 3 && (
-                                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
-                                  )}
-                                </div>
-                              </div>
-
-                              {/* Error Message */}
-                              {error && (
-                                <div className="bg-destructive/5 border border-destructive/20 text-destructive rounded-2xl p-4.5 text-xs flex items-start gap-2.5">
-                                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-                                  <span>{error}</span>
-                                </div>
-                              )}
-
-                              {/* Suggested Names */}
-                              {suggestedNames.length > 0 && (
-                                <div className="space-y-1.5">
-                                  <Label className="text-muted-foreground text-xs font-medium pl-2">Suggested Names</Label>
-                                  <div className="flex flex-wrap gap-2 px-1">
-                                    {suggestedNames.map((suggestedName, index) => (
-                                      <Badge
-                                        key={index}
-                                        variant="secondary"
-                                        className="bg-secondary hover:bg-primary/20 hover:text-primary cursor-pointer transition-colors rounded-full px-3.5 py-1 font-medium"
-                                        onClick={() => handleSuggestedNameClick(suggestedName)}
-                                      >
-                                        {suggestedName}
-                                      </Badge>
-                                    ))}
-                                  </div>
-                                </div>
-                              )}
-
-                              <div className="flex justify-center pt-2">
-                                <Button
-                                  type="submit"
-                                  className="w-fit min-w-[200px] px-8 h-11 gradient-primary text-white rounded-full group flex items-center justify-center font-semibold text-sm transition-opacity hover:opacity-95 glow-button"
-                                  disabled={isLoading}
-                                >
-                                  {isLoading ? (
-                                    <>
-                                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                                      Joining Room...
-                                    </>
-                                  ) : (
-                                    <>
-                                      Join Lab Room
-                                      <ArrowRight className="w-4 h-4 ml-2 group-hover:translate-x-0.5 transition-transform" />
-                                    </>
-                                  )}
-                                </Button>
-                              </div>
-                            </form>
+                            <Users className="w-10 h-10 text-white" />
                           </motion.div>
-                        ) : (
-                          <motion.div
-                            key="admin-form"
-                            initial={{ opacity: 0, x: 15 }}
-                            animate={{ opacity: 1, x: 0 }}
-                            exit={{ opacity: 0, x: -15 }}
-                            transition={{ duration: 0.2 }}
-                          >
-                            <div className="text-center pb-6">
-                              <motion.div
-                                initial={{ opacity: 0, y: 12, scale: 0.94 }}
-                                animate={{ opacity: 1, y: 0, scale: 1 }}
-                                transition={{
-                                  duration: 0.45,
-                                  ease: [0.16, 1, 0.3, 1],
-                                  delay: 0.05
-                                }}
-                                className="w-20 h-20 mx-auto mb-4 rounded-[1.75rem] gradient-primary flex items-center justify-center"
-                              >
-                                <Lock className="w-10 h-10 text-white" />
-                              </motion.div>
-                              <h3 className="text-2xl font-bold text-foreground">Admin Portal</h3>
-                              <p className="text-sm text-muted-foreground mt-1">Access the admin dashboard</p>
+                          <h3 className="text-2xl font-bold text-foreground">Lab Portal</h3>
+                          <p className="text-sm text-muted-foreground mt-1">Join your lab room to start sharing</p>
+                        </div>
+
+                        <form onSubmit={handleStudentSubmit} className="space-y-4">
+                          <div className="space-y-1.5">
+                            <Label htmlFor="student-room" className="text-muted-foreground text-xs font-medium pl-2">Lab Room Number</Label>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              onClick={() => setRoomOpen(true)}
+                              className="w-full justify-between bg-secondary/20 dark:bg-secondary/10 border-border/80 hover:border-primary/50 text-foreground rounded-full h-11 hover:bg-secondary/40 transition-colors pl-4 pr-5 flex items-center"
+                            >
+                              {roomNumber ? (
+                                <span className="font-medium text-foreground">Room {roomNumber}</span>
+                              ) : (
+                                <span className="text-muted-foreground text-sm">Select Lab Room...</span>
+                              )}
+                              <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" />
+                            </Button>
+                          </div>
+
+                          <div className="space-y-1.5">
+                            <Label htmlFor="name" className="text-muted-foreground text-xs font-medium pl-2">Your Name</Label>
+                            <Input
+                              id="name"
+                              type="text"
+                              placeholder="Enter your name"
+                              value={name}
+                              onChange={(e) => setName(e.target.value.toUpperCase())}
+                              minLength={3}
+                              maxLength={30}
+                              autoComplete="name"
+                              autoCapitalize="characters"
+                              className="bg-secondary/20 dark:bg-secondary/10 border-border/80 text-foreground rounded-full h-11 px-5 placeholder:text-muted-foreground focus-visible:ring-primary focus-visible:ring-offset-0 uppercase font-semibold text-sm transition-colors"
+                            />
+                            <div className="flex items-center justify-between mt-1 px-2">
+                              <span className={`text-[11px] transition-colors duration-200 ${name.length === 0
+                                ? 'text-muted-foreground'
+                                : name.length < 3
+                                  ? 'text-red-500 font-medium'
+                                  : name.length >= 25
+                                    ? 'text-amber-500'
+                                    : 'text-muted-foreground'
+                                }`}>
+                                {name.length === 0
+                                  ? 'Min 3 characters'
+                                  : name.length < 3
+                                    ? `${3 - name.length} more needed`
+                                    : `${name.length}/30 characters`}
+                              </span>
+                              {name.length >= 3 && (
+                                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                              )}
                             </div>
+                          </div>
 
-                            <form onSubmit={handleAdminSubmit} className="space-y-4">
-                              <div className="space-y-1.5">
-                                <Label htmlFor="admin-room" className="text-muted-foreground text-xs font-medium pl-2">Lab Room Number</Label>
-                                <Button
-                                  type="button"
-                                  variant="outline"
-                                  onClick={() => setRoomOpen(true)}
-                                  className="w-full justify-between bg-secondary/20 dark:bg-secondary/10 border-border/80 text-foreground rounded-full h-11 hover:bg-secondary/40 transition-colors pl-4 pr-5 flex items-center"
-                                >
-                                  {roomNumber ? (
-                                    <span className="font-medium text-foreground">Room {roomNumber}</span>
-                                  ) : (
-                                    <span className="text-muted-foreground text-sm">Select Lab Room...</span>
-                                  )}
-                                  <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" />
-                                </Button>
-                              </div>
+                          {/* Error Message */}
+                          {error && (
+                            <div className="bg-destructive/5 border border-destructive/20 text-destructive rounded-2xl p-4.5 text-xs flex items-start gap-2.5">
+                              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                              <span>{error}</span>
+                            </div>
+                          )}
 
-                              <div className="space-y-1.5">
-                                <Label htmlFor="password" className="text-muted-foreground text-xs font-medium pl-2">Admin Password</Label>
-                                <Input
-                                  id="password"
-                                  type={AUTO_LOGIN_ENABLED && verifyHash(password) ? 'text' : 'password'}
-                                  placeholder="Enter admin password"
-                                  value={password}
-                                  onChange={(e) => setPassword(e.target.value)}
-                                  className={`bg-secondary/20 dark:bg-secondary/10 border-border/80 rounded-full h-11 px-5 placeholder:text-muted-foreground focus-visible:ring-primary focus-visible:ring-offset-0 transition-colors ${AUTO_LOGIN_ENABLED && verifyHash(password) ? 'text-[9px] font-mono tracking-tight text-muted-foreground' : 'text-foreground font-semibold text-sm'
-                                    }`}
-                                  readOnly={AUTO_LOGIN_ENABLED && verifyHash(password)}
-                                />
-                                {AUTO_LOGIN_ENABLED && verifyHash(password) && (
-                                  <motion.div
-                                    initial={{ opacity: 0, y: -4 }}
-                                    animate={{ opacity: 1, y: 0 }}
-                                    className="flex items-center gap-2 px-3 py-2 rounded-lg border border-amber-400/20 bg-amber-50/50 dark:bg-amber-950/20"
+                          {/* Suggested Names */}
+                          {suggestedNames.length > 0 && (
+                            <div className="space-y-1.5">
+                              <Label className="text-muted-foreground text-xs font-medium pl-2">Suggested Names</Label>
+                              <div className="flex flex-wrap gap-2 px-1">
+                                {suggestedNames.map((suggestedName, index) => (
+                                  <Badge
+                                    key={index}
+                                    variant="secondary"
+                                    className="bg-secondary hover:bg-primary/20 hover:text-primary cursor-pointer transition-colors rounded-full px-3.5 py-1 font-medium"
+                                    onClick={() => handleSuggestedNameClick(suggestedName)}
                                   >
-                                    <div className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse shrink-0" />
-                                    <p className="text-[11px] font-medium text-amber-700 dark:text-amber-300">
-                                      Test mode — password auto-filled
-                                    </p>
-                                  </motion.div>
-                                )}
+                                    {suggestedName}
+                                  </Badge>
+                                ))}
                               </div>
+                            </div>
+                          )}
 
-                              {/* Error Message */}
-                              {error && (
-                                <div className="bg-destructive/5 border border-destructive/20 text-destructive rounded-2xl p-4.5 text-xs flex items-start gap-2.5">
-                                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-                                  <span>{error}</span>
-                                </div>
+                          <div className="flex justify-center pt-2">
+                            <Button
+                              type="submit"
+                              className="w-fit min-w-[200px] px-8 h-11 gradient-primary text-white rounded-full group flex items-center justify-center font-semibold text-sm transition-opacity hover:opacity-95 glow-button"
+                              disabled={isLoading}
+                            >
+                              {isLoading ? (
+                                <>
+                                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                  Joining Room...
+                                </>
+                              ) : (
+                                <>
+                                  Join Lab Room
+                                  <ArrowRight className="w-4 h-4 ml-2 group-hover:translate-x-0.5 transition-transform" />
+                                </>
                               )}
+                            </Button>
+                          </div>
 
-                              <div className="flex justify-center pt-2">
-                                <Button
-                                  type="submit"
-                                  className="w-fit min-w-[200px] px-8 h-11 gradient-primary text-white rounded-full group flex items-center justify-center font-semibold text-sm transition-opacity hover:opacity-95 glow-button"
-                                  disabled={isLoading}
-                                >
-                                  {isLoading ? (
-                                    <>
-                                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                                      Authenticating...
-                                    </>
-                                  ) : (
-                                    <>
-                                      Access Admin Panel
-                                      <ArrowRight className="w-4 h-4 ml-2 group-hover:translate-x-0.5 transition-transform" />
-                                    </>
-                                  )}
-                                </Button>
-                              </div>
-                            </form>
-                          </motion.div>
-                        )}
-                      </AnimatePresence>
+                          {/* Secondary Admin CTA */}
+                          <div className="flex justify-center pt-1">
+                            <button
+                              type="button"
+                              onClick={() => router.push('/admin')}
+                              className="group inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-primary transition-colors duration-300"
+                            >
+                              <span className="border-b border-dashed border-muted-foreground/40 group-hover:border-primary/60 transition-colors pb-px">Want to join as Lab Admin?</span>
+                              <span className="font-semibold text-primary/80 group-hover:text-primary transition-colors flex items-center gap-0.5">
+                                Click here
+                                <ArrowRight className="w-3 h-3 group-hover:translate-x-0.5 transition-transform" />
+                              </span>
+                            </button>
+                          </div>
+                        </form>
+                      </motion.div>
                     </CardContent>
                   </Card>
                 </motion.div>
@@ -1450,7 +1455,7 @@ export default function Home() {
               <div className="video-preview-card relative w-full origin-center will-change-transform">
                 <div className="glass-card rounded-[45px] shadow-2xl relative overflow-hidden group bg-background/80 backdrop-blur-xl border-primary/20">
                   <div className="relative aspect-[16/9] w-full overflow-hidden bg-black/5">
-                    
+
                     {/* Base Thumbnail (OneShare) — Flies forward and fades out */}
                     <div className="oneshare-thumbnail absolute inset-0 origin-center will-change-[opacity,transform]">
                       <Image
@@ -1460,7 +1465,7 @@ export default function Home() {
                         className="object-cover transition-transform duration-700 group-hover:scale-105"
                       />
                     </div>
-                    
+
                     {/* Incoming Thumbnail (LabShare) — Faded in by GSAP */}
                     <div className="labshare-thumbnail absolute inset-0 opacity-0 will-change-[opacity,transform]">
                       <Image
@@ -1470,7 +1475,7 @@ export default function Home() {
                         className="object-cover transition-transform duration-700 group-hover:scale-105"
                       />
                     </div>
-                    
+
                     {/* Overlay and Dynamic Play Button */}
                     <div className="absolute inset-0 bg-black/20 group-hover:bg-black/30 transition-colors duration-500 flex items-center justify-center">
                       <motion.button
@@ -1684,12 +1689,14 @@ export default function Home() {
       {/* Footer */}
       <footer ref={footerRef} className="py-6 md:py-12 px-4 border-t border-border/50">
         <div className="max-w-6xl mx-auto">
-          <div className="flex flex-col md:flex-row items-center justify-between gap-4 md:gap-6">
-            <div className="flex items-center gap-2">
-              <Image src="/logo.svg" alt="CosmoShare Logo" width={120} height={40} className="block dark:hidden w-auto h-8 md:h-10" />
-              <Image src="/logoDark.svg" alt="CosmoShare Logo" width={120} height={40} className="hidden dark:block w-auto h-8 md:h-10" />
-              <span className="text-base md:text-lg font-bold gradient-text">CosmoShare</span>
-            </div>
+          <div className={`flex flex-col md:flex-row items-center gap-4 md:gap-6 ${isStandalone ? 'justify-center' : 'justify-between'}`}>
+            {!isStandalone && (
+              <div className="flex items-center gap-2">
+                <Image src="/logo.svg" alt="CosmoShare Logo" width={120} height={40} className="block dark:hidden w-auto h-8 md:h-10" />
+                <Image src="/logoDark.svg" alt="CosmoShare Logo" width={120} height={40} className="hidden dark:block w-auto h-8 md:h-10" />
+                <span className="text-base md:text-lg font-bold gradient-text">CosmoShare</span>
+              </div>
+            )}
             <p className="text-muted-foreground text-sm md:text-sm text-center" style={{ fontFamily: 'Consolas, monospace' }}>
               Made With <svg className="mx-1 inline-block" style={{ height: '18px', width: '18px' }} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                 <g id="SVGRepo_bgCarrier" strokeWidth="0"></g>
@@ -1699,7 +1706,7 @@ export default function Home() {
                 </g>
               </svg> By ISK
             </p>
-            <SupportDialog externalOpen={supportOpen} onExternalOpenChange={setSupportOpen} />
+            <SupportDialog externalOpen={supportOpen} onExternalOpenChange={setSupportOpen} hideTrigger={isStandalone} />
           </div>
         </div >
       </footer >
@@ -1709,6 +1716,14 @@ export default function Home() {
         onClose={() => setActiveVideo(null)}
         videoUrl={activeVideo}
       />
+
+      {/* iOS PWA Install Instructions Modal */}
+      <PWAInstallModal
+        open={showIOSModal}
+        onOpenChange={setShowIOSModal}
+        variant={iosModalVariant}
+      />
+
     </div >
   )
 }
