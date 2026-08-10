@@ -3,7 +3,7 @@
 // CosmoShare Service Worker v2
 // Enables PWA installability, offline shell support, and offline fallback
 
-const CACHE_NAME = 'cosmoshare-v2'
+const CACHE_NAME = 'cosmoshare-v3'
 
 // Shell assets to pre-cache during install (app shell)
 const PRECACHE_ASSETS = [

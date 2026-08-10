@@ -8,6 +8,16 @@ export function ServiceWorkerRegistration() {
       typeof window !== 'undefined' &&
       'serviceWorker' in navigator
     ) {
+      if (process.env.NODE_ENV !== 'production') {
+        navigator.serviceWorker.getRegistrations().then((registrations) => {
+          for (let registration of registrations) {
+            registration.unregister()
+            console.log('[PWA] Service Worker unregistered in development mode')
+          }
+        })
+        return
+      }
+
       // Register after page load to avoid competing with critical resources
       window.addEventListener('load', () => {
         navigator.serviceWorker

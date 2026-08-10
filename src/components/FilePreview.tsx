@@ -1,7 +1,8 @@
 'use client'
 
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { generateGradient } from '@/lib/avatarUtils'
+import { motion, AnimatePresence } from 'framer-motion'
 import React from 'react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -42,12 +43,15 @@ import {
   MoreHorizontal,
   MapPin,
   User,
-  Phone
+  Phone,
+  Loader2,
+  MousePointer2
 } from 'lucide-react'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { toast } from '@/hooks/use-toast'
 import { SHOW_SHARING_METHOD } from '@/config/sharingMethod'
+import { SHOW_PRINTING_GUIDE } from '@/config/printingGuide'
 
 interface RecipientInfo { id: string; name: string; uniqueId: string }
 
@@ -238,6 +242,8 @@ function FilePreviewInner({ file, senderName, senderUniqueId, recipients, timest
   const [copiedCode, setCopiedCode] = useState(false)
   const [meatballsOpen, setMeatballsOpen] = useState(false)
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
+  const [iframeLoaded, setIframeLoaded] = useState(false)
+  const [guideStopped, setGuideStopped] = useState(false)
 
   const triggerWhatsAppShare = async () => {
     try {
@@ -340,6 +346,8 @@ function FilePreviewInner({ file, senderName, senderUniqueId, recipients, timest
 
   useEffect(() => {
     if (!isPreviewOpen) return
+    setIframeLoaded(false)
+    setGuideStopped(false)
     let revokeUrl: string | null = null
     try {
       if (file.isLink && file.linkUrl) {
@@ -365,6 +373,29 @@ function FilePreviewInner({ file, senderName, senderUniqueId, recipients, timest
     }
     return () => { if (revokeUrl) { try { URL.revokeObjectURL(revokeUrl) } catch { } } }
   }, [isPreviewOpen, file])
+
+  useEffect(() => {
+    if (!isPreviewOpen || guideStopped || !iframeLoaded) return
+    const stopGuide = () => setGuideStopped(true)
+    
+    // Auto-dismiss the guide cleanly after exactly 6 iterations (4s * 6 = 24s)
+    // This triggers the parent's `exit` animation and removes the pill completely.
+    const timeoutId = setTimeout(stopGuide, 24000)
+
+    window.addEventListener('blur', stopGuide)
+    window.addEventListener('keydown', stopGuide)
+    window.addEventListener('wheel', stopGuide, { capture: true, passive: true })
+    window.addEventListener('touchmove', stopGuide, { capture: true, passive: true })
+    window.addEventListener('scroll', stopGuide, { capture: true, passive: true })
+    return () => {
+      clearTimeout(timeoutId)
+      window.removeEventListener('blur', stopGuide)
+      window.removeEventListener('keydown', stopGuide)
+      window.removeEventListener('wheel', stopGuide, { capture: true } as any)
+      window.removeEventListener('touchmove', stopGuide, { capture: true } as any)
+      window.removeEventListener('scroll', stopGuide, { capture: true } as any)
+    }
+  }, [isPreviewOpen, guideStopped, iframeLoaded])
 
   const handleDownload = () => {
     if (file.fileType === 'contact' || file.fileType === 'location') {
@@ -420,10 +451,96 @@ function FilePreviewInner({ file, senderName, senderUniqueId, recipients, timest
       return <audio src={previewUrl} controls className="w-full" />
     }
     if (file.fileType.includes('pdf') || (file.isLink && file.linkUrl && isGoogleDocsLink(file.linkUrl))) {
+      const isDocs = file.isLink && file.linkUrl && isGoogleDocsLink(file.linkUrl)
+      const showOverlay = isDocs && mode === 'dialog'
+
       if (mode === 'dialog') {
-        return <iframe src={previewUrl} className="w-full h-full" title={file.fileName} />
+        return (
+          <div className="relative w-full h-full" onPointerDown={() => setGuideStopped(true)}>
+            <iframe 
+              src={previewUrl} 
+              className="w-full h-full border-0" 
+              title={file.fileName} 
+              onLoad={() => setIframeLoaded(true)} 
+            />
+            
+            {showOverlay && !iframeLoaded && (
+              <div className="absolute inset-0 bg-background/50 backdrop-blur-sm flex flex-col items-center justify-center z-10 transition-opacity">
+                <Loader2 className="w-10 h-10 animate-spin text-primary mb-4" />
+                <p className="text-sm font-medium text-foreground">Loading Document...</p>
+              </div>
+            )}
+
+            {showOverlay && iframeLoaded && !guideStopped && SHOW_PRINTING_GUIDE && (
+              <AnimatePresence>
+                <motion.div 
+                  initial={{ opacity: 0, y: 50, x: "-50%" }}
+                  animate={{ opacity: 1, y: 0, x: "-50%" }}
+                  exit={{ opacity: 0, y: 50, x: "-50%" }}
+                  transition={{ duration: 0.4, ease: "easeOut" }}
+                  className="absolute bottom-8 left-1/2 pointer-events-none z-20 flex items-center justify-center"
+                >
+                  <div className="relative bg-slate-900/95 dark:bg-slate-900/95 backdrop-blur-xl px-2 rounded-full shadow-[0_10px_40px_-10px_rgba(0,0,0,0.6)] border border-slate-700/50 overflow-hidden flex items-center justify-center h-14 w-64">
+                    {/* Subtle pulsing background glow */}
+                    <motion.div
+                      className="absolute inset-0 bg-white/5"
+                      animate={{ opacity: [0, 0.1, 0] }}
+                      transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
+                    />
+
+                    <motion.div 
+                      className="absolute inset-0 flex items-center justify-center gap-3 text-white"
+                      animate={{
+                        opacity: [0, 1, 1, 0, 0],
+                        y: [15, 0, 0, -15, -15],
+                      }}
+                      transition={{ duration: 4, times: [0, 0.15, 0.4, 0.5, 1], repeat: 5 }}
+                    >
+                      <motion.div 
+                        animate={{ scale: [1, 0.8, 1] }} 
+                        transition={{ duration: 4, times: [0, 0.25, 1], repeat: 5, ease: "easeInOut" }}
+                        className="bg-white/10 p-1.5 rounded-full"
+                      >
+                        <MousePointer2 className="w-5 h-5 text-white" />
+                      </motion.div>
+                      <span className="text-base font-semibold tracking-tight">1. Click Document</span>
+                    </motion.div>
+
+                    <motion.div 
+                      className="absolute inset-0 flex items-center justify-center gap-3 text-white"
+                      animate={{
+                        opacity: [0, 0, 1, 1, 0],
+                        y: [15, 15, 0, 0, -15],
+                      }}
+                      transition={{ duration: 4, times: [0, 0.5, 0.65, 0.9, 1], repeat: 5 }}
+                    >
+                      <div className="flex items-center gap-1.5">
+                        <motion.kbd 
+                          animate={{ y: [0, 2, 0], scale: [1, 0.95, 1], boxShadow: ["0 3px 0 rgba(255,255,255,0.2)", "0 0px 0 rgba(255,255,255,0.2)", "0 3px 0 rgba(255,255,255,0.2)"] }}
+                          transition={{ duration: 4, times: [0, 0.7, 1], repeat: 5 }}
+                          className="px-2 py-1 bg-slate-800 text-white rounded-md border border-slate-600 font-mono text-sm font-bold"
+                        >
+                          Ctrl
+                        </motion.kbd>
+                        <span className="text-sm font-bold opacity-70">+</span>
+                        <motion.kbd 
+                          animate={{ y: [0, 2, 0], scale: [1, 0.95, 1], boxShadow: ["0 3px 0 rgba(255,255,255,0.2)", "0 0px 0 rgba(255,255,255,0.2)", "0 3px 0 rgba(255,255,255,0.2)"] }}
+                          transition={{ duration: 4, times: [0, 0.75, 1], repeat: 5 }}
+                          className="px-2 py-1 bg-slate-800 text-white rounded-md border border-slate-600 font-mono text-sm font-bold"
+                        >
+                          P
+                        </motion.kbd>
+                      </div>
+                      <span className="text-base font-semibold tracking-tight">2. Print</span>
+                    </motion.div>
+                  </div>
+                </motion.div>
+              </AnimatePresence>
+            )}
+          </div>
+        )
       }
-      return <iframe src={previewUrl} className="w-full h-[80vh] rounded-lg shadow-lg" title={file.fileName} />
+      return <iframe src={previewUrl} className="w-full h-[80vh] rounded-lg shadow-lg border-0" title={file.fileName} />
     }
     if (file.isLink) {
       return mode === 'dialog' ? (
@@ -872,6 +989,7 @@ function FilePreviewInner({ file, senderName, senderUniqueId, recipients, timest
         {file.fileType === 'code' && file.message ? (
           /* Code Preview Dialog - full-screen code viewer */
           <DialogContent
+            aria-describedby={undefined}
             showCloseButton={false}
             onOpenAutoFocus={(event) => event.preventDefault()}
             className="max-w-[95vw] sm:max-w-2xl h-[80vh] sm:h-[85vh] p-0 rounded-2xl overflow-hidden flex flex-col"
@@ -927,6 +1045,7 @@ function FilePreviewInner({ file, senderName, senderUniqueId, recipients, timest
         ) : (
           /* Standard file/link preview dialog */
           <DialogContent
+            aria-describedby={undefined}
             showCloseButton={false}
             onOpenAutoFocus={(event) => event.preventDefault()}
             className="max-w-[95vw] sm:max-w-[92vw] w-[95vw] sm:w-[92vw] h-[80vh] sm:h-[85vh] p-0 rounded-2xl overflow-hidden flex flex-col"
@@ -990,7 +1109,7 @@ function FilePreviewInner({ file, senderName, senderUniqueId, recipients, timest
         )}
       </Dialog>
       <Dialog open={isRecipientsOpen} onOpenChange={setIsRecipientsOpen}>
-        <DialogContent className="max-w-md">
+        <DialogContent aria-describedby={undefined} className="max-w-md">
           <DialogHeader><DialogTitle>Recipients</DialogTitle></DialogHeader>
           <div className="space-y-2 max-h-80 overflow-y-auto">
             {recipients && recipients.length > 0 ? recipients.map(r => (
