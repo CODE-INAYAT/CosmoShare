@@ -16,7 +16,7 @@ export const roomNumbers: string[] = [
     "309",
     "310",
     "312",
-    "317",
+    "316",
 ]
 
 // Pre-compute a Set for O(1) time complexity lookups
