@@ -202,7 +202,7 @@ function StudentDashboardInner() {
   const [autoShareActive, setAutoShareActive] = useState(false)
   const autoShareActiveRef = useRef(false)
   useEffect(() => { autoShareActiveRef.current = autoShareActive }, [autoShareActive])
-  const autoShareDataRef = useRef<{ files: File[]; linkUrl: string; message: string; codeText: string; allowReshare: boolean; codeMode: boolean } | null>(null)
+  const autoShareDataRef = useRef<{ files: File[]; linkUrl: string; message: string; codeText: string; allowReshare: boolean; codeMode: boolean; isPrint: boolean } | null>(null)
   const autoShareExpiryRef = useRef(0)
   const [autoShareTimeLeft, setAutoShareTimeLeft] = useState(0)
   const [autoShareSummary, setAutoShareSummary] = useState<{ fileCount: number; hasLink: boolean; hasCode: boolean; totalSize: string } | null>(null)
@@ -1206,6 +1206,7 @@ function StudentDashboardInner() {
       codeText: codeShareText,
       allowReshare,
       codeMode: codeShareMode,
+      isPrint: preflightIsPrint,
     }
     autoShareDataRef.current = data
     autoShareExpiryRef.current = Date.now() + 15 * 60 * 1000
@@ -1336,7 +1337,7 @@ function StudentDashboardInner() {
     // Allow state to flush then call performShare via ref (captures latest closure)
     setTimeout(() => {
       sendingTargetsCountRef.current = 1
-      performShareRef.current?.([capturedAdminId], true)
+      performShareRef.current?.([capturedAdminId], data.isPrint ?? true)
       // Analytics: track auto-share performed
       trackEvent(AnalyticsEvent.AUTO_SHARE)
     }, 200)
@@ -3363,7 +3364,7 @@ function StudentDashboardInner() {
             )}
             <div className="flex flex-col sm:flex-row sm:justify-end gap-2 mt-4">
               <Button variant="outline" onClick={() => setOfflineModalOpen(false)}>Cancel</Button>
-              {preflightIsPrint && offlineUsersInfo.some(u => u.uniqueId === 'ADMIN') && pendingTargets.length === 0 && !autoShareActive && (
+              {offlineUsersInfo.some(u => u.uniqueId === 'ADMIN') && pendingTargets.length === 0 && !autoShareActive && (
                 <Button
                   onClick={activateAutoShare}
                 >
