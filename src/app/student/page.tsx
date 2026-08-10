@@ -1,5 +1,4 @@
 "use client"
-export const runtime = 'edge'
 
 import { generateGradient } from '@/lib/avatarUtils'
 import { useState, useEffect, useRef, Suspense } from 'react'
