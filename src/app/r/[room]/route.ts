@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { validRoomsSet } from '@/config/rooms';
 
+export const runtime = 'edge';
+
 export async function GET(
     request: Request,
     { params }: { params: Promise<{ room: string }> }
