@@ -46,35 +46,28 @@ const userDataByKey = new Map();
 // OneShare session storage: code -> { senderId, createdAt, files, multiShare, receivers }
 const oneShareSessions = new Map();
 
-// ── Helpers ──────────────────────────────────────────────────────────────────
+// ── O(1) Pick-and-Swap-Last Code Pool ────────────────────────────────────────
+// Pre-compute all 9,000 possible 4-digit codes (1000–9999) in an array.
+// Generation: pick a random index, grab the code, swap-last, pop → O(1)
+// Release:    push the code back to the end of the array            → O(1)
+// 100% uniform randomness, zero CPU loops, zero hash collisions.
+const codePool = [];
+for (let i = 1000; i <= 9999; i++) codePool.push(i.toString());
 
-/** Generate unique 4-digit code for OneShare */
-function generateOneShareCode() {
-  let code;
-  let attempts = 0;
-  do {
-    code = Math.floor(1000 + Math.random() * 9000).toString();
-    attempts++;
-  } while (oneShareSessions.has(code) && attempts < 100);
+/** O(1) Pick-and-Swap-Last: acquire a random code from the pool */
+function acquireOneShareCode() {
+  if (codePool.length === 0) return null; // All 9,000 codes in use (practically impossible)
+  const idx = Math.floor(Math.random() * codePool.length);
+  const code = codePool[idx];
+  // Swap the picked code with the last element, then pop → O(1) removal
+  codePool[idx] = codePool[codePool.length - 1];
+  codePool.pop();
   return code;
 }
 
-/** Clean up expired OneShare sessions (5 min for MultiShare, 10 min for regular) */
-function cleanupExpiredSessions() {
-  const now = Date.now();
-  const FIVE_MINUTES = 5 * 60 * 1000;
-  const TEN_MINUTES = 10 * 60 * 1000;
-  for (const [code, session] of oneShareSessions.entries()) {
-    const ttl = session.multiShare ? FIVE_MINUTES : TEN_MINUTES;
-    if (now - session.createdAt > ttl) {
-      // Notify participants that session expired
-      io.to(`oneshare-${code}`).emit('oneshare-cancelled', {
-        code,
-        reason: 'Session expired',
-      });
-      oneShareSessions.delete(code);
-    }
-  }
+/** O(1) Release: return a code to the pool */
+function releaseOneShareCode(code) {
+  codePool.push(code);
 }
 
 /** Daily cleanup — clears all state for a fresh start (3:00 AM IST = 21:30 UTC) */
@@ -97,6 +90,10 @@ function dailyCleanup() {
   adminByRoom.clear();
   sessionByUserKey.clear();
   userDataByKey.clear();
+  // Return all active codes to the pool before clearing sessions
+  for (const code of oneShareSessions.keys()) {
+    releaseOneShareCode(code);
+  }
   oneShareSessions.clear();
 
   console.log('All state cleared');
@@ -104,9 +101,6 @@ function dailyCleanup() {
 
 // Schedule daily cleanup at 3:00 AM IST (21:30 UTC)
 cron.schedule('30 21 * * *', dailyCleanup, { timezone: 'UTC' });
-
-// Periodic expired session cleanup every 30 seconds
-setInterval(cleanupExpiredSessions, 30_000);
 
 // ── Socket.IO Connection Handler ─────────────────────────────────────────────
 io.on('connection', (socket) => {
@@ -309,9 +303,7 @@ io.on('connection', (socket) => {
 
   // Sender creates a OneShare session
   socket.on('oneshare-create', (data) => {
-    cleanupExpiredSessions();
-
-    // Accept client-generated code if provided, otherwise generate server-side
+    // Accept client-generated code if provided, otherwise acquire from O(1) pool
     let code;
     if (
       data?.code &&
@@ -323,10 +315,20 @@ io.on('connection', (socket) => {
         socket.emit('oneshare-code-taken', { code: data.code });
         return;
       }
+      // Remove the client-provided code from the pool (if present) to prevent double-use
+      const poolIdx = codePool.indexOf(data.code);
+      if (poolIdx !== -1) {
+        codePool[poolIdx] = codePool[codePool.length - 1];
+        codePool.pop();
+      }
       code = data.code;
     } else {
-      // Server generates code
-      code = generateOneShareCode();
+      // O(1) Pick-and-Swap-Last acquisition
+      code = acquireOneShareCode();
+      if (!code) {
+        socket.emit('oneshare-error', { message: 'Server is at maximum capacity. Please try again later.' });
+        return;
+      }
     }
 
     oneShareSessions.set(code, {
@@ -429,6 +431,7 @@ io.on('connection', (socket) => {
       // Regular: notify all in session room and clean up
       io.to(`oneshare-${code}`).emit('oneshare-transfer-complete', { code });
       oneShareSessions.delete(code);
+      releaseOneShareCode(code);
       console.log(`OneShare session completed and cleaned up: ${code}`);
     }
   });
@@ -440,6 +443,7 @@ io.on('connection', (socket) => {
     if (session && session.senderId === socket.id) {
       io.to(`oneshare-${code}`).emit('oneshare-cancelled', { code });
       oneShareSessions.delete(code);
+      releaseOneShareCode(code);
       console.log(`OneShare session cancelled: ${code}`);
     }
   });
@@ -495,6 +499,7 @@ io.on('connection', (socket) => {
           reason: 'Sender disconnected',
         });
         oneShareSessions.delete(code);
+        releaseOneShareCode(code);
         console.log(`OneShare session auto-cancelled on disconnect: ${code}`);
       }
     }

@@ -25,9 +25,11 @@ const signaling = require('./server');
  * @returns {{ code: string }}
  */
 function createOneShareSession(opts) {
-  signaling.cleanupExpiredSessions();
-
-  const code = signaling.generateOneShareCode();
+  const code = signaling.acquireOneShareCode();
+  if (!code) {
+    logger.error('Failed to acquire OneShare code — pool exhausted');
+    return null;
+  }
 
   const session = {
     senderId: opts.botSocketId || '__bot__',
@@ -58,6 +60,7 @@ function cancelOneShareSession(code) {
     io.to(`oneshare-${code}`).emit('oneshare-cancelled', { code });
   }
   signaling.oneShareSessions.delete(code);
+  signaling.releaseOneShareCode(code);
   logger.info('OneShare session cancelled (in-process)', { code });
   return true;
 }
@@ -78,6 +81,7 @@ function completeOneShareTransfer(code, receiverId) {
   } else {
     io.to(`oneshare-${code}`).emit('oneshare-transfer-complete', { code });
     signaling.oneShareSessions.delete(code);
+    signaling.releaseOneShareCode(code);
     logger.info('OneShare completed (in-process)', { code });
   }
   return true;

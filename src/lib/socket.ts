@@ -232,36 +232,39 @@ export const setupSocket = (io: ServerIO) => {
     const oneShareSessions = (io as any)._oneShareSessions || new Map<string, { senderId: string; createdAt: number; files?: any[]; multiShare?: boolean; receivers?: Set<string> }>()
       ; (io as any)._oneShareSessions = oneShareSessions
 
-    // Generate unique 4-digit code
-    const generateOneShareCode = (): string => {
-      let code: string
-      let attempts = 0
-      do {
-        code = Math.floor(1000 + Math.random() * 9000).toString()
-        attempts++
-      } while (oneShareSessions.has(code) && attempts < 100)
+    // O(1) Pick-and-Swap-Last Code Pool (persist on io instance)
+    // Pre-compute all 9,000 possible 4-digit codes (1000–9999) in an array.
+    // Generation: pick a random index, grab the code, swap-last, pop → O(1)
+    // Release:    push the code back to the end of the array            → O(1)
+    if (!(io as any)._codePool) {
+      const pool: string[] = []
+      for (let i = 1000; i <= 9999; i++) pool.push(i.toString())
+      ;(io as any)._codePool = pool
+    }
+    const codePool: string[] = (io as any)._codePool
+
+    /** O(1) Pick-and-Swap-Last: acquire a random code from the pool */
+    const acquireOneShareCode = (): string | null => {
+      if (codePool.length === 0) return null
+      const idx = Math.floor(Math.random() * codePool.length)
+      const code = codePool[idx]
+      codePool[idx] = codePool[codePool.length - 1]
+      codePool.pop()
       return code
     }
 
-    // Clean up expired sessions (5 min for MultiShare, 10 min for regular)
-    const cleanupExpiredSessions = () => {
-      const now = Date.now()
-      const FIVE_MINUTES = 5 * 60 * 1000
-      const TEN_MINUTES = 10 * 60 * 1000
-      for (const [code, session] of oneShareSessions.entries()) {
-        const ttl = session.multiShare ? FIVE_MINUTES : TEN_MINUTES
-        if (now - session.createdAt > ttl) {
-          // Notify participants that session expired
-          io.to(`oneshare-${code}`).emit('oneshare-cancelled', { code, reason: 'Session expired' })
-          oneShareSessions.delete(code)
-        }
-      }
+    /** O(1) Release: return a code to the pool */
+    const releaseOneShareCode = (code: string): void => {
+      codePool.push(code)
     }
 
     // Sender creates a OneShare session
     socket.on('oneshare-create', (data: { files?: any[]; multiShare?: boolean }) => {
-      cleanupExpiredSessions()
-      const code = generateOneShareCode()
+      const code = acquireOneShareCode()
+      if (!code) {
+        socket.emit('oneshare-error', { message: 'Server is at maximum capacity. Please try again later.' })
+        return
+      }
       oneShareSessions.set(code, {
         senderId: socket.id,
         createdAt: Date.now(),
@@ -341,6 +344,7 @@ export const setupSocket = (io: ServerIO) => {
         // Regular: notify all in session room and clean up
         io.to(`oneshare-${code}`).emit('oneshare-transfer-complete', { code })
         oneShareSessions.delete(code)
+        releaseOneShareCode(code)
         console.log(`OneShare session completed and cleaned up: ${code}`)
       }
     })
@@ -352,6 +356,7 @@ export const setupSocket = (io: ServerIO) => {
       if (session && session.senderId === socket.id) {
         io.to(`oneshare-${code}`).emit('oneshare-cancelled', { code })
         oneShareSessions.delete(code)
+        releaseOneShareCode(code)
         console.log(`OneShare session cancelled: ${code}`)
       }
     })
@@ -364,6 +369,7 @@ export const setupSocket = (io: ServerIO) => {
         if (session.senderId === socket.id) {
           io.to(`oneshare-${code}`).emit('oneshare-cancelled', { code, reason: 'Sender disconnected' })
           oneShareSessions.delete(code)
+          releaseOneShareCode(code)
           console.log(`OneShare session auto-cancelled on disconnect: ${code}`)
         }
       }

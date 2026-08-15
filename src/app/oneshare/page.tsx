@@ -74,11 +74,12 @@ import {
     Code as CodeIcon,
     ExternalLink,
     MessageCircle,
-    Timer,
+
     StopCircle,
     UserPlus,
     User,
     MapPin,
+    XCircle,
 } from 'lucide-react'
 
 // Helper to get icon by file type
@@ -197,6 +198,7 @@ function OneShareInner() {
     // Session state
     const [sessionCode, setSessionCode] = useState<string | null>(null)
     const sessionCodeRef = useRef<string | null>(null)
+    const intentionalDisconnectRef = useRef(false)
     const [isWaitingForReceiver, setIsWaitingForReceiver] = useState(false)
     const [receiverConnected, setReceiverConnected] = useState(false)
 
@@ -213,8 +215,7 @@ function OneShareInner() {
     const [shareMode, setShareMode] = useState<'files' | 'links'>('files')
     const [codeShareMode, setCodeShareMode] = useState(false)
     const [multiShareEnabled, setMultiShareEnabled] = useState(true)
-    const [sessionExpiry, setSessionExpiry] = useState<number | null>(null)
-    const [sessionTimeLeft, setSessionTimeLeft] = useState<string>('')
+
     const [multiShareReceivers, setMultiShareReceivers] = useState<Array<{ id: string; status: 'connecting' | 'sending' | 'completed' | 'failed' }>>([])
     const [isUploading, setIsUploading] = useState(false)
     const [uploadProgress, setUploadProgress] = useState(0)
@@ -236,6 +237,7 @@ function OneShareInner() {
     const [receivedMessage, setReceivedMessage] = useState<string | null>(null)
     const [messageDialogOpen, setMessageDialogOpen] = useState(false)
     const [messageCopied, setMessageCopied] = useState(false)
+    const [transferCancelledMessage, setTransferCancelledMessage] = useState<string | null>(null)
 
     // Individual file progress tracking for receiver (matching Lab Room)
     const [recvFileProgress, setRecvFileProgress] = useState<Record<string, {
@@ -307,6 +309,7 @@ function OneShareInner() {
     const startMultiShareTransferRef = useRef<(receiverId: string) => Promise<void>>(async () => { })
 
     // WebRTC hook
+    const webrtcRef = useRef<any>(null)
     const webrtc = useOneShareWebRTC(
         socket,
         sessionCode || enteredCode || null,
@@ -481,6 +484,18 @@ function OneShareInner() {
                 setIsUploading(false)
                 setJoinError(reason || 'Transfer failed')
             },
+            onClose: () => {
+                console.log('WebRTC connection closed')
+                if (intentionalDisconnectRef.current) return
+
+                if (mode === 'receive' && !receiveComplete) {
+                    resetToSelect()
+                    setTransferCancelledMessage('The sender stopped sharing or disconnected. Your transfer was interrupted.')
+                } else if (mode === 'send' && !transferComplete) {
+                    resetToSelect()
+                    setTransferCancelledMessage('The receiver disconnected or cancelled the transfer. Your session was interrupted.')
+                }
+            },
         },
         multiShareEnabled,
     )
@@ -491,6 +506,11 @@ function OneShareInner() {
     useEffect(() => {
         sessionCodeRef.current = sessionCode
     }, [sessionCode])
+
+    // Keep webrtcRef in sync for use in socket event handlers (avoids stale closures)
+    useEffect(() => {
+        webrtcRef.current = webrtc
+    })
 
     // Smooth progress animation for upload — reads targets from refs so
     // the rAF loop is created only once per upload (not restarted 100+ times).
@@ -625,8 +645,23 @@ function OneShareInner() {
             if (cancelledCode && sessionCodeRef.current && cancelledCode !== sessionCodeRef.current) {
                 return // Ignore cancellation for a different session
             }
-            setJoinError(data?.reason || 'Session ended')
+            // ENGINEERING MARVEL: Protect active WebRTC transfers from signaling blips.
+            // If the WebRTC data channel is still alive and actively transferring,
+            // do NOT destroy the connection — let the transfer complete.
+            // The WebRTC onClose handler will fire the cancellation dialog when the peer drops.
+            if (webrtcRef.current?.isConnectedNow?.()) {
+                console.log('[OneShare] Signaling cancelled but WebRTC is active — protecting transfer')
+                return
+            }
+            // No active WebRTC — show the cancellation notification immediately
+            if (intentionalDisconnectRef.current) return
+            
             resetToSelect()
+            if (mode === 'send') {
+                setTransferCancelledMessage(data?.reason || 'The receiver cancelled the sharing session.')
+            } else {
+                setTransferCancelledMessage(data?.reason || 'The sender cancelled the sharing session.')
+            }
         })
 
         sock.on('oneshare-transfer-complete', () => {
@@ -761,9 +796,7 @@ function OneShareInner() {
         // Emit immediately — we're already connected to the right shard
         socket.emit('oneshare-create', { code, files, multiShare: multiShareEnabled })
 
-        // Set session expiry timer (5 min for MultiShare, 10 min for regular)
-        const ttl = multiShareEnabled ? 5 * 60 * 1000 : 10 * 60 * 1000
-        setSessionExpiry(Date.now() + ttl)
+
 
         // Analytics: track OneShare user + MultiShare if enabled
         trackEvent(AnalyticsEvent.ONESHARE_USER)
@@ -1042,8 +1075,6 @@ function OneShareInner() {
         setCodeShareText('')
         setCodeShareMode(false)
         setMultiShareEnabled(false)
-        setSessionExpiry(null)
-        setSessionTimeLeft('')
         setMultiShareReceivers([])
         setIsUploading(false)
         uploadProgressTargetRef.current = 0
@@ -1060,6 +1091,8 @@ function OneShareInner() {
         setRecvFileProgress({})
         setReceiveComplete(false)
         setJoinError(null)
+        setTransferCancelledMessage(null)
+        intentionalDisconnectRef.current = true
         // Reset cumulative byte tracking, timing, and throttles
         totalBytesToSendRef.current = 0
         bytesSentSoFarRef.current = 0
@@ -1132,35 +1165,7 @@ function OneShareInner() {
     // Keep ref in sync
     startMultiShareTransferRef.current = startMultiShareTransfer
 
-    // Session countdown timer (works for both regular and MultiShare)
-    useEffect(() => {
-        if (!sessionExpiry || !sessionCode) {
-            setSessionTimeLeft('')
-            return
-        }
 
-        const update = () => {
-            const remaining = sessionExpiry - Date.now()
-            if (remaining <= 0) {
-                setSessionTimeLeft('Expired')
-                // Auto-cancel on expiry
-                resetToSelect()
-                return false
-            }
-            const mins = Math.floor(remaining / 60000)
-            const secs = Math.floor((remaining % 60000) / 1000)
-            setSessionTimeLeft(`${mins}:${secs.toString().padStart(2, '0')}`)
-            return true
-        }
-
-        if (!update()) return
-
-        const interval = setInterval(() => {
-            if (!update()) clearInterval(interval)
-        }, 1000)
-
-        return () => clearInterval(interval)
-    }, [sessionExpiry, sessionCode])
 
     const getShareUrl = () => {
         if (typeof window === 'undefined' || !sessionCode) return ''
@@ -1496,7 +1501,10 @@ function OneShareInner() {
                                             <Button
                                                 className="w-full sm:w-auto gradient-primary text-white glow-button text-sm"
                                                 disabled={!isConnected || (codeShareMode ? !codeShareText.trim() : (selectedFiles.length === 0 && !linkUrl))}
-                                                onClick={handleCreateSession}
+                                                onClick={() => {
+                                                intentionalDisconnectRef.current = false
+                                                handleCreateSession()
+                                            }}
                                             >
                                                 <Hash className="w-4 h-4 mr-2" />
                                                 Generate Share Code
@@ -1556,30 +1564,7 @@ function OneShareInner() {
                                                             ? 'Files are being sent...'
                                                             : 'Ask the receiver to scan QR code or enter the code')}
                                         </CardDescription>
-                                        {/* Session Timer Badge — always for MultiShare, only while waiting for regular */}
-                                        {sessionTimeLeft && (multiShareEnabled || !receiverConnected) && !isWhatsAppShare && (
-                                            <div className="flex justify-center mt-2">
-                                                <Badge variant="outline" className={`gap-1.5 px-3 py-1 text-sm font-mono ${sessionTimeLeft === 'Expired' ? 'text-destructive border-destructive' : 'text-violet-500 border-violet-500/40'}`}>
-                                                    <Timer className="w-3.5 h-3.5" />
-                                                    {(() => {
-                                                        if (sessionTimeLeft === 'Expired') return 'Expired'
-                                                        const parts = sessionTimeLeft.split(':')
-                                                        if (parts.length === 2) {
-                                                            const mins = parseInt(parts[0], 10)
-                                                            const secs = parseInt(parts[1], 10)
-                                                            if (!isNaN(mins) && !isNaN(secs)) {
-                                                                return (
-                                                                    <span className="flex items-center">
-                                                                        <NumberFlow value={mins} />:<NumberFlow value={secs} format={{ minimumIntegerDigits: 2 }} />
-                                                                    </span>
-                                                                )
-                                                            }
-                                                        }
-                                                        return sessionTimeLeft
-                                                    })()}
-                                                </Badge>
-                                            </div>
-                                        )}
+
                                     </CardHeader>
                                     <CardContent className="space-y-6">
                                         {(multiShareEnabled || !receiverConnected) && !isWhatsAppShare ? (
@@ -1831,7 +1816,10 @@ function OneShareInner() {
                                                         </Label>
                                                         <CodeInput
                                                             ref={codeInputRef}
-                                                            onComplete={handleJoinSession}
+                                                            onComplete={(code) => {
+                                                                intentionalDisconnectRef.current = false
+                                                                handleJoinSession(code)
+                                                            }}
                                                             disabled={isJoining}
                                                         />
                                                     </div>
@@ -2108,6 +2096,26 @@ function OneShareInner() {
                 totalFileSize={selectedFiles.reduce((sum, f) => sum + f.size, 0)}
                 fileCount={selectedFiles.length}
             />
+
+            {/* Transfer Cancelled Dialog — mode-independent, always visible */}
+            <Dialog open={!!transferCancelledMessage} onOpenChange={(open) => { if (!open) setTransferCancelledMessage(null) }}>
+                <DialogContent className="sm:max-w-md">
+                    <DialogHeader>
+                        <DialogTitle className="flex items-center gap-2">
+                            <AlertCircle className="w-5 h-5 text-muted-foreground" />
+                            Transfer Interrupted
+                        </DialogTitle>
+                        <DialogDescription className="pt-2 text-muted-foreground">
+                            {transferCancelledMessage}
+                        </DialogDescription>
+                    </DialogHeader>
+                    <div className="flex justify-end pt-4">
+                        <Button variant="outline" onClick={() => setTransferCancelledMessage(null)}>
+                            Close
+                        </Button>
+                    </div>
+                </DialogContent>
+            </Dialog>
         </div >
     )
 }

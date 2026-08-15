@@ -97,6 +97,10 @@ export class RoomDurableObject implements DurableObject {
   // OneShare sessions: 4-digit code -> session data
   oneShareSessions: Map<string, OneShareSession> = new Map()
 
+  // O(1) Pick-and-Swap-Last Code Pool
+  // Pre-compute all 9,000 possible 4-digit codes (1000–9999) in an array.
+  private codePool: string[] = []
+
   // Proactive zombie sweep: detects dead connections even when no messages arrive.
   // Without this, if ALL clients die simultaneously (e.g. laptop lid closed + router off),
   // no messages arrive → reactive sweepStale never runs → DO holds zombie sockets
@@ -120,6 +124,8 @@ export class RoomDurableObject implements DurableObject {
     this.state = state
     // Schedule the next 3 AM IST alarm on construction
     this.scheduleNextCleanupAlarm()
+    // Initialize code pool with all 9,000 possible 4-digit codes
+    for (let i = 1000; i <= 9999; i++) this.codePool.push(i.toString())
   }
 
   // ---- Class-level helpers for proactive sweep ----
@@ -145,7 +151,6 @@ export class RoomDurableObject implements DurableObject {
     if (this.sweepIntervalId) return
     this.sweepIntervalId = setInterval(() => {
       this.proactiveSweepStale()
-      this.cleanupExpiredOneShareSessions()
       // If no connections remain after sweep, stop interval → DO hibernates
       if (this.sockets.size === 0) {
         clearInterval(this.sweepIntervalId)
@@ -196,6 +201,7 @@ export class RoomDurableObject implements DurableObject {
           if (recvWs) this.sendToWs(recvWs, 'oneshare-cancelled', { code, reason: 'Sender disconnected' })
         }
         this.oneShareSessions.delete(code)
+        this.releaseOneShareCode(code)
       }
     }
     this.lastSeen.delete(sid)
@@ -259,6 +265,10 @@ export class RoomDurableObject implements DurableObject {
     this.userDataByKey.clear()
     this.lastSeen.clear()
     this.lastActive.clear()
+    // Return all active codes to the pool before clearing sessions
+    for (const code of this.oneShareSessions.keys()) {
+      this.codePool.push(code)
+    }
     this.oneShareSessions.clear()
     // Wipe all persisted SQLite storage
     await this.state.storage.deleteAll()
@@ -266,39 +276,19 @@ export class RoomDurableObject implements DurableObject {
     await this.scheduleNextCleanupAlarm()
   }
 
-  // Generate unique 4-digit code for OneShare
-  generateOneShareCode(): string {
-    let code: string
-    let attempts = 0
-    do {
-      code = Math.floor(1000 + Math.random() * 9000).toString()
-      attempts++
-    } while (this.oneShareSessions.has(code) && attempts < 100)
+  // O(1) Pick-and-Swap-Last: acquire a random code from the pool
+  acquireOneShareCode(): string | null {
+    if (this.codePool.length === 0) return null
+    const idx = Math.floor(Math.random() * this.codePool.length)
+    const code = this.codePool[idx]
+    this.codePool[idx] = this.codePool[this.codePool.length - 1]
+    this.codePool.pop()
     return code
   }
 
-  // Clean up expired OneShare sessions (5 min for MultiShare, 10 min for regular)
-  cleanupExpiredOneShareSessions(): void {
-    const now = Date.now()
-    const FIVE_MINUTES = 5 * 60 * 1000
-    const TEN_MINUTES = 10 * 60 * 1000
-    for (const [code, session] of Array.from(this.oneShareSessions.entries())) {
-      const ttl = session.multiShare ? FIVE_MINUTES : TEN_MINUTES
-      if (now - session.createdAt > ttl) {
-        // Notify only session participants that session expired
-        const senderWs = this.sockets.get(session.senderId)
-        if (senderWs) {
-          try { senderWs.send(JSON.stringify({ event: 'oneshare-cancelled', data: { code, reason: 'Session expired' } })) } catch { }
-        }
-        for (const recvId of session.receivers) {
-          const recvWs = this.sockets.get(recvId)
-          if (recvWs) {
-            try { recvWs.send(JSON.stringify({ event: 'oneshare-cancelled', data: { code, reason: 'Session expired' } })) } catch { }
-          }
-        }
-        this.oneShareSessions.delete(code)
-      }
-    }
+  // O(1) Release: return a code to the pool
+  releaseOneShareCode(code: string): void {
+    this.codePool.push(code)
   }
 
   fetch(request: Request): Response | Promise<Response> {
@@ -374,6 +364,7 @@ export class RoomDurableObject implements DurableObject {
                 if (recvWs) send(recvWs, 'oneshare-cancelled', { code, reason: 'Sender disconnected' })
               }
               this.oneShareSessions.delete(code)
+              this.releaseOneShareCode(code)
             }
           }
           this.lastSeen.delete(sid)
@@ -427,6 +418,7 @@ export class RoomDurableObject implements DurableObject {
             }
           }
           this.oneShareSessions.delete(code)
+          this.releaseOneShareCode(code)
         }
       }
 
@@ -451,7 +443,6 @@ export class RoomDurableObject implements DurableObject {
       sweepStale()
 
       // Also cleanup expired OneShare sessions periodically
-      this.cleanupExpiredOneShareSessions()
 
       switch (event) {
         case 'join-room': {
@@ -536,7 +527,7 @@ export class RoomDurableObject implements DurableObject {
         
         case 'oneshare-create': {
           // Sender creates a OneShare session
-          // Accept client-generated code if provided, otherwise generate server-side (backward compat)
+          // Accept client-generated code if provided, otherwise acquire from O(1) pool
           let code: string
           if (data.code && typeof data.code === 'string' && /^\d{4}$/.test(data.code)) {
             // Client-provided code — check if already in use on this worker
@@ -544,10 +535,21 @@ export class RoomDurableObject implements DurableObject {
               send(server, 'oneshare-code-taken', { code: data.code })
               return
             }
+            // Remove from pool to prevent double-use
+            const poolIdx = this.codePool.indexOf(data.code)
+            if (poolIdx !== -1) {
+              this.codePool[poolIdx] = this.codePool[this.codePool.length - 1]
+              this.codePool.pop()
+            }
             code = data.code
           } else {
-            // Legacy: server generates code
-            code = this.generateOneShareCode()
+            // O(1) Pick-and-Swap-Last acquisition
+            const acquired = this.acquireOneShareCode()
+            if (!acquired) {
+              send(server, 'oneshare-error', { message: 'Server is at maximum capacity. Please try again later.' })
+              return
+            }
+            code = acquired
           }
           this.oneShareSessions.set(code, {
             senderId: socketId,
@@ -645,6 +647,7 @@ export class RoomDurableObject implements DurableObject {
               if (recvWs) send(recvWs, 'oneshare-transfer-complete', { code })
             }
             this.oneShareSessions.delete(code)
+            this.releaseOneShareCode(code)
             console.log(`OneShare session completed: ${code}`)
           }
           return
@@ -661,6 +664,7 @@ export class RoomDurableObject implements DurableObject {
               if (recvWs) send(recvWs, 'oneshare-cancelled', { code })
             }
             this.oneShareSessions.delete(code)
+            this.releaseOneShareCode(code)
             console.log(`OneShare session cancelled: ${code}`)
           }
           return

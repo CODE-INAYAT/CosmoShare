@@ -216,7 +216,7 @@ export function getShardIndexForUrl(url: string): number {
 }
 
 // ---------------------------------------------------------------------------
-// Code Generation (client-side)
+// Code Generation (client-side) — O(1) Pick-and-Swap-Last
 // ---------------------------------------------------------------------------
 
 /**
@@ -228,7 +228,40 @@ export function generateOneShareCode(): string {
 }
 
 /**
- * Generate a random 4-digit code that maps to a specific shard index.
+ * Pre-computed shard-mapped code pools.
+ * On first call, lazily builds an array of valid codes per shard index.
+ * Subsequent calls use the cached pools for O(1) Pick-and-Swap-Last.
+ */
+let shardPoolsCache: Map<number, string[]> | null = null
+let shardPoolsCacheTotal: number = 0
+
+function getShardPools(): Map<number, string[]> {
+  const total = getOneShareUrls().length
+  // Return cached pools if shard count hasn't changed
+  if (shardPoolsCache && shardPoolsCacheTotal === total) return shardPoolsCache
+
+  const pools = new Map<number, string[]>()
+  if (total <= 1) {
+    // Single shard: all codes go to index 0
+    const all: string[] = []
+    for (let i = 1000; i <= 9999; i++) all.push(i.toString())
+    pools.set(0, all)
+  } else {
+    // Multi-shard: partition codes by their hash
+    for (let i = 0; i < total; i++) pools.set(i, [])
+    for (let i = 1000; i <= 9999; i++) {
+      const code = i.toString()
+      const idx = djb2Hash(code) % total
+      pools.get(idx)!.push(code)
+    }
+  }
+  shardPoolsCache = pools
+  shardPoolsCacheTotal = total
+  return pools
+}
+
+/**
+ * O(1) Pick-and-Swap-Last: Generate a random 4-digit code that maps to a specific shard index.
  * Sender uses this to generate codes that always map to the shard they're already connected to.
  * With 1 shard, returns any random code.
  */
@@ -236,13 +269,13 @@ export function generateOneShareCodeForShardIndex(shardIndex: number): string {
   const total = getOneShareUrls().length
   if (total <= 1) return generateOneShareCode()
 
-  let code: string
-  let attempts = 0
-  do {
-    code = Math.floor(1000 + Math.random() * 9000).toString()
-    attempts++
-  } while (djb2Hash(code) % total !== shardIndex && attempts < 1000)
-  return code
+  const pools = getShardPools()
+  const pool = pools.get(shardIndex)
+  if (!pool || pool.length === 0) return generateOneShareCode() // Fallback safety
+
+  // Pick-and-Swap-Last: O(1) random selection
+  const idx = Math.floor(Math.random() * pool.length)
+  return pool[idx] // No removal needed — client codes are validated server-side
 }
 
 /**

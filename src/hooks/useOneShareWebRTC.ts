@@ -364,6 +364,15 @@ export const useOneShareWebRTC = (
 
         const handleCancelled = (data: { reason?: string }) => {
             console.log('Session cancelled:', data?.reason)
+            // ENGINEERING MARVEL: Protect active WebRTC transfers from signaling blips.
+            // If any peer-to-peer data channel is still alive and actively transferring,
+            // do NOT destroy the connection — let the transfer complete.
+            const singlePeerActive = peerRef.current && !peerRef.current.destroyed && (peerRef.current as any).connected
+            const multiPeersActive = peersMapRef.current.size > 0
+            if (singlePeerActive || multiPeersActive) {
+                console.log('[OneShare WebRTC] Signaling cancelled but P2P is active — protecting transfer')
+                return
+            }
             cleanup()
         }
 
