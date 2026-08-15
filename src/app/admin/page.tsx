@@ -578,6 +578,53 @@ function AdminDashboardInner() {
 
       // Analytics: track canceled transfer
       trackEvent(AnalyticsEvent.CANCELED_TRANSFER)
+    },
+    onClose: (fromId) => {
+      // Handle unexpected disconnects (e.g. student refreshes page mid-transfer)
+      // Read active transfers directly from the fresh closure scope
+      const interrupted = Object.values(recvProgress).some(p => p.fromId === fromId)
+
+      if (interrupted) {
+        // Clear progress purely via functional update
+        setRecvProgress(prev => {
+          const next = { ...prev }
+          for (const key of Object.keys(next)) {
+            if (next[key].fromId === fromId) {
+              delete next[key]
+            }
+          }
+          return next
+        })
+
+        // Run side effects safely outside the reducer!
+        setRecvCounter({ total: 0, received: 0 })
+        
+        const senderName = onlineUsers.find(u => u.id === fromId)?.name || 'Student'
+        const senderUniqueId = onlineUsers.find(u => u.id === fromId)?.uniqueId || ''
+        toast({
+          title: (
+            <div className="flex items-center gap-2 text-red-600">
+              <WifiOff className="w-4 h-4" />
+              <span className="font-semibold">Transfer Interrupted</span>
+            </div>
+          ) as any,
+          description: (
+            <div className="mt-1.5 space-y-2">
+              <div className="text-sm text-foreground">
+                <span className="font-medium">{senderName}</span> {senderUniqueId ? `(${senderUniqueId})` : ''} disconnected unexpectedly.
+              </div>
+              <div className="text-xs text-muted-foreground bg-muted/50 p-2.5 rounded-md border border-border/50 flex items-start gap-2">
+                <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5 text-amber-500" />
+                <span>The transfer was halted. Any completed files are safe in your received list.</span>
+              </div>
+            </div>
+          ) as any,
+          variant: 'default',
+          duration: Infinity,
+        })
+
+        trackEvent(AnalyticsEvent.CANCELED_TRANSFER)
+      }
     }
   })
 

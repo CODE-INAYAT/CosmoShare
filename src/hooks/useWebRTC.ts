@@ -24,6 +24,11 @@ type ReceiveCallbacks = {
 }
 
 export const useWebRTC = (socket: any, roomNumber: string, callbacks: ReceiveCallbacks = {}) => {
+  const callbacksRef = useRef(callbacks)
+  useEffect(() => {
+    callbacksRef.current = callbacks
+  }, [callbacks])
+
   const [peers, setPeers] = useState<Map<string, SimplePeer.Instance>>(new Map())
   const peersRef = useRef<Map<string, SimplePeer.Instance>>(new Map())
   // Receiver assembly buffers (store BlobPart to avoid extra copies)
@@ -56,7 +61,7 @@ export const useWebRTC = (socket: any, roomNumber: string, callbacks: ReceiveCal
       const sender = { name: data.senderName, uniqueId: data.senderUniqueId }
       if (data.senderId) {
         recvState.current.delete(data.senderId)
-        callbacks.onTransferCancelled?.(data.senderId, sender)
+        callbacksRef.current.onTransferCancelled?.(data.senderId, sender)
       }
     }
     socket.on('transfer-cancelled', onTransferCancelled)
@@ -158,7 +163,7 @@ export const useWebRTC = (socket: any, roomNumber: string, callbacks: ReceiveCal
     })
 
     peer.on('connect', () => {
-      callbacks.onConnect?.(targetId)
+      callbacksRef.current.onConnect?.(targetId)
       // Determine and cache method on connect
       setTimeout(async () => {
         const method = await getPeerMethod(targetId)
@@ -209,7 +214,7 @@ export const useWebRTC = (socket: any, roomNumber: string, callbacks: ReceiveCal
       if (obj && obj.type) {
         switch (obj.type) {
           case 'contact-share': {
-            callbacks.onFileComplete?.(targetId, `tel:${obj.phone}`, {
+            callbacksRef.current.onFileComplete?.(targetId, `tel:${obj.phone}`, {
               fileName: obj.name,
               fileSize: 0,
               fileType: 'contact',
@@ -221,7 +226,7 @@ export const useWebRTC = (socket: any, roomNumber: string, callbacks: ReceiveCal
             return
           }
           case 'location-share': {
-            callbacks.onFileComplete?.(targetId, `https://www.google.com/maps?q=${obj.latitude},${obj.longitude}`, {
+            callbacksRef.current.onFileComplete?.(targetId, `https://www.google.com/maps?q=${obj.latitude},${obj.longitude}`, {
               fileName: obj.name,
               fileSize: 0,
               fileType: 'location',
@@ -234,7 +239,7 @@ export const useWebRTC = (socket: any, roomNumber: string, callbacks: ReceiveCal
           }
           case 'file-metadata': {
             recvState.current.set(targetId, { meta: obj, buffers: [], received: 0 })
-            callbacks.onFileMetadata?.(targetId, obj)
+            callbacksRef.current.onFileMetadata?.(targetId, obj)
             return
           }
           case 'file-complete': {
@@ -242,13 +247,13 @@ export const useWebRTC = (socket: any, roomNumber: string, callbacks: ReceiveCal
             if (state && state.meta) {
               const blob = new Blob(state.buffers as BlobPart[], { type: state.meta.fileType })
               const url = URL.createObjectURL(blob)
-              callbacks.onFileComplete?.(targetId, url, state.meta, blob)
+              callbacksRef.current.onFileComplete?.(targetId, url, state.meta, blob)
               recvState.current.delete(targetId)
             }
             return
           }
           case 'message':
-            callbacks.onMessage?.(targetId, obj.message, { name: obj.senderName, uniqueId: obj.senderUniqueId, allowReshare: obj.allowReshare })
+            callbacksRef.current.onMessage?.(targetId, obj.message, { name: obj.senderName, uniqueId: obj.senderUniqueId, allowReshare: obj.allowReshare })
             return
           case 'msg-metadata': {
             // Start receiving chunked message (preserve sender info for callback on completion)
@@ -267,18 +272,18 @@ export const useWebRTC = (socket: any, roomNumber: string, callbacks: ReceiveCal
             const msgState = msgRecvState.current.get(targetId)
             if (msgState) {
               const fullMessage = msgState.chunks.join('')
-              callbacks.onMessage?.(targetId, fullMessage, { name: msgState.senderName, uniqueId: msgState.senderUniqueId, allowReshare: msgState.allowReshare })
+              callbacksRef.current.onMessage?.(targetId, fullMessage, { name: msgState.senderName, uniqueId: msgState.senderUniqueId, allowReshare: msgState.allowReshare })
               msgRecvState.current.delete(targetId)
             }
             return
           }
           case 'link':
-            callbacks.onLink?.(targetId, obj.linkUrl, obj.message, { name: obj.senderName, uniqueId: obj.senderUniqueId, allowReshare: obj.allowReshare })
+            callbacksRef.current.onLink?.(targetId, obj.linkUrl, obj.message, { name: obj.senderName, uniqueId: obj.senderUniqueId, allowReshare: obj.allowReshare })
             return
           case 'transfer-cancelled':
             // Clear any in-progress receive state for this sender
             recvState.current.delete(targetId)
-            callbacks.onTransferCancelled?.(targetId, { name: obj.senderName, uniqueId: obj.senderUniqueId })
+            callbacksRef.current.onTransferCancelled?.(targetId, { name: obj.senderName, uniqueId: obj.senderUniqueId })
             return
         }
       }
@@ -290,7 +295,7 @@ export const useWebRTC = (socket: any, roomNumber: string, callbacks: ReceiveCal
           // Avoid extra copies; store the Uint8Array directly (BlobPart)
           state.buffers.push(u8 as unknown as BlobPart)
           state.received += u8.byteLength
-          callbacks.onFileChunk?.(targetId, state.received, state.meta?.fileSize || 0)
+          callbacksRef.current.onFileChunk?.(targetId, state.received, state.meta?.fileSize || 0)
         }
       }
     })
@@ -305,7 +310,7 @@ export const useWebRTC = (socket: any, roomNumber: string, callbacks: ReceiveCal
         console.warn('Peer closed', targetId, reason || message)
         const inflight = sendState.current.get(targetId)
         if (inflight) {
-          callbacks.onSendFailed?.(targetId, inflight.fileName, reason || message)
+          callbacksRef.current.onSendFailed?.(targetId, inflight.fileName, reason || message)
           sendState.current.delete(targetId)
         }
         return
@@ -313,7 +318,7 @@ export const useWebRTC = (socket: any, roomNumber: string, callbacks: ReceiveCal
       console.error('Peer error', targetId, err)
       const inflight = sendState.current.get(targetId)
       if (inflight) {
-        callbacks.onSendFailed?.(targetId, inflight.fileName, message || 'Peer error')
+        callbacksRef.current.onSendFailed?.(targetId, inflight.fileName, message || 'Peer error')
         sendState.current.delete(targetId)
       }
     })
@@ -323,10 +328,10 @@ export const useWebRTC = (socket: any, roomNumber: string, callbacks: ReceiveCal
       setPeers(new Map(peersRef.current))
       const inflight = sendState.current.get(targetId)
       if (inflight) {
-        callbacks.onSendFailed?.(targetId, inflight.fileName, 'Peer closed')
+        callbacksRef.current.onSendFailed?.(targetId, inflight.fileName, 'Peer closed')
         sendState.current.delete(targetId)
       }
-      callbacks.onClose?.(targetId)
+      callbacksRef.current.onClose?.(targetId)
     })
 
     peersRef.current.set(targetId, peer)
