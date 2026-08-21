@@ -1,7 +1,7 @@
 import { DailyAnalytics } from '@/lib/storage'
 
 // Toggle this to true to visualize dummy analytics in the Admin Dashboard
-export const ENABLE_DUMMY_ANALYTICS = false
+export const ENABLE_DUMMY_ANALYTICS = true
 
 export const DUMMY_ANALYTICS_DATA: DailyAnalytics[] = [
   {
